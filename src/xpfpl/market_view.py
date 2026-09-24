@@ -283,9 +283,9 @@ def _render_result_check(table: pd.DataFrame) -> None:
     goals = pd.DataFrame({
         "Match": table["label"],
         "xG Home Team (Market Odds)": table["lam_home"], "xG Home Team (Our Odds)": table["ours_home"],
-        "xG Home Team (Actual)": table["xg_home"], "Goals Home Team": table["goals_home"],
+        "xG Home Team (Actual)": table["xg_home"],
         "xG Away Team (Market Odds)": table["lam_away"], "xG Away Team (Our Odds)": table["ours_away"],
-        "xG Away Team (Actual)": table["xg_away"], "Goals Away Team": table["goals_away"],
+        "xG Away Team (Actual)": table["xg_away"],
         "Outcome": closer(err_market, err_ours),
     })
 
@@ -308,7 +308,7 @@ def _render_result_check(table: pd.DataFrame) -> None:
     st.dataframe(goals.style.apply(colour, axis=0), hide_index=True, width="stretch",
                  column_config=_formats(goals))
     st.caption("xG = expected goals. Market Odds and Our Odds are the forecasts at the deadline; Actual is the xG "
-               "each side created in the match, with the goals they scored next to it. 'Outcome' names whichever "
+               "each side created in the match. 'Outcome' names whichever "
                "forecast missed the actual xG by less, over both sides.")
 
     n, k = len(table), max(int(known.sum()), 1)
@@ -447,7 +447,7 @@ def _render_news(table: pd.DataFrame, scorers: pd.DataFrame, names: dict[int, st
             shown["Played the Match?"] = np.where(res["minutes"].fillna(0).to_numpy() > 0, "Yes", "No")
         st.caption("Goalscorer odds: the players whose chance to score dropped the most. A sharp drop usually "
                    "means an injury or being left out.")
-        st.dataframe(club_columns(shown), hide_index=True, width="stretch", column_config=_formats(shown))
+        st.dataframe(club_columns(shown, yes_no=("Played the Match?",)), hide_index=True, width="stretch", column_config=_formats(shown))
     else:
         st.caption("No real moves in the goalscorer odds for these matches.")
     st.caption("Moves are in percentage points. Injuries and rotation reach the market before they reach "
@@ -481,7 +481,7 @@ def _render_scorers(scorers: pd.DataFrame, bs: dict, played: bool, player_result
         goals, mins = res["goals_scored"].fillna(0).to_numpy(), res["minutes"].fillna(0).to_numpy()
         shown["Scored?"] = np.where(goals > 1, [f"Yes ({int(g)})" for g in goals],
                                     np.where(goals > 0, "Yes", np.where(mins > 0, "No", "Didn't play")))
-    st.dataframe(club_columns(shown.head(25)), hide_index=True, width="stretch", column_config={
+    st.dataframe(club_columns(shown.head(25), yes_no=("Scored?",)), hide_index=True, width="stretch", column_config={
         "Chance to score (Market Odds)": st.column_config.ProgressColumn(format="percent", min_value=0.0, max_value=1.0),
         "Price £m": st.column_config.NumberColumn(format="%.1f"),
         "Traded $": st.column_config.NumberColumn(format="compact")})

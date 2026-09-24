@@ -27,10 +27,26 @@ def club_cell(short_name: str) -> str:
             f"color: {CLUB_TEXT.get(short_name, NEUTRAL_FG)}")
 
 
-def club_columns(frame: pd.DataFrame, columns: tuple[str, ...] = ("Club",)):
-    """A Styler colouring every column in `columns` (whose values are club short names)."""
+def club_columns(frame: pd.DataFrame, columns: tuple[str, ...] = ("Club",), yes_no: tuple[str, ...] = ()):
+    """A Styler colouring every column in `columns` (whose values are club short names), and every
+    column in `yes_no` green where it says "Yes..." and red where it says "No"."""
     def style(column: pd.Series) -> list[str]:
+        if column.name in yes_no:
+            return [yes_no_cell(v) for v in column]
         if column.name not in columns:
             return [""] * len(column)
         return [club_cell(v) if isinstance(v, str) else "" for v in column]
     return frame.style.apply(style, axis=0)
+
+
+def yes_no_cell(value) -> str:
+    """CSS for a "Yes"/"No" answer: green for yes (including "Yes (2)"), red for no, anything else plain."""
+    if isinstance(value, str) and value.startswith("Yes"):
+        return f"background-color: {YES_BG}; color: {YES_FG}"
+    if value == "No":
+        return f"background-color: {NO_BG}; color: {NO_FG}"
+    return ""
+
+
+YES_BG, YES_FG = "#c9ecd3", "#0f5323"
+NO_BG, NO_FG = "#f8cfcf", "#8a1414"
