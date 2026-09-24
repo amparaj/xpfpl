@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Downloaded / generated data and trained models (rebuild with `xpfpl fetch` / `xpfpl train`)
+/data/
+/models/
+
+# Local Claude Code context (not shared)
+/CLAUDE.md

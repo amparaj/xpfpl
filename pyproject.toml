@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "xpfpl"
+version = "0.1.0"
+description = "A PyTorch machine learning sandbox predicting expected points (xP) and optimizing squad selection. Built for data analysis and learning."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy",
+    "pandas>=2.0",
+    "pyarrow",
+    "requests",
+    "torch>=2.2",
+    "pulp>=2.7",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+app = ["streamlit>=1.50", "altair"]
+gbm = ["lightgbm>=4.0"]   # only needed for `--model gbm`
+
+[project.scripts]
+xpfpl = "xpfpl.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
