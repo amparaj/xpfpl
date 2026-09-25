@@ -73,7 +73,7 @@ export default function About() {
       <p>
         It learned how those things relate to points by studying past seasons.{" "}
         {site.meta.model === "mlp"
-          ? <>The model is a small neural network built with PyTorch, a machine-learning library.</>
+          ? <>The model is a small neural network built with a machine-learning library.</>
           : <>The model in use is "{site.meta.model}": {site.meta.model_description}.</>}{" "}
         Its forecast is then adjusted for FPL's injury flags, and double gameweeks count both matches.
       </p>

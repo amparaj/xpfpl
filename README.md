@@ -1,6 +1,6 @@
 # xP-FPL: Expected Points for FPL
 
-A PyTorch machine learning sandbox predicting expected points (xP) and optimizing squad selection. Built for data analysis and learning.
+A machine learning sandbox predicting expected points (xP) and optimizing squad selection. Built for data analysis and learning.
 
 Each gameweek it tells you:
 
@@ -195,7 +195,7 @@ markets. `predict` and `recommend` fetch the live odds for the next gameweek the
   they stood at that gameweek's deadline, never at kick-off: odds move on team news after the
   deadline, which a manager can't act on.
 - **Expected goals from the odds.** Each side's expected goals are fitted to all of a match's goal
-  markets at once (a small batched Poisson fit in PyTorch), which also gives clean-sheet chances.
+  markets at once (a small batched Poisson fit), which also gives clean-sheet chances.
 - **In the model:** the market's expected goals, clean-sheet and win chances are features. Where
   there are no odds (before 2024-25, and any gameweek after the next one) they fall back to the
   model's own team ratings, with a flag saying which is which.
@@ -326,9 +326,8 @@ models is the room left to improve.
   readable pieces (Haaland's 6.7 = 1.9 minutes + 3.3 goals + 0.6 assists + 1.0 bonus - 0.1 cards),
   which `xpfpl predict --model components` prints.
 - Accuracy is not the last word: the season replays below rank the models differently, and by
-  bigger margins. `config.MODEL` stays on `mlp` (PyTorch is the point of this project, and
-  LightGBM is an optional dependency), but see the note there before taking that as a
-  recommendation.
+  bigger margins. `config.MODEL` stays on `mlp` (LightGBM is an optional dependency),
+  but see the note there before taking that as a recommendation.
 - The report also holds a calibration curve (does 6 xP really mean six points?), accuracy per
   position and per gameweek, and the error distribution.
 

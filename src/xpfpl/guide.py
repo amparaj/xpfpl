@@ -41,7 +41,7 @@ GLOSSARY = [
      "average over many possible outcomes, so a 5.0 xP player might blank or haul. Double gameweeks "
      "add both fixtures; blank gameweeks are 0."),
     ("MLP (model: mlp)",
-     "Multi-layer perceptron, the simplest kind of neural network, built with PyTorch. It takes "
+     "Multi-layer perceptron, the simplest kind of neural network. It takes "
      f"{len(FEATURES)} numbers about a player and fixture and passes them through two layers of learned "
      "weights (128 then 64 units) to produce one number: expected points. It learns those weights "
      "from every player-match since 2016-17."),
