@@ -51,10 +51,13 @@ pip install -e ".[app]"   # once: Streamlit + Altair
 xpfpl app                 # opens http://localhost:8501
 ```
 
-Everything in one place, no command line needed. The tabs, in order:
+Everything in one place, no command line needed. The tabs follow the Guide's weekly routine
+(look back at the week, research, plan), then the season as a whole:
 
 - **Guide**: how it works, the weekly routine, how accurate each model is, what the season replays
   scored, how the tuning parameters were chosen, and a glossary.
+- **Gameweek Review**: any finished GW. Your points against the average, what the model expected
+  per player, the best XI you could have picked from the same squad, and that week's top scorers.
 - **Players & Fixtures**: xP for every player with filters, and a fixture difficulty ticker.
 - **Markets**: what the betting markets think ("Market Odds") next to the model's own team
   ratings ("Our Odds"). For the next gameweek: win/draw/loss odds, each side's expected goals and
@@ -66,8 +69,6 @@ Everything in one place, no command line needed. The tabs, in order:
 - **Plan Ahead**: transfers, XI, bench, captain and chip advice for the next gameweek, and the team
   for each later GW in the horizon. Set an active chip (Wildcard, Free Hit, Triple Captain, Bench
   Boost), override free transfers, bank and hits, and force or ban players.
-- **Gameweek Review**: any finished GW. Your points against the average, what the model expected
-  per player, the best XI you could have picked from the same squad, and that week's top scorers.
 - **My Season**: points and rank by gameweek, chips used and left, transfer history.
 
 The top of the sidebar counts down to the next deadline and shows where the current gameweek is:
