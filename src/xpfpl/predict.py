@@ -3,7 +3,7 @@
 import pandas as pd
 
 from xpfpl import config, models, prices
-from xpfpl.data import api
+from xpfpl.data import api, archive
 from xpfpl.data.history import load_matches
 from xpfpl.features import build_future_frame
 
@@ -77,7 +77,9 @@ def predict_upcoming(horizon: int = config.HORIZON, model: str = config.MODEL,
 
     folder = config.PREDICTIONS_DIR / api.current_season(bs)
     folder.mkdir(parents=True, exist_ok=True)
-    out.sort_values("xp_total", ascending=False).to_csv(folder / f"gw{next_gw:02d}_{model}.csv", encoding="utf-8")
+    path = folder / f"gw{next_gw:02d}_{model}.csv"
+    out.sort_values("xp_total", ascending=False).to_csv(path, encoding="utf-8")
+    archive.save_prediction(path, api.current_season(bs))
     return out, gameweeks
 
 

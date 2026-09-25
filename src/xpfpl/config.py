@@ -10,6 +10,8 @@ RAW_DIR = DATA_DIR / "raw"
 PROCESSED_DIR = DATA_DIR / "processed"
 PREDICTIONS_DIR = DATA_DIR / "predictions"
 MODELS_DIR = ROOT / "models"
+ARCHIVE_DIR = ROOT / "archive"                     # git-tracked copy of every source (data/archive.py)
+SITE_DATA_DIR = ROOT / "web" / "public" / "data"   # what `xpfpl export` writes for the website
 
 BACKTEST_DIR = DATA_DIR / "backtests"
 

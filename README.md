@@ -12,7 +12,8 @@ Each gameweek it tells you:
 
 1. **Data** (`xpfpl/data/`): past seasons (2016-17 onwards) come from the
    [vaastav/Fantasy-Premier-League](https://github.com/vaastav/Fantasy-Premier-League) repo, and the
-   current season comes live from the FPL API. Both become one table of player-match rows,
+   current season comes live from the FPL API. All of it is kept in [`archive/`](archive/README.md),
+   compressed in git, so the history survives if a source disappears. Both become one table of player-match rows,
    `data/processed/matches.parquet`. Players and clubs are linked across seasons with their
    persistent `code`s, because FPL re-numbers ids every season.
 2. **Features** (`xpfpl/features.py`): rolling 3/5/10-match averages of points, minutes, goals,
@@ -81,6 +82,7 @@ data or the model is out of date:
 | Start of the season / after a GW is complete | 1. Fetch match data | `xpfpl fetch` | Rebuilds the saved training dataset (`matches.parquet`) from every finished match |
 | | 2. Fetch betting odds | `xpfpl markets` | Polymarket odds for every match since 2024-25, saved to disk |
 | | 3. Retrain | `xpfpl train` | Refits the model on the two above. Run it last |
+| | 4. Publish the website | `xpfpl publish` | Exports the season and pushes the [public site](#website) to GitHub Pages |
 
 Fetch and Refresh both call the FPL API. Fetch is the weekly rebuild of the history the model
 learns from. Refresh is a quick reload of what changes day to day (prices, flags, team news) for
@@ -101,6 +103,9 @@ xpfpl compare                      # train every model on the same season and ra
 xpfpl backtest --season 2024-25    # replay a whole season and count the points
 xpfpl tune                         # set the config.py tuning parameters from replayed seasons (hours)
 xpfpl scorecard                    # score this season's saved forecasts against the results so far
+xpfpl export                       # write the website's data (web/public/data/)
+xpfpl publish                      # export, build the website and push it to GitHub Pages
+xpfpl archive                      # copy everything downloaded into archive/ (fetch/markets do this as they go)
 ```
 
 Your team id is the number in the URL of your FPL *Points* page
@@ -375,13 +380,48 @@ between settings as the useful part. A replay is also chaotic - one different ca
 October changes everything after it - so differences of 20 or 30 points a season are noise, and
 only the consistent ones (across both seasons) are worth acting on.
 
+## Website
+
+A public, read-only look back at the season, served by GitHub Pages from the `gh-pages` branch:
+every gameweek's results with each player's points against the xP forecast, every player's season,
+one FPL team's season (picks against the hindsight-best XI, transfers, chips), the betting odds at
+each deadline against what happened, and the model's accuracy reports. It doesn't train or plan.
+The Markets page fetches upcoming matches' odds live from Polymarket, whose API accepts requests
+from any website (the FPL API doesn't, so everything else comes from the export).
+
+```bash
+xpfpl publish          # export -> build web/ -> push web/dist to gh-pages
+xpfpl publish --build-only && npm --prefix web run preview   # look at it locally first
+```
+
+`xpfpl export` writes `web/public/data/` (about 1 MB of JSON; not committed). `xpfpl publish`
+builds the React app in `web/` (Vite + TypeScript, charts with Observable Plot; needs Node.js)
+and force-pushes `web/dist/` to `gh-pages` as a single commit, so the site's data never piles up
+in the repo's history. The team shown is the one saved in the dashboard (or `--team-id`). To turn
+the site on the first time: GitHub -> Settings -> Pages -> Deploy from a branch -> `gh-pages`, `/ (root)`.
+
+For development: `npm --prefix web install`, then `npm --prefix web run dev`.
+
+## Archive
+
+[`archive/`](archive/README.md) is a zstd-Parquet copy of every source the pipeline reads, kept in
+git (about 15 MB, plus about 5-10 MB a season): vaastav's seasons 2016-17 to 2025-26, this season
+from the FPL API one file per gameweek, every player's price, news and injury flag shortly before
+each deadline, the saved forecasts, and Polymarket's events and price histories for every played
+match since 2024-25. `fetch` reads the archive first and only downloads what it doesn't have.
+When a season ends, add it to `config.HISTORY_SEASONS` and it loads from the archive like
+vaastav's seasons, so vaastav is no longer needed. `fetch`, `markets` and `predict` add to it as
+they go. A GitHub Action (`.github/workflows/deadline-snapshot.yml`) takes the pre-deadline
+snapshot every gameweek, so pull before you push.
+
 ## Project layout
 
 ```
 src/xpfpl/
   config.py          paths, rules and tunable parameters (horizon, discount, chip thresholds)
   data/api.py        FPL API client
-  data/history.py    vaastav + API -> matches.parquet
+  data/history.py    archive (vaastav) + API -> matches.parquet
+  data/archive.py    the git-tracked archive of every source (archive/)
   features.py        feature engineering (training rows and upcoming fixtures)
   teams.py           team attack/defence ratings (a Poisson model refitted every gameweek)
   data/markets.py    betting-market odds (Polymarket), priced at FPL deadlines
@@ -406,9 +446,12 @@ src/xpfpl/
   scorecard.py       the live record: saved forecasts scored against results
   backtest.py        replay a past season deadline by deadline; sweep the tuning parameters
   tune.py            search the config.py tuning parameters with the backtest
+  export.py          the website's data (web/public/data/) and publishing to gh-pages
   cli.py             command line entry point
+web/                 the public website (React + TypeScript, Vite)
+archive/             every source, compressed (see archive/README.md)
 tests/               scoring rules, features, every model, optimiser rules, prices, backtest,
-                     tuning, validation, the live scorecard, market odds
+                     tuning, validation, the live scorecard, market odds, archive, export
 ```
 
 ## Caveats
@@ -427,4 +470,5 @@ tests/               scoring rules, features, every model, optimiser rules, pric
 
 - [FPL API](https://fantasy.premierleague.com/api/bootstrap-static/): live and current-season data
 - [vaastav/Fantasy-Premier-League](https://github.com/vaastav/Fantasy-Premier-League): historical gameweek data
+- [Polymarket](https://polymarket.com) (Gamma and CLOB APIs): betting odds
 - [fantasynutmeg.com/history](https://www.fantasynutmeg.com/history): handy for sanity-checking past seasons

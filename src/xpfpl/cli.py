@@ -475,6 +475,48 @@ def cmd_markets(args) -> None:
     print(table[[c for c in cols if c in table]].round(2).to_string(index=False))
 
 
+def cmd_archive(args) -> None:
+    """Copy everything on disk into archive/ (git-tracked), or take the pre-deadline snapshot."""
+    from xpfpl.data import api, archive
+
+    if args.deadline:
+        path = archive.save_deadline(api.bootstrap())
+        print(f"Saved {path}" if path else "No deadline ahead.")
+        return
+    archive.backfill(markets_too=not args.no_markets)
+    print("\nArchive:\n" + archive.size_report())
+
+
+def _saved_team_id() -> int | None:
+    """The team id the dashboard saved (data/app_settings.json), if any."""
+    import json
+    path = config.DATA_DIR / "app_settings.json"
+    return json.loads(path.read_text(encoding="utf-8")).get("team_id") if path.exists() else None
+
+
+def cmd_export(args) -> None:
+    """Write the website's data (web/public/data/)."""
+    from xpfpl import export
+    team_id = args.team_id or _saved_team_id()
+    files = export.export(team_id=team_id, model=args.model)
+    size = sum(f.stat().st_size for f in files)
+    print(f"Wrote {len(files)} files ({size / 1e6:.1f} MB) to {config.SITE_DATA_DIR}"
+          + ("" if team_id else " - no team id, so no manager.json (use --team-id)"))
+
+
+def cmd_publish(args) -> None:
+    """Export, build the site and push it to the gh-pages branch (GitHub Pages serves it)."""
+    from xpfpl import export
+    if not args.no_export:
+        cmd_export(args)
+    dist = export.build_site()
+    if args.build_only:
+        print(f"Built the site in {dist} (not pushed). Preview it with: npm --prefix web run preview")
+        return
+    export.publish(dist)
+    print("Pushed to the gh-pages branch. GitHub Pages updates a minute or two later.")
+
+
 def cmd_scorecard(args) -> None:
     """The live record: forecasts saved before each deadline, scored once the GW is played."""
     from xpfpl import scorecard
@@ -578,6 +620,23 @@ def main(argv: list[str] | None = None) -> None:
     p = sub.add_parser("markets", help="fetch betting-market odds (Polymarket) for every match since 2024-25")
     p.add_argument("--refresh", action="store_true", help="re-download price histories already cached")
     p.set_defaults(func=cmd_markets)
+
+    p = sub.add_parser("archive", help="copy the downloaded data into archive/ (fetch and markets do this as they go)")
+    p.add_argument("--deadline", action="store_true",
+                   help="snapshot every player's price, news and ownership for the next deadline instead")
+    p.add_argument("--no-markets", action="store_true", help="skip Polymarket (it needs the event listing)")
+    p.set_defaults(func=cmd_archive)
+
+    for name, func, help_ in (("export", cmd_export, "write the website's data to web/public/data/"),
+                              ("publish", cmd_publish, "export, build the website and push it to GitHub Pages")):
+        p = sub.add_parser(name, help=help_)
+        p.add_argument("--team-id", type=int, help="the FPL team to show (default: the one saved in the dashboard)")
+        p.add_argument("--model", choices=models.NAMES, default=config.MODEL,
+                       help="model whose xP to show where no forecast was saved before a deadline")
+        p.set_defaults(func=func)
+        if name == "publish":
+            p.add_argument("--no-export", action="store_true", help="use the data already exported")
+            p.add_argument("--build-only", action="store_true", help="build web/dist/ but don't push it")
 
     p = sub.add_parser("scorecard", help="score this season's saved pre-deadline forecasts against results")
     p.add_argument("--season", help="default: the current season")

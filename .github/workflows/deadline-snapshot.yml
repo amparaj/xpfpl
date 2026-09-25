@@ -1,0 +1,61 @@
+# Saves every player's price, injury news, chance of playing and ownership shortly before each FPL
+# deadline (archive/fpl/<season>/deadlines/gwNN.parquet). The FPL API only ever shows the current
+# values, so this is the only way to keep them. Runs every two hours and snapshots only when the
+# next deadline is under three hours away, so each gameweek gets one or two commits.
+#
+# Scheduled workflows only run from the default branch.
+name: Deadline snapshot
+
+on:
+  schedule:
+    - cron: "17 */2 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Snapshot now, however far away the deadline is"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: deadline-snapshot
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Only what archive.py needs: installing the package's own dependencies would pull in torch.
+      - name: Install
+        run: |
+          pip install --quiet pandas pyarrow requests
+          pip install --quiet --no-deps -e .
+
+      - name: Snapshot
+        run: |
+          if [ "${{ inputs.force }}" = "true" ]; then
+            python -m xpfpl.data.archive deadline
+          else
+            python -m xpfpl.data.archive deadline --within-hours 3
+          fi
+
+      - name: Commit
+        run: |
+          git add archive/
+          if git diff --cached --quiet; then
+            echo "Nothing new."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Deadline snapshot $(date -u +%Y-%m-%dT%H:%MZ)"
+          git pull --rebase --quiet
+          git push
