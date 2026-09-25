@@ -1,6 +1,7 @@
 import { Component, useEffect, useState, type ReactNode } from "react";
 import { Loading } from "./components/ui";
 import { day, when } from "./format";
+import About from "./pages/About";
 import Accuracy from "./pages/Accuracy";
 import DataPage from "./pages/Data";
 import Gameweeks from "./pages/Gameweeks";
@@ -9,11 +10,14 @@ import MyTeam from "./pages/MyTeam";
 import Players from "./pages/Players";
 import { SiteContext, useSiteData } from "./site";
 
+// About first (where the site opens), then look back at the week, research, one team's season,
+// how far to trust it, and the raw data last.
 const PAGES = [
+  { id: "about", label: "About", component: About },
   { id: "gameweeks", label: "Gameweeks", component: Gameweeks },
   { id: "players", label: "Players", component: Players },
-  { id: "team", label: "My Team", component: MyTeam },
   { id: "markets", label: "Markets", component: MarketsPage },
+  { id: "team", label: "My Team", component: MyTeam },
   { id: "accuracy", label: "Model Accuracy", component: Accuracy },
   { id: "data", label: "Data", component: DataPage },
 ] as const;

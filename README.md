@@ -423,10 +423,13 @@ drops the old season's match-by-match history.
 
 ## Website
 
-A public, read-only look back at the season, served by GitHub Pages from the `gh-pages` branch:
-every gameweek's results with each player's points against the xP forecast, every player's season,
-one FPL team's season (picks against the hindsight-best XI, transfers, chips), the betting odds at
-each deadline against what happened, and the model's accuracy reports. It doesn't train or plan.
+A public, read-only look back at the season, served by GitHub Pages from the `gh-pages` branch
+(https://amparaj.github.io/xpfpl/). Its pages, in order: **About** (where it opens: the project and
+how the model forecasts, picks a team and is tested, in plain language, with the latest accuracy
+figures), **Gameweeks** (every result, each player's points against the xP forecast), **Players**,
+**Markets** (the betting odds at each deadline against what happened), **My Team** (one FPL team's
+season: picks against the hindsight-best XI, transfers, chips), **Model Accuracy** and **Data** (the
+archive). It doesn't train or plan.
 The Markets page fetches upcoming matches' odds live from Polymarket, whose API accepts requests
 from any website (the FPL API doesn't, so everything else comes from the export).
 
