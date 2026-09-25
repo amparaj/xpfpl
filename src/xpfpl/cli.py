@@ -475,6 +475,18 @@ def cmd_markets(args) -> None:
     print(table[[c for c in cols if c in table]].round(2).to_string(index=False))
 
 
+def cmd_archive(args) -> None:
+    """Copy everything on disk into archive/ (git-tracked), or take the pre-deadline snapshot."""
+    from xpfpl.data import api, archive
+
+    if args.deadline:
+        path = archive.save_deadline(api.bootstrap())
+        print(f"Saved {path}" if path else "No deadline ahead.")
+        return
+    archive.backfill(markets_too=not args.no_markets)
+    print("\nArchive:\n" + archive.size_report())
+
+
 def cmd_scorecard(args) -> None:
     """The live record: forecasts saved before each deadline, scored once the GW is played."""
     from xpfpl import scorecard
@@ -578,6 +590,12 @@ def main(argv: list[str] | None = None) -> None:
     p = sub.add_parser("markets", help="fetch betting-market odds (Polymarket) for every match since 2024-25")
     p.add_argument("--refresh", action="store_true", help="re-download price histories already cached")
     p.set_defaults(func=cmd_markets)
+
+    p = sub.add_parser("archive", help="copy the downloaded data into archive/ (fetch and markets do this as they go)")
+    p.add_argument("--deadline", action="store_true",
+                   help="snapshot every player's price, news and ownership for the next deadline instead")
+    p.add_argument("--no-markets", action="store_true", help="skip Polymarket (it needs the event listing)")
+    p.set_defaults(func=cmd_archive)
 
     p = sub.add_parser("scorecard", help="score this season's saved pre-deadline forecasts against results")
     p.add_argument("--season", help="default: the current season")

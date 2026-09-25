@@ -20,6 +20,9 @@ Outputs (data/processed/):
   market_scorers.parquet  one row per player per match: anytime-goalscorer probability
   market_outrights.parquet  the season-long markets, one row per outcome per snapshot
 Raw responses are cached in data/raw/polymarket/; a finished market's history never changes.
+Played matches' events and price histories are also archived (archive/polymarket/, see
+data/archive.py) and read back from there when the cache doesn't have them, so the history
+survives Polymarket delisting a market.
 """
 
 import json
@@ -35,6 +38,7 @@ import requests
 import torch
 
 from xpfpl import config
+from xpfpl.data import archive
 
 GAMMA = "https://gamma-api.polymarket.com"
 CLOB = "https://clob.polymarket.com"
@@ -116,6 +120,8 @@ def _history(token: str, end: pd.Timestamp, cache: bool) -> list[dict]:
     path = RAW_DIR / f"history_{HISTORY_DAYS}d" / f"{token}.json"
     if cache and path.exists():
         return json.loads(path.read_text(encoding="utf-8"))
+    if cache and (kept := archive.price_history(path.parent.name, token)) is not None:
+        return kept
     stop = int(end.timestamp())
     history = _get(f"{CLOB}/prices-history",
                    {"market": token, "startTs": stop - HISTORY_DAYS * 86400, "endTs": stop,
@@ -135,6 +141,8 @@ def _fine_history(token: str, end: pd.Timestamp, cache: bool) -> list[dict]:
     path = RAW_DIR / f"history_{FINE_HOURS}h_{FINE_MINUTES}m" / f"{token}.json"
     if cache and path.exists():
         return json.loads(path.read_text(encoding="utf-8"))
+    if cache and (kept := archive.price_history(path.parent.name, token)) is not None:
+        return kept
     stop = int(end.timestamp())
     history = _get(f"{CLOB}/prices-history",
                    {"market": token, "startTs": stop - FINE_HOURS * 3600, "endTs": stop,
@@ -470,15 +478,13 @@ def gameweek_deadlines(matches: pd.DataFrame, bs: dict | None = None) -> pd.Seri
 
 def player_names(bs: dict | None = None) -> pd.DataFrame:
     """(season, code, team_code, name, first_name, second_name) for every season scorer markets
-    exist: vaastav's players_raw.csv for past seasons on disk, bootstrap-static for this one."""
+    exist: the archived players for past seasons, bootstrap-static for this one."""
     frames = []
     for season in config.HISTORY_SEASONS:
-        if int(season[:4]) < 2025:
+        if int(season[:4]) < 2025 or not archive.has_season(season):
             continue
-        path = config.RAW_DIR / "vaastav" / season / "players_raw.csv"
-        if path.exists():
-            raw = pd.read_csv(path, encoding="utf-8", low_memory=False)
-            frames.append(raw.assign(season=season, name=raw["web_name"]))
+        _, raw = archive.season_tables(season)
+        frames.append(raw.assign(season=season, name=raw["web_name"]))
     if bs:
         from xpfpl.data import api
         el = pd.DataFrame(bs["elements"])
@@ -491,13 +497,19 @@ def player_names(bs: dict | None = None) -> pd.DataFrame:
 
 def build(matches: pd.DataFrame, bs: dict | None = None, cache: bool = True) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Fetch everything, price it at FPL deadlines, fit expected goals, map to fixtures and players,
-    and save market_matches.parquet and market_scorers.parquet."""
-    games = fetch_games()
+    and save market_matches.parquet and market_scorers.parquet. Matches Polymarket no longer lists
+    come from the archive, and every played match is archived."""
+    try:
+        games = {**archive.polymarket_games(), **fetch_games()}
+    except requests.RequestException as err:
+        print(f"Polymarket unavailable ({err}): using the archive only.")
+        games = archive.polymarket_games()
     deadlines = gameweek_deadlines(matches, bs)
     found = match_fixtures(listing(games), matches)
     per_slug = {r.slug: deadlines.get((r.season, r.gw), r.kickoff - DEADLINE_BEFORE_KICKOFF)
                 for r in found.itertuples()}
     market, scorers = price_games(games, per_slug, cache)
+    archive.save_polymarket(games, found)
     market = match_fixtures(fit_goal_rates(market), matches)
     if len(scorers):
         scorers = match_players(scorers, market, player_names(bs))
@@ -526,7 +538,8 @@ def upcoming(bs: dict, fixtures: list[dict]) -> tuple[pd.DataFrame, pd.DataFrame
 
 
 def save_outrights(table: pd.DataFrame) -> pd.DataFrame:
-    """Append today's outright prices to the history file (one snapshot per fetch)."""
+    """Append today's outright prices to the history file (one snapshot per fetch), and archive them."""
+    archive.save_outrights(table)
     if OUTRIGHTS_PATH.exists():
         table = pd.concat([pd.read_parquet(OUTRIGHTS_PATH), table], ignore_index=True)
     OUTRIGHTS_PATH.parent.mkdir(parents=True, exist_ok=True)

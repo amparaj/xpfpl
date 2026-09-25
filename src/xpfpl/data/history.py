@@ -1,7 +1,10 @@
 """Build one table of player-match rows across all seasons.
 
-Past seasons come from the vaastav repo (gws/merged_gw.csv + players_raw.csv). The current
-season comes from the FPL API (element-summary history), which uses the same column names.
+Past seasons come from the archive (archive/fpl/, see data/archive.py), which was filled from the
+vaastav repo (gws/merged_gw.csv + players_raw.csv) and, from 2026-27, from this code's own FPL API
+fetches; vaastav is only downloaded for a season the archive doesn't have. The current season
+comes from the FPL API (element-summary history), which uses the same column names, and each
+fetch archives it.
 
 Each row is one player in one fixture (a double gameweek gives two rows). Player `element`
 ids and team ids are re-numbered every season, so rows also carry the persistent `code`
@@ -17,7 +20,7 @@ import pandas as pd
 import requests
 
 from xpfpl import config
-from xpfpl.data import api
+from xpfpl.data import api, archive
 
 STAT_COLS = [
     "total_points", "minutes", "goals_scored", "assists", "bonus", "bps",
@@ -64,16 +67,39 @@ def _as_bool(s: pd.Series) -> pd.Series:
     return s.astype(str).str.strip().str.lower().eq("true")
 
 
-def load_vaastav_season(season: str, refresh: bool = False) -> pd.DataFrame:
+# Archive name -> vaastav path. The first two are required; the others are kept where a season has them.
+VAASTAV_FILES = {"gws": "gws/merged_gw.csv", "players": "players_raw.csv",
+                 "teams": "teams.csv", "fixtures": "fixtures.csv"}
+
+
+def archive_vaastav(season: str, refresh: bool = False) -> None:
+    """Download a season's CSVs from vaastav (any not already in data/raw/vaastav/) and archive them."""
     folder = config.RAW_DIR / "vaastav" / season
-    files = {"merged_gw.csv": "gws/merged_gw.csv", "players_raw.csv": "players_raw.csv"}
-    for name, remote in files.items():
-        if refresh or not (folder / name).exists():
-            _download(f"{config.VAASTAV_RAW}/{season}/{remote}", folder / name)
+    tables = {}
+    for name, remote in VAASTAV_FILES.items():
+        path = folder / remote.split("/")[-1]
+        if refresh or not path.exists():
+            try:
+                _download(f"{config.VAASTAV_RAW}/{season}/{remote}", path)
+            except requests.HTTPError:
+                if name in ("gws", "players"):
+                    raise
+                continue                          # e.g. no fixtures.csv for 2016-17 and 2017-18
+        tables[name] = _read_csv(path)
+    archive.save_vaastav(season, tables)
 
-    gw = _read_csv(folder / "merged_gw.csv")
-    players = _read_csv(folder / "players_raw.csv")
 
+def load_past_season(season: str, refresh: bool = False) -> pd.DataFrame:
+    """A finished season from the archive, downloading it from vaastav first if it isn't there
+    (or `refresh`). Seasons archived from the FPL API have the same columns, so both go through here."""
+    if refresh or not archive.has_season(season):
+        archive_vaastav(season, refresh=refresh)
+    gw, players = archive.season_tables(season)
+    return _season_frame(season, gw, players)
+
+
+def _season_frame(season: str, gw: pd.DataFrame, players: pd.DataFrame) -> pd.DataFrame:
+    gw = gw.copy()
     gw["gw"] = gw["round"] if "round" in gw else gw["GW"]
     gw["was_home"] = _as_bool(gw["was_home"])
 
@@ -120,6 +146,7 @@ def load_current_season(refresh: bool = False, workers: int = 8) -> pd.DataFrame
         histories = list(pool.map(summary, ids))
 
     rows = [row for h in histories for row in h]
+    archive.save_api_season(season, bs, fx, rows)
     if not rows:
         return pd.DataFrame(columns=MATCH_COLS)
     gw = pd.DataFrame(rows)
@@ -159,8 +186,8 @@ def _finalise(df: pd.DataFrame) -> pd.DataFrame:
 def build_matches(refresh: bool = False, seasons: list[str] | None = None) -> pd.DataFrame:
     frames = []
     for season in seasons or config.HISTORY_SEASONS:
-        print(f"Loading {season} from vaastav...")
-        frames.append(load_vaastav_season(season, refresh=refresh))
+        print(f"Loading {season}...")
+        frames.append(load_past_season(season, refresh=refresh))
     frames.append(load_current_season(refresh=refresh))
 
     matches = pd.concat(frames, ignore_index=True)
