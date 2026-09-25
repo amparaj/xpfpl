@@ -15,7 +15,7 @@ import requests
 import streamlit as st
 
 from xpfpl import chips, config, guide, market_view, models, review
-from xpfpl.data import api
+from xpfpl.data import api, cups
 from xpfpl.data.history import load_matches
 from xpfpl.myteam import load_my_team
 from xpfpl.optimise import solve
@@ -44,6 +44,8 @@ PITCH_CSS = """<style>
 .xp-name { font-weight: 700; font-size: 13.5px; padding: 1px 4px; border-radius: 4px 4px 0 0;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .xp-fix { padding: 0 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.xp-mid { padding: 0 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: #fff4d6;
+  color: #5c4400; font-size: 11px; }
 .xp-pts { background: #ffffff; color: #111111; padding: 0 4px; border-radius: 0 0 4px 4px; }
 .xp-badge { position: absolute; top: 0; z-index: 1; min-width: 21px; height: 21px; padding: 0 4px;
   border-radius: 11px; font-size: 11.5px; font-weight: 700; line-height: 21px; }
@@ -145,6 +147,21 @@ def gw_review(team_id: int, gw: int):
 @st.cache_data(show_spinner="Rebuilding pre-match predictions...")
 def past_xp(season: str, gw: int, model: str, _stamp) -> pd.Series:
     return review.past_predictions(load_matches(), season, gw, model)
+
+
+@st.cache_data(ttl=600)
+def midweek_badges(season: str, gameweeks: tuple[int, ...]) -> dict[tuple[int, int], str]:
+    """(team id, gw) -> "UCL Tue": each club's cup or European match before those gameweeks."""
+    team_id = {t["code"]: t["id"] for t in live_data()[0]["teams"]}
+    return {(team_id[code], gw): label for (code, gw), label in cups.badges(season, gameweeks).items()
+            if code in team_id}
+
+
+@st.cache_data(ttl=600)
+def midweek_results(season: str, gw: int) -> pd.DataFrame:
+    """The cup and European matches played before `gw`, one row each."""
+    m = cups.matches(season)
+    return m[(m["gw"] == gw) & m["finished"]]
 
 
 def fixture_labels(bs: dict, fx: list[dict], gameweeks: list[int]) -> dict[tuple[int, int], str]:
@@ -357,8 +374,10 @@ def photo_urls(codes: tuple[int, ...]) -> dict[int, str | None]:
         return dict(zip(codes, pool.map(check, codes)))
 
 
-def show_pitch(players: pd.DataFrame, plan, gw: int, labels: dict, fdr: dict) -> None:
-    """The XI laid out by position on a pitch, then the bench in auto-sub order, as one HTML block."""
+def show_pitch(players: pd.DataFrame, plan, gw: int, labels: dict, fdr: dict, midweek: dict | None = None) -> None:
+    """The XI laid out by position on a pitch, then the bench in auto-sub order, as one HTML block.
+    `midweek`: (team id, gw) -> "UCL Tue", a line under the fixture for a club that plays midweek."""
+    midweek = midweek or {}
     col = f"xp_{gw}"
     squad = plan.lineups[gw] + plan.bench[gw]
     photos = photo_urls(tuple(sorted(int(elements.at[p, "code"]) for p in squad)))
@@ -387,7 +406,8 @@ def show_pitch(players: pd.DataFrame, plan, gw: int, labels: dict, fdr: dict) ->
                 f"<div class='xp-name' style='background:{club};color:{club_text}'>{escape(r['name'])}</div>"
                 f"<div class='xp-fix' style='background:{fix_bg};color:{fix_fg}'>"
                 f"{labels.get((r['team'], gw), 'no fixture')}</div>"
-                f"<div class='xp-pts'><b>{r[col]:.2f}</b> xP · £{r['price']:.1f}</div></div>")
+                + (f"<div class='xp-mid'>{midweek[(r['team'], gw)]} midweek</div>" if (r["team"], gw) in midweek else "")
+                + f"<div class='xp-pts'><b>{r[col]:.2f}</b> xP · £{r['price']:.1f}</div></div>")
 
     rows = "".join(
         "<div class='xp-row'>" + "".join(card(p) for p in plan.lineups[gw] if players.at[p, "position"] == pos)
@@ -507,10 +527,12 @@ with tab_plan:
     view_gw = int((view_gw or f"GW{gw}")[2:])
     st.caption(f"Formation {plan.formation(players, view_gw)} · XI xP {plan.xp[view_gw]:.2f} "
                f"(captain counted twice) · bench xP {plan.bench_xp[view_gw]:.2f}. Name in club colours, "
-               "fixture shaded by FPL difficulty (darker is harder), orange/red badge = chance of playing. "
+               "fixture shaded by FPL difficulty (darker is harder), orange/red badge = chance of playing, "
+               "yellow line = the club's cup or European match that week (UK day). "
                + ("Later weeks use that week's planned squad." if plan.future_transfers
                   else "Later weeks assume the same squad."))
-    show_pitch(players, plan, view_gw, labels, fixture_difficulty(fx, gameweeks))
+    show_pitch(players, plan, view_gw, labels, fixture_difficulty(fx, gameweeks),
+               midweek_badges(season, tuple(gameweeks)))
 
     st.markdown("**Squad xP by gameweek**")
     squad_gw = plan.squads.get(view_gw, plan.squad)
@@ -597,14 +619,16 @@ with tab_review:
                 for s in r["auto_subs"]))
 
         xp = past_xp(season, rgw, model, stamp())
+        midweek_mins = cups.player_minutes_before(season, rgw, elements.reset_index()[["id", "code", "team_code"]])
         table = picks.assign(
             Role=["C" if c else "VC" if v else "" for c, v in zip(picks["is_captain"], picks["is_vice_captain"])],
             Status=["Starting" if m else "Bench" for m in picks["multiplier"]],
             Pos=picks["pos"].map(config.POSITIONS),
             xP=xp.reindex(picks.index).fillna(0.0),
+            Midweek=midweek_mins.reindex(picks.index),
         )
         table["Points - xP"] = table["points"] - table["xP"]
-        review_table = table[["Status", "Pos", "name", "team_name", "team", "Role", "minutes", "xP", "points",
+        review_table = table[["Status", "Pos", "name", "team_name", "team", "Role", "minutes", "Midweek", "xP", "points",
                       "Points - xP", "counted"]].rename(columns={"name": "Player", "team_name": "Team",
                                             "team": "Team ID", "minutes": "Mins",
                                             "points": "Points", "counted": "Counted"})
@@ -614,10 +638,21 @@ with tab_review:
                      column_config={"xP": st.column_config.NumberColumn(format=POINTS),
                                     "Points - xP": st.column_config.NumberColumn(format="%+.2f"),
                                     **{c: st.column_config.NumberColumn(format="%d")
-                                       for c in ("Mins", "Points", "Counted")}})
+                                       for c in ("Mins", "Midweek", "Points", "Counted")}})
         st.caption(f"xP is the {model} model's pre-match prediction. The saved model was refitted on all "
                    "seasons including this one, so past-GW xP is slightly optimistic. Injury flags at the "
-                   "time aren't known, so they aren't applied.")
+                   "time aren't known, so they aren't applied. Midweek: minutes in the club's cup or European "
+                   "match before this gameweek (empty if the club had none).")
+
+        results = midweek_results(season, rgw)
+        if len(results):
+            club = {t["code"]: t["name"] for t in bs["teams"]}
+            name = lambda code, fallback: club.get(int(code), fallback) if pd.notna(code) else fallback  # noqa: E731
+            with st.expander(f"Midweek before GW{rgw}: {len(results)} cup and European matches"):
+                st.markdown("\n".join(
+                    f"- {cups.NAMES.get(m.tournament, m.tournament)}: {name(m.home_code, m.home_name)} "
+                    f"{m.home_score:.0f}–{m.away_score:.0f} {name(m.away_code, m.away_name)}"
+                    for m in results.itertuples()))
 
         st.markdown(f"**Top scorers in GW{rgw}**")
         top = points.join(xp.rename("xP")).nlargest(15, "points")
@@ -742,6 +777,10 @@ with tab_players:
         table = table[table["status"] == "a"]
     xp_cols = [f"xp_{g}" for g in gameweeks]
     minutes_cols = [c for c in ("xmins", "p_play") if c in table]    # only minutes-aware models
+    if "rotation" in table and table["rotation"].notna().any():       # next GW's midweek factor
+        table = table.assign(midweek=[f"×{f:.2f} ({cups.ROTATION_LABELS.get(g, g)})" if isinstance(g, str) else ""
+                                      for f, g in zip(table["rotation_factor"], table["rotation"])])
+        minutes_cols += ["midweek"]
     if "market_out" in table:                                         # next GW's betting odds, when listed
         table = table.assign(market_says=np.where(table["market_out"].fillna(False).astype(bool), "Likely out", ""),
                              mkt_anytime=table["mkt_anytime"] * 100)
@@ -755,7 +794,7 @@ with tab_players:
     shown = shown.rename(columns={
         "name": "Player", "team_name": "Team", "team": "Team ID", "price": "£m", "selected_by": "Sel %",
         "chance": "Availability %", "xmins": f"xMins GW{gameweeks[0]}", "p_play": "P(plays)",
-        "mkt_anytime": "Scorer odds %", "market_says": "Market says",
+        "mkt_anytime": "Scorer odds %", "market_says": "Market says", "midweek": f"Midweek (GW{gameweeks[0]})",
         "xp_total": "Total xP", "xp_per_m": "xP per £m", **{f"xp_{g}": f"GW{g}" for g in gameweeks}})
     st.dataframe(style_team_column(shown, shown_team_ids),
         hide_index=True, width="stretch", height=420,
@@ -771,7 +810,9 @@ with tab_players:
     st.caption(f"{len(shown)} players · xP is per gameweek, scaled by FPL's injury flag "
                "(assumes +25% recovery per week) and summed over double gameweeks. 'Market says: Likely out' means "
                "the betting market prices him at 6% or less to score next gameweek, which almost always means "
-               "he's been ruled out; that week's xP is cut to 10%.")
+               "he's been ruled out; that week's xP is cut to 10%. 'Midweek': his club played a cup or European "
+               "match before the next gameweek, and his xP was multiplied by what his own minutes in it have meant "
+               "(see the Guide's glossary).")
 
     st.markdown("**Fixtures ahead**")
     rows = {}
@@ -780,7 +821,9 @@ with tab_players:
             for team, opp, home, fdr in ((f["team_h"], f["team_a"], "H", f["team_h_difficulty"]),
                                          (f["team_a"], f["team_h"], "A", f["team_a_difficulty"])):
                 rows.setdefault(team, {}).setdefault(f["event"], []).append((f"{team_short[opp]} ({home})", fdr))
-    ticker = pd.DataFrame({f"GW{g}": {team_short[t]: ", ".join(l for l, _ in v.get(g, [])) or "blank"
+    badge = midweek_badges(season, tuple(gameweeks))
+    ticker = pd.DataFrame({f"GW{g}": {team_short[t]: (f"[{badge[(t, g)]}] " if (t, g) in badge else "")
+                                       + (", ".join(l for l, _ in v.get(g, [])) or "blank")
                                        for t, v in rows.items()} for g in gameweeks})
     difficulty = pd.DataFrame({f"GW{g}": {team_short[t]: (sum(d for _, d in v[g]) / len(v[g]) if g in v else 0)
                                            for t, v in rows.items()} for g in gameweeks})
@@ -794,7 +837,9 @@ with tab_players:
         return [f"background-color: {FDR_BG.get(round(d), '#f0efec')}; color: {FDR_FG.get(round(d), '#0b0b0b')}"
                 for d in difficulty[col.name]]
 
-    st.caption("FPL fixture difficulty")
+    st.caption("FPL fixture difficulty. [UCL Tue] and the like: the club's cup or European match in the week "
+               "before that gameweek (UCL Champions League, UEL Europa League, UECL Conference League, EFL EFL Cup; "
+               "days in UK time).")
     legend = st.columns(5)
     for difficulty_level, slot in enumerate(legend, start=1):
         slot.markdown(

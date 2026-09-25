@@ -35,6 +35,16 @@ def _scale(report: dict) -> alt.Scale:
     primary, reference = _names(report)
     return alt.Scale(domain=[primary, reference], range=[MLP_COLOUR, BASE_COLOUR])
 
+def _midweek_factors() -> str:
+    """The default model's midweek factors in words, if `xpfpl train` / `xpfpl cups` has fitted them."""
+    from xpfpl.data import cups
+    table = cups.factors(config.MODEL)
+    if not table:
+        return "They haven't been fitted yet: run `xpfpl cups` or retrain."
+    parts = [f"{cups.ROTATION_LABELS.get(k, k)} ×{v:.2f}" for k, v in table.items()]
+    return f"For the default model ({config.MODEL}): " + "; ".join(parts) + "."
+
+
 GLOSSARY = [
     ("xP (expected points)",
      "The model's prediction of how many FPL points a player will score in a gameweek. It's an "
@@ -71,6 +81,13 @@ GLOSSARY = [
     ("Ensemble (model: ensemble)",
      "The average of the MLP, LightGBM and xMins predictions. Different models make different "
      "mistakes, so the average is usually as good as the best of them and steadier."),
+    ("Midweek factor",
+     "When a club plays a cup or European match before a gameweek, each of its players' xP for that "
+     "gameweek is multiplied by a factor for his own role in it, once the match has been played. "
+     "Regular starters (60+ minutes a match lately) barely move, rested or not; squad players who "
+     "weren't used score less than the model expects that weekend, and those who played score more. "
+     "Fitted on 2025-26 onwards, where the cup and European data starts, and only for the next "
+     "gameweek: later weeks show the midweek matches but aren't adjusted. " + _midweek_factors()),
     ("FPL's own xP",
      "The expected-points figure the official game shows for each player, taken as it stood before "
      "each match. It is essentially recent form, so it is a yardstick, not a rival model."),
@@ -601,8 +618,9 @@ def render() -> None:
                        f"`{config.MODEL}`, one of {len(models.NAMES)} you can train and compare. **Retrain** "
                        "refits it on the latest data."),
         ("4. Decide", "An optimiser picks transfers, XI, bench, captain and chips to maximise xP over the "
-                      "next few gameweeks, within FPL's rules - planning a squad for each week, not just "
-                      "this one."),
+                      "next few gameweeks, within FPL's rules. By default it holds one squad across those "
+                      "weeks: planning transfers week by week is an option, but it scored fewer points "
+                      "when past seasons were replayed."),
     ]
     for slot, (title, body) in zip(c, steps):
         with slot.container(border=True):

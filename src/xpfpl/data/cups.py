@@ -350,3 +350,42 @@ def gameweek_minutes(season: str, gw: int) -> pd.Series:
     fixtures, minutes = load()
     ids = fixtures.loc[(fixtures["season"] == season) & (fixtures["gw"] == gw), "match_id"]
     return minutes[minutes["match_id"].isin(set(ids))].groupby("code")["minutes"].sum()
+
+
+def player_minutes_before(season: str, gw: int, people: pd.DataFrame) -> pd.Series:
+    """Minutes per player (`people`: id, code, team_code) in the cup and European matches before
+    `gw`, by id. A player at a club that played but missing from the match's squad list didn't play
+    (0); a player whose club had no midweek match is left out."""
+    by_code = gameweek_minutes(season, gw)
+    played = matches(season)
+    played = played[(played["gw"] == gw) & played["finished"]]
+    clubs = set(played["home_code"].dropna()) | set(played["away_code"].dropna())
+    people = people.set_index("id")
+    minutes = people["code"].map(by_code)
+    return minutes.where(minutes.notna() | ~people["team_code"].isin(clubs), 0.0).dropna()
+
+
+# Short names for badges, and next week's rotation groups in a few words (the website has its own
+# copy of both in web/src/midweek.ts).
+SHORT = {"champions-league": "UCL", "europa-league": "UEL", "conference-league": "UECL", "efl-cup": "EFL",
+         "fa-cup": "FA", "uefa-super-cup": "USC", "community-shield": "CS"}
+NAMES = {"champions-league": "Champions League", "europa-league": "Europa League",
+         "conference-league": "Conference League", "efl-cup": "EFL Cup", "fa-cup": "FA Cup",
+         "uefa-super-cup": "UEFA Super Cup", "community-shield": "Community Shield"}
+ROTATION_LABELS = {"regular_rested": "regular, rested", "regular_part": "regular, part of it",
+                   "regular_full": "regular, whole match", "squad_unused": "squad, not used",
+                   "squad_played": "squad, played"}
+
+
+def badges(season: str, gameweeks) -> dict[tuple[int, int], str]:
+    """(team_code, gw) -> "UCL Tue" for each club's cup or European match(es) before those
+    gameweeks. The weekday is UK time: a European Tuesday night is Wednesday morning in Australia."""
+    m = matches(season)
+    m = m[m["gw"].isin(list(gameweeks)) & m["kickoff"].notna()]
+    out: dict[tuple[int, int], list[str]] = {}
+    for r in m.itertuples():
+        label = f"{SHORT.get(r.tournament, r.tournament)} {pd.Timestamp(r.kickoff).tz_convert('Europe/London'):%a}"
+        for code in (r.home_code, r.away_code):
+            if pd.notna(code):
+                out.setdefault((int(code), int(r.gw)), []).append(label)
+    return {k: ", ".join(v) for k, v in out.items()}

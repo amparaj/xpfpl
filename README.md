@@ -57,8 +57,11 @@ Everything in one place, no command line needed. The tabs follow the Guide's wee
 - **Guide**: how it works, the weekly routine, how accurate each model is, what the season replays
   scored, how the tuning parameters were chosen, and a glossary.
 - **Gameweek Review**: any finished GW. Your points against the average, what the model expected
-  per player, the best XI you could have picked from the same squad, and that week's top scorers.
-- **Players & Fixtures**: xP for every player with filters, and a fixture difficulty ticker.
+  per player (and his minutes in any cup or European match that week), the best XI you could have
+  picked from the same squad, that week's top scorers, and the midweek results before it.
+- **Players & Fixtures**: xP for every player with filters (and the midweek factor on next week's
+  xP, when there is one), and a fixture difficulty ticker that marks each club's cup and European
+  matches ("[UCL Tue]").
 - **Markets**: what the betting markets think ("Market Odds") next to the model's own team
   ratings ("Our Odds"). For the next gameweek: win/draw/loss odds, each side's expected goals and
   clean-sheet chance, how the odds moved, the biggest moves over the 90 minutes or 1, 3, 7 or 14 days before the deadline (team news
@@ -68,7 +71,8 @@ Everything in one place, no command line needed. The tabs follow the Guide's wee
   relegation, top scorer, most assists, most clean sheets), now against the start of the season.
 - **Plan Ahead**: transfers, XI, bench, captain and chip advice for the next gameweek, and the team
   for each later GW in the horizon. Set an active chip (Wildcard, Free Hit, Triple Captain, Bench
-  Boost), override free transfers, bank and hits, and force or ban players.
+  Boost), override free transfers, bank and hits, and force or ban players. The pitch marks a
+  player whose club plays midweek that week.
 - **My Season**: points and rank by gameweek, chips used and left, transfer history.
 
 The top of the sidebar counts down to the next deadline and shows where the current gameweek is:

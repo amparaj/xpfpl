@@ -279,16 +279,7 @@ def _market_histories(market: pd.DataFrame) -> dict[tuple[str, int], dict]:
 def _midweek_minutes(season: str, gw: int, people: pd.DataFrame | None) -> pd.Series | None:
     """Minutes per element in the cup and European matches before `gw` (data/cups.py)."""
     from xpfpl.data import cups
-    if people is None:
-        return None
-    by_code = cups.gameweek_minutes(season, gw)
-    played = cups.matches(season)
-    played = played[(played["gw"] == gw) & played["finished"]]
-    clubs = set(played["home_code"].dropna()) | set(played["away_code"].dropna())
-    # A player at a club that played but missing from the match's squad list didn't play: 0.
-    people = people.set_index("id")
-    minutes = people["code"].map(by_code)
-    return minutes.where(minutes.notna() | ~people["team_code"].isin(clubs), 0.0).dropna()
+    return None if people is None else cups.player_minutes_before(season, gw, people)
 
 
 def _accuracy(season: str, model: str) -> dict:
