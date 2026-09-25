@@ -246,18 +246,24 @@ export default function MarketsPage() {
   const matchColumns: Column<MatchView>[] = [
     { key: "match", label: "Match", value: (m) => m.label },
     ...only<MatchView>(isLive, [{ key: "ko", label: "Kick-off", value: (m: MatchView) => m.kickoff, render: (m: MatchView) => when(m.kickoff) }]),
-    { key: "home", label: "Home", numeric: true, value: (m) => m.home_win, render: (m) => pct(m.home_win), title: "Market odds of a home win" },
-    { key: "draw", label: "Draw", numeric: true, value: (m) => m.draw, render: (m) => pct(m.draw) },
-    { key: "away", label: "Away", numeric: true, value: (m) => m.away_win, render: (m) => pct(m.away_win) },
-    { key: "ours", label: "Ours H/D/A", value: (m) => m.ours_home_win, title: "The model's own team ratings",
-      render: (m) => m.ours_home_win === null ? "–" : `${pct(m.ours_home_win)} / ${pct(1 - m.ours_home_win - (m.ours_away_win ?? 0))} / ${pct(m.ours_away_win)}` },
-    { key: "xg", label: "Market goals", value: (m) => m.lam_home + m.lam_away, title: "Expected goals each side, fitted to all the goal markets",
-      render: (m) => `${dec(m.lam_home, 1)} – ${dec(m.lam_away, 1)}` },
-    { key: "oxg", label: "Our goals", value: (m) => m.ours_home, render: (m) => m.ours_home === null ? "–" : `${dec(m.ours_home, 1)} – ${dec(m.ours_away, 1)}` },
-    ...only<MatchView>(!isLive, [{ key: "actual", label: "Actual xG", value: (m: MatchView) => m.xg_home,
+    { key: "home", label: "Home", group: "Market", numeric: true, value: (m) => m.home_win, render: (m) => pct(m.home_win), title: "Market odds of a home win" },
+    { key: "draw", label: "Draw", group: "Market", numeric: true, value: (m) => m.draw, render: (m) => pct(m.draw), title: "Market odds of a draw" },
+    { key: "away", label: "Away", group: "Market", numeric: true, value: (m) => m.away_win, render: (m) => pct(m.away_win), title: "Market odds of an away win" },
+    { key: "ohome", label: "Home", group: "Our model", numeric: true, value: (m) => m.ours_home_win, render: (m) => pct(m.ours_home_win),
+      title: "Chance of a home win from the model's own club ratings" },
+    { key: "odraw", label: "Draw", group: "Our model", numeric: true, value: oursDraw, render: (m) => pct(oursDraw(m)),
+      title: "Chance of a draw from the model's own club ratings" },
+    { key: "oaway", label: "Away", group: "Our model", numeric: true, value: (m) => m.ours_away_win, render: (m) => pct(m.ours_away_win),
+      title: "Chance of an away win from the model's own club ratings" },
+    { key: "xg", label: "Market", group: "Goals (home – away)", value: (m) => m.lam_home + m.lam_away,
+      title: "Expected goals each side, fitted to all the goal markets", render: (m) => `${dec(m.lam_home, 1)} – ${dec(m.lam_away, 1)}` },
+    { key: "oxg", label: "Ours", group: "Goals (home – away)", value: (m) => m.ours_home, title: "Expected goals each side from the model's own club ratings",
+      render: (m) => m.ours_home === null ? "–" : `${dec(m.ours_home, 1)} – ${dec(m.ours_away, 1)}` },
+    ...only<MatchView>(!isLive, [{ key: "actual", label: "Actual xG", group: "Goals (home – away)", value: (m: MatchView) => m.xg_home,
+      title: "Expected goals (xG) each side in the match itself",
       render: (m: MatchView) => m.xg_home === null ? "–" : `${dec(m.xg_home, 1)} – ${dec(m.xg_away, 1)}` }]),
-    { key: "csh", label: "CS home", numeric: true, value: (m) => m.cs_home, render: (m) => pct(m.cs_home), title: "Clean-sheet chance, home side" },
-    { key: "csa", label: "CS away", numeric: true, value: (m) => m.cs_away, render: (m) => pct(m.cs_away) },
+    { key: "csh", label: "CS Home", numeric: true, value: (m) => m.cs_home, render: (m) => pct(m.cs_home), title: "Clean-sheet chance, home side" },
+    { key: "csa", label: "CS Away", numeric: true, value: (m) => m.cs_away, render: (m) => pct(m.cs_away), title: "Clean-sheet chance, away side" },
     { key: "o25", label: "Over 2.5", numeric: true, value: (m) => m.over25, render: (m) => pct(m.over25) },
     { key: "btts", label: "Both score", numeric: true, value: (m) => m.btts, render: (m) => pct(m.btts) },
     ...only<MatchView>(!isLive, [{ key: "fav", label: "Favourite won?", value: (m: MatchView) => { const f = favourite(m); return f === null ? null : Number(f); },
@@ -302,8 +308,9 @@ export default function MarketsPage() {
           <h3>Match by match</h3>
           <Table columns={matchColumns} data={matches} rowKey={(m) => m.slug} />
           <Note>
-            "Market goals" are the expected goals for each side that best fit all of a match's goal markets at once
-            (result, totals, team totals, both teams to score). "Ours" are the model's club ratings{isLive ? ` for GW${site.meta.next_gw}` : " before that gameweek"}.
+            The market's goals are the expected goals for each side that best fit all of a match's goal markets at once
+            (result, totals, team totals, both teams to score). "Our model" and "Ours" come from the model's own club
+            ratings{isLive ? ` for GW${site.meta.next_gw}` : " before that gameweek"}.
           </Note>
           <Movement key={`${season}-${pick}`} matches={matches} end={deadline} histories={histories} />
           <h3>Anytime goalscorer odds</h3>
@@ -319,6 +326,11 @@ export default function MarketsPage() {
       <MarketAccuracy data={rows(file?.accuracy)} />
     </>
   );
+}
+
+/** The model's chance of a draw: whatever its home and away win chances leave. */
+function oursDraw(m: MatchView): number | null {
+  return m.ours_home_win === null || m.ours_away_win === null ? null : 1 - m.ours_home_win - m.ours_away_win;
 }
 
 /** `cols` when `show`, else nothing: for columns that only apply to live or to played matches. */

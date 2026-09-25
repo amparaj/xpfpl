@@ -159,6 +159,10 @@ th button { background: none; border: 0; padding: 0; cursor: pointer; font-weigh
 .num { text-align: right; font-variant-numeric: tabular-nums; }
 th.num button { flex-direction: row-reverse; }
 .sort-mark { font-size: 9px; color: var(--muted); min-width: 8px; display: inline-block; }
+/* Group headings over several columns: they scroll away, the column headings below stay put. */
+tr.group-row th { position: static; text-align: center; color: var(--muted); font-size: 12px; padding-bottom: 2px; border-bottom: 0; }
+tr.group-row th.group-start { border-bottom: 1px solid var(--grid); }
+.group-start { border-left: 1px solid var(--grid); }
 tr.clickable { cursor: pointer; }
 tbody tr:hover { background: var(--hover); }
 tr.selected { background: var(--selected) !important; }

@@ -120,6 +120,19 @@ export interface Column<T> {
   render?: (r: T) => ReactNode;
   numeric?: boolean;
   title?: string;
+  /** A heading over this column and its neighbours with the same group (e.g. "Market" over Home/Draw/Away). */
+  group?: string;
+}
+
+/** The group heading row: one cell per run of neighbouring columns with the same group. */
+function groupRuns<T>(columns: Column<T>[]): { group?: string; span: number; start: number }[] {
+  const runs: { group?: string; span: number; start: number }[] = [];
+  columns.forEach((c, i) => {
+    const last = runs[runs.length - 1];
+    if (last && c.group && last.group === c.group) last.span++;
+    else runs.push({ group: c.group, span: 1, start: i });
+  });
+  return runs;
 }
 
 export function Table<T>({ columns, data, sort: initialSort, desc: initialDesc = true, limit, rowKey, onRow, selected }: {
@@ -148,13 +161,26 @@ export function Table<T>({ columns, data, sort: initialSort, desc: initialDesc =
     });
   }, [columns, data, sort, desc]);
   const shown = limit && !all ? sorted.slice(0, limit) : sorted;
+  const runs = columns.some((c) => c.group) ? groupRuns(columns) : null;
+  // The first column of each group gets a rule down its left edge, in every row.
+  const starts = new Set(runs?.filter((r) => r.group).map((r) => r.start));
+  const cls = (c: Column<T>, i: number) => [c.numeric && "num", starts.has(i) && "group-start"].filter(Boolean).join(" ") || undefined;
   return (
     <div className="table-wrap">
       <table>
         <thead>
+          {runs && (
+            <tr className="group-row">
+              {runs.map((r) => (
+                <th key={r.start} colSpan={r.span} className={r.group ? "group-start" : undefined} scope={r.group ? "colgroup" : undefined}>
+                  {r.group}
+                </th>
+              ))}
+            </tr>
+          )}
           <tr>
-            {columns.map((c) => (
-              <th key={c.key} className={c.numeric ? "num" : undefined} title={c.title}
+            {columns.map((c, i) => (
+              <th key={c.key} className={cls(c, i)} title={c.title}
                   aria-sort={sort === c.key ? (desc ? "descending" : "ascending") : undefined}>
                 <button onClick={() => {
                   if (sort === c.key) setDesc(!desc);
@@ -173,8 +199,8 @@ export function Table<T>({ columns, data, sort: initialSort, desc: initialDesc =
             return (
               <tr key={key} onClick={onRow ? () => onRow(r) : undefined}
                   className={`${onRow ? "clickable" : ""} ${selected === key ? "selected" : ""}`}>
-                {columns.map((c) => (
-                  <td key={c.key} className={c.numeric ? "num" : undefined}>
+                {columns.map((c, i) => (
+                  <td key={c.key} className={cls(c, i)}>
                     {c.render ? c.render(r) : String(c.value(r) ?? "–")}
                   </td>
                 ))}
