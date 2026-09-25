@@ -431,12 +431,14 @@ figures), **Gameweeks** (every result, each player's points against the xP forec
 season: picks against the hindsight-best XI, transfers, chips), **Model Accuracy** and **Data** (the
 archive). It doesn't train or plan.
 The Markets page's upcoming-match odds, price histories and season markets come from
-`data/odds.json`, which a scheduled GitHub Action (`.github/workflows/odds-snapshot.yml`) fetches
-from Polymarket every 30 minutes and adds to the `gh-pages` commit. The browser never calls
-Polymarket itself, because it's blocked on some networks (Australian ISPs, for one). `publish` keeps
-the branch's latest `odds.json`. Played matches' price charts come from the export
-(`market_history/`, built from the archive). To look at live odds locally, run
-`node web/scripts/odds-snapshot.ts web/public` (Node 23.6+) after `xpfpl export`.
+`odds.json` on the `odds` branch, which a scheduled GitHub Action (`.github/workflows/odds-snapshot.yml`)
+fetches from Polymarket every 5 minutes; the page reads it through raw.githubusercontent.com. The
+browser never calls Polymarket itself, because it's blocked on some networks (Australian ISPs, for
+one), and the file isn't on `gh-pages` because every push there rebuilds the site (Pages allows
+about 10 builds an hour). Played matches' price charts come from the export (`market_history/`,
+built from the archive). To see live odds locally, run
+`node web/scripts/odds-snapshot.ts web/public/data/meta.json web/public/data/odds.json`
+(Node 23.6+) after `xpfpl export`.
 
 ```bash
 xpfpl publish          # export -> build web/ -> push web/dist to gh-pages

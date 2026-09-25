@@ -80,10 +80,10 @@ export interface Accuracy { validation: any; comparison: any; tuning: any; score
 
 const cache = new Map<string, Promise<any>>();
 
-/** A file from public/data/, fetched once. Resolves to null if it doesn't exist. */
+/** A file from public/data/ (or a full URL), fetched once. Resolves to null if it doesn't exist. */
 export function load<T>(path: string): Promise<T | null> {
   if (!cache.has(path)) {
-    cache.set(path, fetch(`./data/${path}`).then((r) => (r.ok ? r.json() : null)).catch(() => null));
+    cache.set(path, fetch(/^https?:/.test(path) ? path : `./data/${path}`).then((r) => (r.ok ? r.json() : null)).catch(() => null));
   }
   return cache.get(path)!;
 }

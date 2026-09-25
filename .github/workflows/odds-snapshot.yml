@@ -1,24 +1,24 @@
-# Saves Polymarket's live odds as data/odds.json on the gh-pages branch, so the website's Markets
-# page reads them from its own domain. The browser never calls Polymarket itself: it's blocked on
-# some networks (Australian ISPs among them), and GitHub's runners aren't.
+# Saves Polymarket's live odds as odds.json on the `odds` branch, for the website's Markets page.
+# The browser never calls Polymarket itself: it's blocked on some networks (Australian ISPs among
+# them), and GitHub's runners aren't. The page reads the file through raw.githubusercontent.com,
+# which allows requests from any website and caches for 5 minutes.
 #
-# Every 30 minutes: ~100 requests to Polymarket's public APIs a run, far under their rate limits,
-# and 48 Pages deploys a day, under GitHub's soft limit of 10 an hour. Scheduled runs are often
-# a few minutes late, and GitHub pauses schedules after 60 days without a commit to the repo.
+# Every 5 minutes (the shortest schedule GitHub allows; runs are often a few minutes late):
+# ~100 requests to Polymarket's public APIs a run, well under their rate limits. The file lives on
+# its own branch rather than gh-pages because every gh-pages push rebuilds the site, and Pages has
+# a soft limit of 10 builds an hour. The branch is one commit, replaced each run, so it doesn't grow.
 #
-# gh-pages holds one commit (`xpfpl publish` force-pushes it), so this amends that commit rather
-# than adding one, and `publish` carries the latest odds.json over. Scheduled workflows only run
-# from the default branch.
+# Scheduled workflows only run from the default branch, and GitHub pauses them after 60 days
+# without activity in the repo.
 name: Odds snapshot
 
 on:
   schedule:
-    - cron: "11,41 * * * *"
+    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 permissions:
   contents: write
-  pages: write            # to request a Pages build after the push
 
 concurrency:
   group: odds-snapshot
@@ -27,42 +27,33 @@ concurrency:
 jobs:
   snapshot:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 4
     steps:
       - uses: actions/checkout@v5
         with:
-          path: main
           sparse-checkout: web
-
-      - uses: actions/checkout@v5
-        with:
-          ref: gh-pages
-          path: site
 
       - uses: actions/setup-node@v5
         with:
           node-version: 24
 
-      # Runs web/src/polymarket.ts directly (Node strips the types), so no npm install.
+      # The club codes come from the published site's meta.json. Node runs web/src/polymarket.ts
+      # directly (it strips the types), so there's no npm install.
       - name: Fetch the odds
-        run: node main/web/scripts/odds-snapshot.ts site
-
-      - name: Amend the gh-pages commit
-        working-directory: site
         run: |
-          git add data/odds.json
-          if git diff --cached --quiet; then
-            echo "Nothing new."
-            exit 0
-          fi
-          base=$(git rev-parse HEAD)
+          mkdir -p "$RUNNER_TEMP/odds"
+          git fetch --quiet --depth=1 origin gh-pages
+          git show FETCH_HEAD:data/meta.json > "$RUNNER_TEMP/meta.json"
+          node web/scripts/odds-snapshot.ts "$RUNNER_TEMP/meta.json" "$RUNNER_TEMP/odds/odds.json"
+
+      - name: Replace the odds branch
+        working-directory: ${{ runner.temp }}/odds
+        run: |
+          git init --quiet -b odds
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit --quiet --amend --no-edit
-          # The lease fails if a publish landed while this ran: the next run adds the odds to it.
-          git push --quiet --force-with-lease=gh-pages:$base origin HEAD:gh-pages \
-            || { echo "gh-pages moved on during the run; the next run will catch up."; exit 0; }
-          gh api --method POST "repos/${{ github.repository }}/pages/builds" --silent \
-            || echo "Couldn't request a Pages build (the push may already have started one)."
+          git add odds.json
+          git commit --quiet -m "Odds $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push --quiet --force "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" HEAD:odds
         env:
           GH_TOKEN: ${{ github.token }}

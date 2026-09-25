@@ -1,6 +1,6 @@
 // Live Polymarket odds. The fetching runs in a scheduled GitHub Action (web/scripts/odds-snapshot.ts,
-// on GitHub's US runners), which saves data/odds.json next to the site: the browser only reads that
-// file, because Polymarket is blocked on some networks (Australian ISPs among them).
+// on GitHub's runners), which saves odds.json on the repo's `odds` branch: the browser only reads
+// that file, because Polymarket is blocked on some networks (Australian ISPs among them).
 // A port of the parts of src/xpfpl/data/markets.py the live view needs: finding the EPL match
 // events, reading each market's question, and fitting the expected goals the odds imply.
 
@@ -253,11 +253,21 @@ export function resultHistory(history: MatchHistory, end: Date, days: number): {
   return out.sort((a, b) => a.time.getTime() - b.time.getTime());
 }
 
-/** What the scheduled GitHub Action saves as data/odds.json: the browser never calls Polymarket
+/** What the scheduled GitHub Action saves as odds.json: the browser never calls Polymarket
  * itself, because some networks block it (Australia does). */
 export interface OddsSnapshot {
   fetched_at: string; matches: LiveMatch[]; scorers: LiveScorer[]; outrights: Outright[];
   history: Record<string, MatchHistory>;
+}
+
+/** Where the page reads odds.json. On GitHub Pages (<owner>.github.io/<repo>/), the `odds` branch
+ * through raw.githubusercontent.com, which allows any website and caches for 5 minutes: the
+ * Action refreshes it without rebuilding the site. Anywhere else (npm run dev), data/odds.json. */
+export function oddsUrl(): string {
+  const { hostname, pathname } = window.location;
+  if (!hostname.endsWith(".github.io")) return "odds.json";
+  const owner = hostname.slice(0, -".github.io".length), repo = pathname.split("/")[1];
+  return `https://raw.githubusercontent.com/${owner}/${repo}/odds/odds.json`;
 }
 
 /** P(scoring more than the opponent) with independent Poisson goals. */

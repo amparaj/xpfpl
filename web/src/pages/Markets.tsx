@@ -4,7 +4,7 @@ import { color } from "../colors";
 import { Chart, Club, Legend, Loading, Note, Segmented, Table, plotDefaults, useClubName, type Column } from "../components/ui";
 import { rows, type Markets as MarketsFile, type Player, type Row } from "../data";
 import { dec, pct, pts, signed, when } from "../format";
-import { poissonWin, resultHistory, type LiveScorer, type MatchHistory, type OddsSnapshot, type Outright } from "../polymarket";
+import { poissonWin, resultHistory, oddsUrl, type LiveScorer, type MatchHistory, type OddsSnapshot, type Outright } from "../polymarket";
 import { useData, useSite, type Site } from "../site";
 
 const LIVE = "live";
@@ -151,7 +151,8 @@ function SeasonMarkets({ snapshot, live, fetched }: { snapshot: MarketsFile["out
   const list = live && live.length ? live : saved;
   const events = useMemo(() => [...new Set(list.map((o) => o.event))].sort(), [list]);
   const [event, setEvent] = useState<string>("");
-  const chosen = events.includes(event) ? event : events.find((e) => /champion/i.test(e)) ?? events[0];
+  // The title race: "champion" as a word, not "EFL Championship" or "Champions League".
+  const chosen = events.includes(event) ? event : events.find((e) => /\bchampion\b/i.test(e)) ?? events[0];
   // An outcome nobody has traded sits at its opening price (often 50%): that isn't odds.
   const outcomes = list.filter((o) => o.event === chosen && !Number.isNaN(o.probability) && o.volume > 0)
     .sort((a, b) => b.probability - a.probability).slice(0, 12);
@@ -190,9 +191,9 @@ export default function MarketsPage() {
   const site = useSite();
   const club = useClubName();
   const file = useData<MarketsFile>("markets.json");
-  // Live odds come from odds.json, which a GitHub Action refreshes every 30 minutes: the browser
+  // Live odds come from odds.json, which a GitHub Action refreshes every 5 minutes: the browser
   // never calls Polymarket (it's blocked on some networks). Matches that have kicked off since drop out.
-  const odds = useData<OddsSnapshot>("odds.json");
+  const odds = useData<OddsSnapshot>(oddsUrl());
   const live = useMemo(() => {
     if (!odds) return odds;
     const upcoming = odds.matches.filter((m) => new Date(m.kickoff).getTime() > Date.now());
@@ -268,7 +269,7 @@ export default function MarketsPage() {
       <h2>Markets</h2>
       <p className="lede">
         What the betting markets (Polymarket) thought, next to the model's own club ratings. For played gameweeks the odds
-        are as they stood at the FPL deadline, beside what happened. Upcoming matches' odds are refreshed every 30 minutes.
+        are as they stood at the FPL deadline, beside what happened. Upcoming matches' odds are refreshed every 5 minutes.
       </p>
       <div className="toolbar">
         <label>

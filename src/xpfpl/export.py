@@ -1,8 +1,8 @@
 """The website's data: JSON files in web/public/data/ for the static site in web/.
 
 The site looks back at the season. It never trains or plans; it reads these files. Live betting
-odds come from data/odds.json, which a scheduled GitHub Action (.github/workflows/odds-snapshot.yml)
-refreshes on the gh-pages branch every 30 minutes; `publish` carries the latest one over.
+odds come from odds.json on the `odds` branch, which a scheduled GitHub Action
+(.github/workflows/odds-snapshot.yml) refreshes every 5 minutes.
 
   meta.json          season, gameweeks, clubs, the club ratings for the next GW ("Our Odds")
   players.json       every player as FPL shows them now, plus the saved forecast for the next GW
@@ -338,7 +338,7 @@ def build_site() -> Path:
 def publish(dist: Path, branch: str = "gh-pages", remote: str = "origin", url: str | None = None) -> None:
     """Push `dist` to `branch` as a single commit that replaces whatever was there, so the site's
     data never piles up in the repo's history. GitHub Pages serves that branch. `url` overrides
-    the remote's URL. The branch's data/odds.json (the Action's live odds) is carried over."""
+    the remote's URL."""
     (dist / ".nojekyll").write_text("", encoding="utf-8")         # serve files as they are
     url = url or subprocess.run(["git", "remote", "get-url", remote], cwd=config.ROOT, check=True,
                                 capture_output=True, text=True).stdout.strip()
@@ -350,13 +350,6 @@ def publish(dist: Path, branch: str = "gh-pages", remote: str = "origin", url: s
             value = subprocess.run(["git", "config", key], cwd=config.ROOT, capture_output=True, text=True).stdout.strip()
             if value:
                 subprocess.run([*git, "config", key, value], check=True)
-        # The live odds are written on the branch by the scheduled Action, not here: keep its latest.
-        odds = dist / "data" / "odds.json"
-        if subprocess.run([*git, "fetch", "-q", "--depth=1", url, branch], capture_output=True).returncode == 0:
-            kept = subprocess.run([*git, "show", "FETCH_HEAD:data/odds.json"], capture_output=True)
-            if kept.returncode == 0:
-                odds.parent.mkdir(parents=True, exist_ok=True)
-                odds.write_bytes(kept.stdout)
         subprocess.run([*git, "add", "-A"], check=True)
         stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
         subprocess.run([*git, "commit", "-q", "-m", f"Publish the site ({stamp})"], check=True)
