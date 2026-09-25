@@ -20,7 +20,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest"]
 app = ["streamlit>=1.50", "altair"]
-gbm = ["lightgbm>=4.0"]   # only needed for `--model gbm`
+gbm = ["lightgbm>=4.0"]   # `--model gbm`, and a member of the default ensemble (skipped without it)
 
 [project.scripts]
 xpfpl = "xpfpl.cli:main"

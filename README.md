@@ -41,7 +41,7 @@ Requires Python 3.11+.
 python -m venv .venv
 .venv\Scripts\activate            # Windows  (macOS/Linux: source .venv/bin/activate)
 pip install torch --index-url https://download.pytorch.org/whl/cpu   # or the CUDA build if you have a GPU
-pip install -e ".[dev]"
+pip install -e ".[dev,gbm]"     # gbm: LightGBM, one of the three models in the default ensemble
 ```
 
 ## Dashboard
@@ -122,7 +122,7 @@ Useful options for `recommend`:
 | `--free-transfers N` | override the estimated free transfers |
 | `--bank 1.5` | override money in the bank (£m) |
 | `--model gbm` | use another model (see [Models](#models)) |
-| `--no-plan` | just this week's transfers, instead of a route through the horizon |
+| `--plan` / `--no-plan` | also plan the following weeks' transfers, or just this week's. The default follows `PLAN_TRANSFERS` in `config.py` (off: the tuning found planning doesn't pay) |
 | `--sensitivity 20` | re-solve 20 times with every player's xP randomly off by ~25%, and report how often each transfer and captain wins: is the advice robust or a coin-flip? |
 
 Without `--team-id`, `recommend` builds the best squad from scratch within `--budget` (default £100m).
@@ -168,13 +168,13 @@ dashboard). Each trains to its own file in `models/`, so they can coexist and be
 
 | Model | What it is |
 | --- | --- |
-| `mlp` | A 128-64 multi-layer perceptron on the rolling features. The default. |
+| `mlp` | A 128-64 multi-layer perceptron on the rolling features. |
 | `components` | One head per scoring component - will he play, play 60 minutes, score, assist, keep a clean sheet, make saves, earn bonus - combined with FPL's own scoring rules (`xpfpl/scoring.py`). Trained with the loss that suits each head: cross-entropy for the yes/no questions, Poisson for counts. Its xP comes with a breakdown: "5.1, of which 1.8 from goals". |
 | `embed` | The MLP plus a learned vector per player and per club (`nn.Embedding`), so it can hold an opinion beyond recent form. |
 | `sequence` | A GRU reading the last six matches *in order*, so 2-2-12 and 5-4-3 look different even though both average 5. |
 | `gbm` | LightGBM on the same features: the tabular benchmark the neural nets have to beat. `pip install -e ".[gbm]"`. |
 | `xmins` | Expected minutes first: a softmax over *no minutes / a cameo / 60+*, then the points a cameo and a full game are worth. xP = P(cameo) x points + P(60+) x points. Also reports expected minutes and the chance of playing, shown in `predict` output and the dashboard. |
-| `ensemble` | The average of `mlp`, `gbm` and `xmins` (without `gbm` if LightGBM isn't installed). |
+| `ensemble` | The average of `mlp`, `gbm` and `xmins` (without `gbm` if LightGBM isn't installed). The default. |
 | `baseline` | Each player's last-5-match average. No learning; the yardstick. |
 
 ```bash
@@ -256,7 +256,7 @@ much as the choice of model. Three results are worth calling out.
 - A **3-gameweek horizon beats 5 and 8**. Predictions five weeks out are too vague to plan
   around, and the longer horizons also make the optimiser far slower.
 - **Planning transfers week by week doesn't pay** - it is implemented and available
-  (`plan_transfers=True`, the `--no-plan` flag inverts it), and the replay prefers the simpler
+  (`--plan`, or `PLAN_TRANSFERS = True`), and the replay prefers the simpler
   mode by a small margin. Worse, the more hits the planner is allowed, the *worse* it does
   (2172 at zero hits, 2145 at two), because it schedules hits on predictions that don't survive
   contact with the next gameweek. With planning off, the optimiser never takes a hit at all.
@@ -327,8 +327,8 @@ models is the room left to improve.
   readable pieces (Haaland's 6.7 = 1.9 minutes + 3.3 goals + 0.6 assists + 1.0 bonus - 0.1 cards),
   which `xpfpl predict --model components` prints.
 - Accuracy is not the last word: the season replays below rank the models differently, and by
-  bigger margins. `config.MODEL` stays on `mlp` (LightGBM is an optional dependency),
-  but see the note there before taking that as a recommendation.
+  bigger margins. `config.MODEL` is `ensemble`, the best of them on points:
+  see the replays below.
 - The report also holds a calibration curve (does 6 xP really mean six points?), accuracy per
   position and per gameweek, and the error distribution.
 
@@ -340,27 +340,30 @@ runs the same optimiser with the free transfers and bank it has accrued, then sc
 real, with auto-subs, captaincy and hits.
 
 ```bash
-xpfpl backtest --season 2024-25                        # ~2200-2300 points over 38 GWs
+xpfpl backtest --season 2024-25                        # ~2300-2450 points over 38 GWs
 xpfpl backtest --season 2024-25 --chips                # also play chips, at the config.py thresholds
 xpfpl backtest --sweep horizon=3,5,8 discount=0.8,0.9  # one run per combination, ranked by points
 ```
 
-Replaying two seasons (horizon 3, discount 0.8, planning transfers, no chips) puts the models in
+Replaying two seasons (horizon 3, discount 0.8, no chips, the tuned settings) puts the models in
 a different order from the accuracy table, and by much bigger margins:
 
-| Model | 2023-24 | 2024-25 | Average |
-| --- | --- | --- | --- |
-| `gbm` | 2461 | 2300 | **2381** |
-| `ensemble` | 2287 | 2447 | 2367 |
-| `mlp` | 2176 | 2261 | 2219 |
-| `xmins` | 2170 | 2154 | 2162 |
+| Model | 2023-24 | 2024-25 | Average | Planning transfers week by week |
+| --- | --- | --- | --- | --- |
+| `ensemble` | 2466 | 2399 | **2433** | 2367 |
+| `gbm` | 2434 | 2381 | 2408 | 2381 |
+| `mlp` | 2234 | 2337 | 2286 | 2219 |
+| `xmins` | - | - | - | 2162 |
 
-LightGBM wins again (it also won before the feature work, 2305 to the MLP's 2210, at the older
-settings), and the ensemble - two-thirds PyTorch - is within noise of it. Two lessons, both worth
-more than the numbers: a 0.005 difference in RMSE is noise, but which players end up in the squad
-is not; and the way to choose between models here is to play the seasons out, not to rank error
-metrics. If you want the points, set `MODEL = "ensemble"` (keeps the PyTorch models in the loop)
-or `"gbm"` in `src/xpfpl/config.py`, with `pip install -e ".[gbm]"`.
+The ensemble - two-thirds PyTorch - comes out on top, with LightGBM within noise of it, so it is
+the default (`MODEL = "ensemble"`; install LightGBM with `pip install -e ".[gbm]"`, or the
+ensemble runs without it). Holding one squad over the horizon (`PLAN_TRANSFERS = False`, the
+default) beats planning transfers week by week for every model, by 26-66 points a season. Two
+lessons, both worth more than the numbers: a 0.005 difference in RMSE is noise, but which players
+end up in the squad is not; and the way to choose between models here is to play the seasons out,
+not to rank error metrics. A club rotation feature (starters changed per match) is a case in
+point: it improved every model's RMSE (the ensemble's 2.601 -> 2.597) and cost 54 points a
+season in the replay, so it was left out.
 
 ### The live record
 
@@ -497,7 +500,7 @@ src/xpfpl/
   models/__init__.py the model registry: fit / load / save, one interface
   models/trainer.py  the training loop the PyTorch models share (batches, early stopping)
   models/baseline.py 5-match average baseline
-  models/mlp.py      the default MLP
+  models/mlp.py      the MLP
   models/components.py  a head per scoring component, combined with FPL's rules
   models/embed.py    MLP + player and club embeddings
   models/sequence.py GRU over the last six matches
