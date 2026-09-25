@@ -149,6 +149,7 @@ input[type="search"] { min-width: 180px; }
 .key-dot { width: 9px; height: 9px; border-radius: 50%; }
 .tag { font-size: 12px; padding: 1px 6px; border-radius: 4px; background: var(--chip); color: var(--ink-2); white-space: nowrap; }
 .tag.warn { background: color-mix(in srgb, var(--bad) 16%, transparent); color: var(--bad); }
+.tag.cup { background: color-mix(in srgb, var(--s1) 14%, transparent); color: var(--ink); margin-right: 4px; }
 
 /* ---------------------------------------------------------------- tables */
 
@@ -158,6 +159,8 @@ th, td { padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--grid
 th { font-weight: 600; color: var(--ink-2); font-size: 13px; position: sticky; top: 0; background: var(--surface); }
 th button { background: none; border: 0; padding: 0; cursor: pointer; font-weight: inherit; color: inherit; display: inline-flex; gap: 3px; }
 .num { text-align: right; font-variant-numeric: tabular-nums; }
+table.compact { width: auto; max-width: 100%; margin: 8px 0 12px; }
+table.compact td:first-child { white-space: normal; }
 th.num button { flex-direction: row-reverse; }
 .sort-mark { font-size: 9px; color: var(--muted); min-width: 8px; display: inline-block; }
 /* Group headings over several columns: they scroll away, the column headings below stay put. */
@@ -240,6 +243,7 @@ tr.selected { background: var(--selected) !important; }
 .xp-name { font-weight: 700; font-size: 13.5px; padding: 1px 4px; border-radius: 4px 4px 0 0;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .xp-fix { padding: 0 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: #f0efec; color: #555555; }
+.xp-mid { padding: 0 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: #fff4d6; color: #5c4400; font-size: 11px; }
 .xp-pts { background: #ffffff; color: #111111; padding: 0 4px; border-radius: 0 0 4px 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .xp-badge { position: absolute; top: 0; z-index: 1; min-width: 21px; height: 21px; padding: 0 4px;
   border-radius: 11px; font-size: 11.5px; font-weight: 700; line-height: 21px; }

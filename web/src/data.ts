@@ -35,6 +35,14 @@ export interface Meta {
   polymarket_teams: Record<string, number>; out_threshold: number;
   ratings_next: { gw: number; mu: number; home: number; prior: [number, number]; clubs: Record<string, [number, number]> } | Record<string, never>;
   repo: string | null;
+  /** This season's cup and European matches (data/cups.py), filed under the gameweek they come before. */
+  midweek?: Columns;
+}
+/** A cup or European match. `home_code`/`away_code` are FPL club codes for Premier League clubs. */
+export interface MidweekMatch {
+  match_id: string; gw: number; kickoff: string | null; tournament: string;
+  home_code: number | null; away_code: number | null; home_name: string; away_name: string;
+  home_score: number | null; away_score: number | null; finished: boolean;
 }
 export interface Player {
   id: number; code: number; web_name: string; first_name: string; second_name: string; team: number;
@@ -51,7 +59,7 @@ export interface GwRow {
   saves: number; bonus: number; bps: number; expected_goals: number | null; expected_assists: number | null;
   expected_goals_conceded: number | null; defensive_contribution: number | null; starts: number | null;
   value: number; selected: number; transfers_balance: number; xp: number | null;
-  pre_chance?: number | null; pre_news?: string | null;
+  pre_chance?: number | null; pre_news?: string | null; midweek_minutes?: number | null;
 }
 export interface Gameweek {
   gw: number; xp_source: string; players: Columns;
@@ -75,7 +83,12 @@ export interface Markets {
   matches: Columns; accuracy: Columns; scorers?: Columns;
   outrights?: Columns & { snapshot: string };
 }
-export interface Accuracy { validation: any; comparison: any; tuning: any; scorecard: any }
+/** The midweek rotation factors on next week's xP, per group (data/cups.py `fit`). */
+export interface RotationFit {
+  seasons: string[];
+  groups: Record<string, { rows: number; points: number; xp: number; ratio: number | null; factor: number }>;
+}
+export interface Accuracy { validation: any; comparison: any; tuning: any; scorecard: any; rotation?: RotationFit | null }
 
 const cache = new Map<string, Promise<any>>();
 

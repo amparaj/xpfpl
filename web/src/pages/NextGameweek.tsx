@@ -1,15 +1,17 @@
 import * as Plot from "@observablehq/plot";
 import { useCallback, useMemo, useState } from "react";
 import { color } from "../colors";
-import { Chart, Club, Loading, Note, Segmented, Table, plotDefaults, type Column } from "../components/ui";
+import { Chart, Club, Loading, MidweekBadge, Note, Segmented, Table, plotDefaults, type Column } from "../components/ui";
 import { rows, type NextGw, type Player } from "../data";
-import { POSITIONS, money, pct, pts, when } from "../format";
+import { POSITIONS, dec, money, pct, pts, when } from "../format";
+import { ROTATION, clubMidweek, competition } from "../midweek";
 import { oddsUrl, type OddsSnapshot } from "../polymarket";
 import { matchPlayer, ours } from "../ratings";
 import { useData, useSite, type Site } from "../site";
 
 interface Forecast {
   element: number; xp_total: number; p_play?: number | null; xmins?: number | null;
+  rotation?: string | null; rotation_factor?: number | null;
   [xp: `xp_${number}`]: number;
 }
 type Row = Forecast & { player: Player };
@@ -92,6 +94,8 @@ export default function NextGameweek() {
   const shown = players.filter((r) => !position || r.player.element_type === position)
     .sort((a, b) => b.xp_total - a.xp_total).slice(0, 30);
   const hasPlay = players.some((r) => r.p_play != null);
+  const hasRotation = players.some((r) => r.rotation != null);
+  const midweekAhead = horizon.some((g) => site.midweek.some((m) => m.gw === g));
 
   const playerColumns: Column<Row>[] = [
     { key: "name", label: "Player", value: (r) => r.player.web_name },
@@ -99,7 +103,14 @@ export default function NextGameweek() {
     { key: "pos", label: "Pos", value: (r) => r.player.element_type, render: (r) => POSITIONS[r.player.element_type] },
     { key: "price", label: "Price", numeric: true, value: (r) => r.player.now_cost, render: (r) => money(r.player.now_cost) },
     { key: "opp", label: `GW${gw}`, value: (r) => clubMatches(site, r.player.team, gw).map((m) => m.opponent).join(),
-      render: (r) => <Opponents matches={clubMatches(site, r.player.team, gw)} />, title: `Opponent in GW${gw}` },
+      render: (r) => <><MidweekBadge matches={clubMidweek(site, r.player.team, gw)} /><Opponents matches={clubMatches(site, r.player.team, gw)} /></>,
+      title: `Opponent in GW${gw}` },
+    ...(hasRotation ? [{ key: "midweek", label: "Midweek", numeric: true, value: (r: Row) => r.rotation_factor,
+                         render: (r: Row) => r.rotation ? (
+                           <span className={(r.rotation_factor ?? 1) >= 1 ? "good" : "bad"} title={ROTATION[r.rotation] ?? r.rotation}>
+                             ×{dec(r.rotation_factor)}
+                           </span>) : <span className="muted">–</span>,
+                         title: "What his minutes in the midweek cup or European match did to his GW xP" } as Column<Row>] : []),
     ...(hasPlay ? [{ key: "play", label: "Plays", numeric: true, value: (r: Row) => r.p_play, render: (r: Row) => pct(r.p_play),
                      title: "The model's chance he plays in the next gameweek" } as Column<Row>] : []),
     ...horizon.map((g): Column<Row> => ({ key: `xp${g}`, label: `GW${g}`, group: "xP", numeric: true,
@@ -115,6 +126,7 @@ export default function NextGameweek() {
       key: `gw${g}`, label: `GW${g}`, value: (c) => c.byGw[i].map((m) => m.win ?? 0).reduce((a, b) => a + b, 0),
       render: (c) => c.byGw[i].length ? (
         <span className="fixture-cells">
+          <MidweekBadge matches={clubMidweek(site, c.team, g)} />
           {c.byGw[i].map((m, j) => (
             <span key={j} className="fixture-cell" style={{ background: `color-mix(in srgb, var(--s1) ${Math.round((m.win ?? 0) * 80)}%, transparent)` }}
                   title={m.gf === null ? undefined : `Expected goals ${m.gf.toFixed(1)}–${m.ga!.toFixed(1)}, win chance ${pct(m.win)}`}>
@@ -147,11 +159,20 @@ export default function NextGameweek() {
                    options={[{ value: 0, label: "All" }, ...[1, 2, 3, 4].map((p) => ({ value: p, label: POSITIONS[p] }))]} />
       </div>
       <Table columns={playerColumns} data={shown} sort="total" rowKey={(r) => r.element} />
-      <Note>The 30 highest expected points (xP) over GW{horizon[0]}–{horizon[horizon.length - 1]}, already cut for injury flags.</Note>
+      <Note>
+        The 30 highest expected points (xP) over GW{horizon[0]}–{horizon[horizon.length - 1]}, already cut for injury flags.
+        {hasRotation && <> Midweek: a player whose club played a cup or European match this week has his GW{gw} xP
+          multiplied by what his own minutes in it have meant in the past, most of all for squad players (hover for his group;
+          see <a href="#about">About</a>).</>}
+      </Note>
 
       <h3>Fixtures</h3>
       <Table columns={fixtureColumns} data={clubs} sort="avg" rowKey={(c) => c.team} />
-      <Note>Each club's chance of winning, from the model's own club ratings (the darker, the likelier).</Note>
+      <Note>
+        Each club's chance of winning, from the model's own club ratings (the darker, the likelier).
+        {midweekAhead && <> A badge such as <span className="tag cup">{competition("champions-league").short} Tue</span>
+          marks a cup or European match in the week before that gameweek (hover for the opponent).</>}
+      </Note>
 
       <h3>Ruled out by the betting markets</h3>
       {out === undefined ? <Loading />

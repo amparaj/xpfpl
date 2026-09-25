@@ -10,6 +10,8 @@ export interface PlayerGw {
   bps: number; saves: number; yellow: number; red: number; xg: number | null; xa: number | null;
   dc: number | null; xp: number | null; price: number; selected: number; transfers: number;
   pre_chance: number | null; pre_news: string | null;
+  /** Minutes in the cup or European match before this gameweek (null: his club had none, or no data). */
+  midweek: number | null;
 }
 
 const add = (a: number | null, b: number | null | undefined) =>
@@ -28,7 +30,7 @@ export function totals(g: Gameweek): Map<number, PlayerGw> {
       t = { element: r.element, gw: g.gw, matches: 0, opponents: [], minutes: 0, points: 0, goals: 0, assists: 0,
             clean_sheets: 0, bonus: 0, bps: 0, saves: 0, yellow: 0, red: 0, xg: null, xa: null, dc: null, xp: null,
             price: r.value, selected: r.selected, transfers: r.transfers_balance,
-            pre_chance: r.pre_chance ?? null, pre_news: r.pre_news ?? null };
+            pre_chance: r.pre_chance ?? null, pre_news: r.pre_news ?? null, midweek: r.midweek_minutes ?? null };
       out.set(r.element, t);
     }
     t.matches += 1;

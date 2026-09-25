@@ -57,8 +57,11 @@ Everything in one place, no command line needed. The tabs follow the Guide's wee
 - **Guide**: how it works, the weekly routine, how accurate each model is, what the season replays
   scored, how the tuning parameters were chosen, and a glossary.
 - **Gameweek Review**: any finished GW. Your points against the average, what the model expected
-  per player, the best XI you could have picked from the same squad, and that week's top scorers.
-- **Players & Fixtures**: xP for every player with filters, and a fixture difficulty ticker.
+  per player (and his minutes in any cup or European match that week), the best XI you could have
+  picked from the same squad, that week's top scorers, and the midweek results before it.
+- **Players & Fixtures**: xP for every player with filters (and the midweek factor on next week's
+  xP, when there is one), and a fixture difficulty ticker that marks each club's cup and European
+  matches ("[UCL Tue]").
 - **Markets**: what the betting markets think ("Market Odds") next to the model's own team
   ratings ("Our Odds"). For the next gameweek: win/draw/loss odds, each side's expected goals and
   clean-sheet chance, how the odds moved, the biggest moves over the 90 minutes or 1, 3, 7 or 14 days before the deadline (team news
@@ -68,7 +71,8 @@ Everything in one place, no command line needed. The tabs follow the Guide's wee
   relegation, top scorer, most assists, most clean sheets), now against the start of the season.
 - **Plan Ahead**: transfers, XI, bench, captain and chip advice for the next gameweek, and the team
   for each later GW in the horizon. Set an active chip (Wildcard, Free Hit, Triple Captain, Bench
-  Boost), override free transfers, bank and hits, and force or ban players.
+  Boost), override free transfers, bank and hits, and force or ban players. The pitch marks a
+  player whose club plays midweek that week.
 - **My Season**: points and rank by gameweek, chips used and left, transfer history.
 
 The top of the sidebar counts down to the next deadline and shows where the current gameweek is:
@@ -461,11 +465,13 @@ drops the old season's match-by-match history.
 A public, read-only look back at the season, served by GitHub Pages from the `gh-pages` branch
 (https://amparaj.github.io/xpfpl/). Its pages, in order: **About** (where it opens: the project and
 how the model forecasts, picks a team and is tested, in plain language, with the latest accuracy
-figures), **Model Accuracy**, **Past Gameweeks** (every result, each player's points against the xP
-forecast), **Next Gameweek** (the forecast saved for the coming gameweek: captain picks, the top
-players over the horizon, each club's fixtures with our win chances, and anyone the betting
-markets have ruled out), **Players**, **Markets** (the betting odds at each deadline against what happened),
-**The Model's Team** and **Data** (the archive). It doesn't train or plan.
+figures and the midweek factors), **Model Accuracy**, **Past Gameweeks** (every result, the cup and
+European results before it, each player's points against the xP forecast and his midweek minutes),
+**Next Gameweek** (the forecast saved for the coming gameweek: captain picks, the top players over
+the horizon with any midweek factor on their xP, each club's fixtures with our win chances and a
+badge for its cup or European matches, and anyone the betting markets have ruled out), **Players**, **Markets** (the betting odds at each deadline against what happened),
+**The Model's Team** (its pitch marks a club's midweek match) and **Data** (the archive). It
+doesn't train or plan.
 
 **The Model's Team** is a paper FPL team that does exactly what the model says. Before each
 deadline `xpfpl recommend` (or `xpfpl modelteam`) makes its transfers, XI, bench order, captain

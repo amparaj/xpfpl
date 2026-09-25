@@ -20,6 +20,7 @@ role into a factor on next week's xP (see "adjusting xP" below); `predict.py` ap
 """
 
 import io
+import re
 import json
 
 import numpy as np
@@ -285,3 +286,106 @@ def adjust(frame: pd.DataFrame, next_gw: int, model: str) -> pd.DataFrame:
     out["rotation"] = labels
     out["rotation_factor"] = labels.map(table).fillna(1.0).astype(float)
     return out
+
+
+# ---------------------------------------------------------------- for the website
+
+INITIALS = {"ac", "aek", "afc", "aik", "as", "az", "bk", "bsc", "cd", "cf", "cfr", "cp", "csm", "fc", "ff", "fk",
+            "hjk", "if", "ik", "lask", "nk", "paok", "psv", "rb", "sc", "sk", "ss", "ssc", "sv", "tsg", "ud", "vfb", "vfl"}
+
+
+def _club_name(slug: str) -> str:
+    """'club-brugge' -> 'Club Brugge', 'sabah-fk' -> 'Sabah FK', 'ac-milan' -> 'AC Milan'."""
+    words = slug.replace("-", " ").split()
+    return " ".join(w.upper() if w in INITIALS else w.title() for w in words)
+
+
+def names(match_id: str, tournament: str) -> tuple[str, str]:
+    """(home, away) club names from the source's match id, e.g.
+    '26-27-champions-league-club-brugge-vs-aston-villa-2026-09-08' -> ('Club Brugge', 'Aston Villa')."""
+    body = re.sub(r"^\d\d-\d\d-", "", match_id)
+    body = body.removeprefix(f"{tournament}-")
+    body = re.sub(r"-\d{4}-\d{2}-\d{2}$", "", body)
+    home, _, away = body.partition("-vs-")
+    return _club_name(home), _club_name(away)
+
+
+def matches(season: str) -> pd.DataFrame:
+    """`season`'s cup and European matches, one row each (not one per EPL side): gw, kick-off,
+    competition, both clubs (FPL `team_code` where it's an EPL club, and a name), and the score."""
+    fixtures, _ = load()
+    fx = fixtures[fixtures["season"] == season].drop_duplicates("match_id")
+    if fx.empty:
+        return pd.DataFrame(columns=["match_id", "gw", "kickoff", "tournament", "home_code", "away_code",
+                                    "home_name", "away_name", "home_score", "away_score", "finished"])
+    home = fx["was_home"].astype(bool)
+    named = [names(m, t) for m, t in zip(fx["match_id"], fx["tournament"])]
+    out = pd.DataFrame({
+        "match_id": fx["match_id"],
+        "gw": fx["gw"].astype(int),
+        "kickoff": fx["kickoff_time"],
+        "tournament": fx["tournament"],
+        "home_code": fx["team_code"].where(home, fx["opp_code"]).astype("Int64"),
+        "away_code": fx["opp_code"].where(home, fx["team_code"]).astype("Int64"),
+        "home_name": [h for h, _ in named],
+        "away_name": [a for _, a in named],
+        "home_score": fx["goals_for"].where(home, fx["goals_against"]),
+        "away_score": fx["goals_against"].where(home, fx["goals_for"]),
+        "finished": fx["finished"].astype(bool),
+    })
+    # The source sometimes leaves an EPL club's code out (Fulham v AFC Bournemouth in the EFL Cup):
+    # fill it from the club's name wherever that name has a code elsewhere.
+    code_of = {}
+    for side in ("home", "away"):
+        known = out[out[f"{side}_code"].notna()]
+        code_of.update(zip(known[f"{side}_name"], known[f"{side}_code"]))
+    for side in ("home", "away"):
+        out[f"{side}_code"] = out[f"{side}_code"].fillna(out[f"{side}_name"].map(code_of)).astype("Int64")
+    return out.sort_values(["kickoff", "match_id"], na_position="last", ignore_index=True)
+
+
+def gameweek_minutes(season: str, gw: int) -> pd.Series:
+    """Minutes per player `code` in the cup and European matches filed under `gw` (the midweek
+    before it). Players in those squads who didn't come on have 0; everyone else is missing."""
+    fixtures, minutes = load()
+    ids = fixtures.loc[(fixtures["season"] == season) & (fixtures["gw"] == gw), "match_id"]
+    return minutes[minutes["match_id"].isin(set(ids))].groupby("code")["minutes"].sum()
+
+
+def player_minutes_before(season: str, gw: int, people: pd.DataFrame) -> pd.Series:
+    """Minutes per player (`people`: id, code, team_code) in the cup and European matches before
+    `gw`, by id. A player at a club that played but missing from the match's squad list didn't play
+    (0); a player whose club had no midweek match is left out."""
+    by_code = gameweek_minutes(season, gw)
+    played = matches(season)
+    played = played[(played["gw"] == gw) & played["finished"]]
+    clubs = set(played["home_code"].dropna()) | set(played["away_code"].dropna())
+    people = people.set_index("id")
+    minutes = people["code"].map(by_code)
+    return minutes.where(minutes.notna() | ~people["team_code"].isin(clubs), 0.0).dropna()
+
+
+# Short names for badges, and next week's rotation groups in a few words (the website has its own
+# copy of both in web/src/midweek.ts).
+SHORT = {"champions-league": "UCL", "europa-league": "UEL", "conference-league": "UECL", "efl-cup": "EFL",
+         "fa-cup": "FA", "uefa-super-cup": "USC", "community-shield": "CS"}
+NAMES = {"champions-league": "Champions League", "europa-league": "Europa League",
+         "conference-league": "Conference League", "efl-cup": "EFL Cup", "fa-cup": "FA Cup",
+         "uefa-super-cup": "UEFA Super Cup", "community-shield": "Community Shield"}
+ROTATION_LABELS = {"regular_rested": "regular, rested", "regular_part": "regular, part of it",
+                   "regular_full": "regular, whole match", "squad_unused": "squad, not used",
+                   "squad_played": "squad, played"}
+
+
+def badges(season: str, gameweeks) -> dict[tuple[int, int], str]:
+    """(team_code, gw) -> "UCL Tue" for each club's cup or European match(es) before those
+    gameweeks. The weekday is UK time: a European Tuesday night is Wednesday morning in Australia."""
+    m = matches(season)
+    m = m[m["gw"].isin(list(gameweeks)) & m["kickoff"].notna()]
+    out: dict[tuple[int, int], list[str]] = {}
+    for r in m.itertuples():
+        label = f"{SHORT.get(r.tournament, r.tournament)} {pd.Timestamp(r.kickoff).tz_convert('Europe/London'):%a}"
+        for code in (r.home_code, r.away_code):
+            if pd.notna(code):
+                out.setdefault((int(code), int(r.gw)), []).append(label)
+    return {k: ", ".join(v) for k, v in out.items()}

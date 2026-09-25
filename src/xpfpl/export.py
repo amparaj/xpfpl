@@ -4,17 +4,21 @@ The site looks back at the season. It never trains or plans; it reads these file
 odds come from odds.json on the `odds` branch, which a scheduled GitHub Action
 (.github/workflows/odds-snapshot.yml) refreshes.
 
-  meta.json          season, gameweeks, clubs, the club ratings for the next GW ("Our Odds")
+  meta.json          season, gameweeks, clubs, the club ratings for the next GW ("Our Odds"), and
+                     every cup and European match of the season (`midweek`, data/cups.py)
   players.json       every player as FPL shows them now, plus the saved forecast for the next GW
-  gws/gwNN.json      each played gameweek: every player's stats with the model's xP, and the fixtures
+  gws/gwNN.json      each played gameweek: every player's stats with the model's xP (and minutes in
+                     the midweek cup or European match before it), and the fixtures
   modelteam.json     the Model's Team: a paper FPL team run on the model's own advice, each week's
                      decision (saved before the deadline) and what it scored
-  next.json          the forecast saved for the next gameweek, for every week of its horizon
+  next.json          the forecast saved for the next gameweek, for every week of its horizon, with
+                     each player's midweek rotation group and the factor it put on his xP
   markets.json       Polymarket odds at each FPL deadline since 2024-25 next to what happened,
                      anytime-scorer odds, how the odds did against our ratings, season markets
   market_history/<season>/gwNN.json
                      each played match's home/draw/away prices before the deadline (movement chart)
-  accuracy.json      the model reports: validation, comparison, tuning and the live scorecard
+  accuracy.json      the model reports: validation, comparison, tuning, the live scorecard and the
+                     midweek rotation factors
 
 `xpfpl export` writes them; `xpfpl publish` builds the site and pushes it to the gh-pages branch.
 """
@@ -119,7 +123,7 @@ def _in_sample(matches: pd.DataFrame, season: str, gws: list[int], model: str) -
 
 def _meta(bs: dict, fixtures: list[dict], season: str, model: str, matches: pd.DataFrame, played: list[int]) -> dict:
     from xpfpl import style, teams
-    from xpfpl.data import markets
+    from xpfpl.data import cups, markets
 
     upcoming = next((ev for ev in bs["events"] if ev["is_next"]), None)
     ratings = {}
@@ -149,6 +153,7 @@ def _meta(bs: dict, fixtures: list[dict], season: str, model: str, matches: pd.D
         "club_colours": {c: [bg, style.CLUB_TEXT[c]] for c, bg in style.CLUB_COLOURS.items()},
         "polymarket_teams": markets.TEAM_CODES, "out_threshold": markets.OUT_THRESHOLD,
         "ratings_next": ratings, "repo": repo,
+        "midweek": table(cups.matches(season)),
     }
 
 
@@ -162,7 +167,8 @@ def _players(bs: dict, next_forecast: pd.Series | None) -> dict:
 
 
 def _gameweek(gw: int, rows: pd.DataFrame, fx: list[dict], xp: pd.Series, source: str,
-              snapshot: pd.DataFrame | None) -> dict:
+              snapshot: pd.DataFrame | None, midweek: pd.Series | None = None) -> dict:
+    """`midweek`: minutes per element in the cup and European matches before this gameweek."""
     rows = rows[[c for c in GW_COLUMNS if c in rows]].copy()
     for col in ("expected_goals", "expected_assists", "expected_goals_conceded"):
         rows[col] = pd.to_numeric(rows[col], errors="coerce")
@@ -171,6 +177,8 @@ def _gameweek(gw: int, rows: pd.DataFrame, fx: list[dict], xp: pd.Series, source
     # xP is per gameweek (summed over a double), so it goes on the player's first match row only.
     first = ~rows.duplicated("element")
     rows["xp"] = np.where(first, rows["element"].map(xp), np.nan)
+    if midweek is not None and len(midweek):
+        rows["midweek_minutes"] = np.where(first, rows["element"].map(midweek), np.nan)
     if snapshot is not None:                 # what FPL said about each player before this deadline
         s = snapshot.set_index("id")
         rows["pre_chance"] = rows["element"].map(s["chance_of_playing_next_round"])
@@ -196,7 +204,7 @@ def _next_gameweek(bs: dict, season: str, model: str) -> dict | None:
     t = saved[key]
     gws = sorted(int(c[3:]) for c in t if c.startswith("xp_") and c[3:].isdigit())
     keep = ["element", *[f"xp_{g}" for g in gws], "xp_total",
-            *[c for c in ("xmins", "p_play", "mkt_anytime", "market_out") if c in t]]
+            *[c for c in ("xmins", "p_play", "mkt_anytime", "market_out", "rotation", "rotation_factor") if c in t]]
     return {"gw": gw, "deadline": upcoming["deadline_time"], "model": key.split("_", 1)[1], "gameweeks": gws,
             "players": table(t[keep], digits=3)}
 
@@ -268,12 +276,21 @@ def _market_histories(market: pd.DataFrame) -> dict[tuple[str, int], dict]:
     return out
 
 
-def _accuracy(season: str) -> dict:
+def _midweek_minutes(season: str, gw: int, people: pd.DataFrame | None) -> pd.Series | None:
+    """Minutes per element in the cup and European matches before `gw` (data/cups.py)."""
+    from xpfpl.data import cups
+    return None if people is None else cups.player_minutes_before(season, gw, people)
+
+
+def _accuracy(season: str, model: str) -> dict:
     def load(path: Path):
         return json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
+    from xpfpl.data import cups
+    rotation = load(cups.FACTORS_PATH) or {}
     return {"validation": load(config.VALIDATION_PATH), "comparison": load(config.COMPARISON_PATH),
             "tuning": load(config.TUNING_PATH),
-            "scorecard": load(config.PREDICTIONS_DIR / season / "scorecard.json")}
+            "scorecard": load(config.PREDICTIONS_DIR / season / "scorecard.json"),
+            "rotation": rotation.get(model)}
 
 
 def export(model: str = config.MODEL, out: Path = config.SITE_DATA_DIR) -> list[Path]:
@@ -283,7 +300,7 @@ def export(model: str = config.MODEL, out: Path = config.SITE_DATA_DIR) -> list[
     bs, fx = api.bootstrap(), api.fixtures()
     season = api.current_season(bs)
     matches = load_matches()
-    rows, _ = archive.season_tables(season) if archive.has_season(season) else (pd.DataFrame(columns=["round"]), None)
+    rows, people = archive.season_tables(season) if archive.has_season(season) else (pd.DataFrame(columns=["round"]), None)
     played = sorted(int(g) for g in rows["round"].unique())
 
     forecasts = _saved_forecasts(season, model)
@@ -302,7 +319,8 @@ def export(model: str = config.MODEL, out: Path = config.SITE_DATA_DIR) -> list[
         else:
             xp = rebuilt[rebuilt["gw"] == gw].set_index("element")["xp"]
             source = f"rebuilt ({model}, in-sample: no forecast was saved before this deadline)"
-        written.append(_write(_gameweek(gw, rows[rows["round"] == gw], fx, xp, source, snapshots.get(gw)),
+        written.append(_write(_gameweek(gw, rows[rows["round"] == gw], fx, xp, source, snapshots.get(gw),
+                                        _midweek_minutes(season, gw, people)),
                               out / "gws" / f"gw{gw:02d}.json"))
     from xpfpl import modelteam
     written.append(_write(modelteam.season_record(season, rows, bs), out / "modelteam.json"))
@@ -315,7 +333,7 @@ def export(model: str = config.MODEL, out: Path = config.SITE_DATA_DIR) -> list[
         saved, _ = markets.load()
         for (market_season, gw), histories in _market_histories(saved).items():
             written.append(_write(histories, out / "market_history" / market_season / f"gw{gw:02d}.json"))
-    written.append(_write(_accuracy(season), out / "accuracy.json"))
+    written.append(_write(_accuracy(season, model), out / "accuracy.json"))
     return written
 
 
