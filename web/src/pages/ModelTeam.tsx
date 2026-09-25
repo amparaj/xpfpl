@@ -159,6 +159,24 @@ export default function ModelTeamPage() {
         <>
           <h3>Week by week</h3>
           <Table columns={columns} data={[...weeks].reverse()} rowKey={(w) => w.gw} />
+          <dl className="defs">
+            <dt>Live</dt>
+            <dd>
+              Decided and saved before that gameweek's deadline, using only what was known then: the honest record, like
+              entering a real team.
+            </dd>
+            <dt>Replay</dt>
+            <dd>
+              Reconstructed afterwards, for the weeks before the live record began. The backtest (the same tool that tests
+              the model on past seasons) decided them with a model trained only on earlier seasons, each player's form as
+              it stood at each deadline, and the same optimiser, settings and chip rules. Two things make a replay a little
+              less trustworthy: it has no injury news, so a player who had been ruled out can look available, and it was
+              decided after the matches, so it relies on the code being fair rather than a timestamp before the deadline.
+              That's why the chart shows replays paler.
+            </dd>
+            <dt>Carried over</dt>
+            <dd>No decision was saved before the deadline, so last week's team played on and a free transfer was banked, as FPL does.</dd>
+          </dl>
         </>
       )}
 
@@ -182,8 +200,7 @@ export default function ModelTeamPage() {
       <Note>
         {replayed.length > 0 && <>
           GW{replayed.length === 1 ? replayed[0] : `${replayed[0]}–${replayed[replayed.length - 1]}`} {replayed.length === 1 ? "is a replay" : "are replays"}:
-          the live record began later, so those weeks were filled in by the backtest, with a model trained only on earlier seasons and each
-          player's form as it stood at each deadline (but without that week's injury news).{" "}
+          the live record began later.{" "}
         </>}
         The model is <strong>{data.model}</strong>. It starts with £100m and pays FPL's selling prices, so it can't profit from rises it didn't hold.
       </Note>

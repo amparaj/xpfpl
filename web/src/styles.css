@@ -223,3 +223,13 @@ tr.selected { background: var(--selected) !important; }
 
 .fixture-cells { display: inline-flex; gap: 4px; }
 .fixture-cell { display: inline-block; padding: 2px 6px; border-radius: 4px; color: var(--ink); font-variant-numeric: tabular-nums; }
+
+/* ---------------------------------------------------------------- definitions */
+
+.defs { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 12px 0 0; max-width: 820px; font-size: 14px; }
+.defs dt { font-weight: 600; }
+.defs dd { margin: 0; color: var(--ink-2); }
+@media (max-width: 640px) {
+  .defs { grid-template-columns: 1fr; gap: 2px; }
+  .defs dd { margin-bottom: 8px; }
+}
