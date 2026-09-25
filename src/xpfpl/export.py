@@ -2,7 +2,8 @@
 
 The site looks back at the season. It never trains or plans; it reads these files. Live betting
 odds come from odds.json on the `odds` branch, which a scheduled GitHub Action
-(.github/workflows/odds-snapshot.yml) refreshes every 5 minutes.
+(.github/workflows/odds-snapshot.yml) refreshes every 5 minutes from 48 hours before each
+deadline until 2 hours after the gameweek's last kick-off, and every 3 hours otherwise.
 
   meta.json          season, gameweeks, clubs, the club ratings for the next GW ("Our Odds")
   players.json       every player as FPL shows them now, plus the saved forecast for the next GW

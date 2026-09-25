@@ -432,7 +432,10 @@ season: picks against the hindsight-best XI, transfers, chips), **Model Accuracy
 archive). It doesn't train or plan.
 The Markets page's upcoming-match odds, price histories and season markets come from
 `odds.json` on the `odds` branch, which a scheduled GitHub Action (`.github/workflows/odds-snapshot.yml`)
-fetches from Polymarket every 5 minutes; the page reads it through raw.githubusercontent.com. The
+fetches from Polymarket every 5 minutes from 48 hours before each deadline until 2 hours after the
+gameweek's last kick-off, and every 3 hours otherwise (the schedule wakes every 5 minutes and exits
+at once when a refresh isn't due; Actions -> Odds snapshot -> Run workflow refreshes by hand). The
+page reads it through raw.githubusercontent.com. The
 browser never calls Polymarket itself, because it's blocked on some networks (Australian ISPs, for
 one), and the file isn't on `gh-pages` because every push there rebuilds the site (Pages allows
 about 10 builds an hour). Played matches' price charts come from the export (`market_history/`,
