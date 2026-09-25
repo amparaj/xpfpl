@@ -1,5 +1,6 @@
-// Live Polymarket odds, fetched by the browser. Polymarket's Gamma and CLOB APIs allow requests
-// from any website (FPL's API doesn't, which is why everything else comes from the export).
+// Live Polymarket odds. The fetching runs in a scheduled GitHub Action (web/scripts/odds-snapshot.ts,
+// on GitHub's runners), which saves odds.json on the repo's `odds` branch: the browser only reads
+// that file, because Polymarket is blocked on some networks (Australian ISPs among them).
 // A port of the parts of src/xpfpl/data/markets.py the live view needs: finding the EPL match
 // events, reading each market's question, and fitting the expected goals the odds imply.
 
@@ -32,10 +33,13 @@ export interface LiveMatch {
 }
 export interface LiveScorer { slug: string; player: string; p: number; volume: number; home_code: number; away_code: number }
 
-async function getJson<T>(url: string): Promise<T> {
-  const r = await fetch(url);
-  if (!r.ok) throw new Error(`${r.status} from ${url}`);
-  return r.json();
+async function getJson<T>(url: string, tries = 3): Promise<T> {
+  for (let i = 1; ; i++) {
+    const r = await fetch(url).catch((e) => { if (i >= tries) throw e; return null; });
+    if (r?.ok) return r.json();
+    if (i >= tries) throw new Error(`${r?.status} from ${url}`);
+    await new Promise((done) => setTimeout(done, 2000 * i));
+  }
 }
 
 async function events(params: Record<string, string | number>): Promise<GammaEvent[]> {
@@ -194,24 +198,6 @@ export async function liveOdds(teamCodes: Record<string, number>): Promise<{ mat
   return { matches, scorers };
 }
 
-/** Result prices over the `days` before `end`, for the movement chart. Works for played matches too. */
-export async function resultHistory(slug: string, end: Date, days: number): Promise<{ time: Date; outcome: string; p: number }[]> {
-  const [main] = await getJson<GammaEvent[]>(`${GAMMA}/events?slug=${encodeURIComponent(slug)}`);
-  if (!main) return [];
-  const labels: Record<string, string> = { home_win: "Home win", draw: "Draw", away_win: "Away win" };
-  const out: { time: Date; outcome: string; p: number }[] = [];
-  const stop = Math.floor(end.getTime() / 1000);
-  await Promise.all(Object.entries(matchMarkets([main])).filter(([n]) => n in labels).map(async ([name, m]) => {
-    const token = firstToken(m);
-    if (!token) return;
-    const q = new URLSearchParams({ market: token, startTs: String(stop - Math.round(days * 86400)), endTs: String(stop),
-                                    fidelity: days >= 1 ? "60" : "5" });
-    const { history = [] } = await getJson<{ history?: { t: number; p: number }[] }>(`${CLOB}/prices-history?${q}`);
-    for (const pt of history) out.push({ time: new Date(pt.t * 1000), outcome: labels[name], p: pt.p });
-  }));
-  return out.sort((a, b) => a.time.getTime() - b.time.getTime());
-}
-
 export interface Outright { event: string; outcome: string; probability: number; volume: number }
 
 /** Today's season-long markets (title, top four, relegation, top scorer...). */
@@ -227,6 +213,61 @@ export async function liveOutrights(): Promise<Outright[]> {
     }
   }
   return out;
+}
+
+// ---------------------------------------------------------------- price histories
+
+type Points = [number, number][];                 // [unix seconds, price]
+/** One match's result prices (home_win, draw, away_win): hourly over the 14 days before the end,
+ * and every 5 minutes over the last 3 hours (the same two windows as the archive). */
+export interface MatchHistory { hourly: Record<string, Points>; fine: Record<string, Points> }
+
+const RESULTS = ["home_win", "draw", "away_win"];
+
+async function prices(token: string, stop: number, seconds: number, fidelity: number): Promise<Points> {
+  const q = new URLSearchParams({ market: token, startTs: String(stop - seconds), endTs: String(stop), fidelity: String(fidelity) });
+  const { history = [] } = await getJson<{ history?: { t: number; p: number }[] }>(`${CLOB}/prices-history?${q}`);
+  return history.map((pt) => [pt.t, pt.p]);
+}
+
+/** A live match's result-price histories up to `end` (the snapshot job fetches these). */
+export async function fetchHistory(match: LiveMatch, end: Date): Promise<MatchHistory> {
+  const stop = Math.floor(end.getTime() / 1000);
+  const out: MatchHistory = { hourly: {}, fine: {} };
+  await Promise.all(RESULTS.filter((n) => match.tokens[n]).map(async (name) => {
+    [out.hourly[name], out.fine[name]] = await Promise.all([prices(match.tokens[name], stop, 14 * 86400, 60),
+                                                            prices(match.tokens[name], stop, 3 * 3600, 5)]);
+  }));
+  return out;
+}
+
+/** Result prices over the `days` before `end`, for the movement chart: every 5 minutes for
+ * windows under a day, else hourly. */
+export function resultHistory(history: MatchHistory, end: Date, days: number): { time: Date; outcome: string; p: number }[] {
+  const labels: Record<string, string> = { home_win: "Home win", draw: "Draw", away_win: "Away win" };
+  const stop = end.getTime() / 1000, start = stop - days * 86400;
+  const out: { time: Date; outcome: string; p: number }[] = [];
+  for (const [name, points] of Object.entries(days >= 1 ? history.hourly : history.fine)) {
+    for (const [t, p] of points) if (t >= start && t <= stop && name in labels) out.push({ time: new Date(t * 1000), outcome: labels[name], p });
+  }
+  return out.sort((a, b) => a.time.getTime() - b.time.getTime());
+}
+
+/** What the scheduled GitHub Action saves as odds.json: the browser never calls Polymarket
+ * itself, because some networks block it (Australia does). */
+export interface OddsSnapshot {
+  fetched_at: string; matches: LiveMatch[]; scorers: LiveScorer[]; outrights: Outright[];
+  history: Record<string, MatchHistory>;
+}
+
+/** Where the page reads odds.json. On GitHub Pages (<owner>.github.io/<repo>/), the `odds` branch
+ * through raw.githubusercontent.com, which allows any website and caches for 5 minutes: the
+ * Action refreshes it without rebuilding the site. Anywhere else (npm run dev), data/odds.json. */
+export function oddsUrl(): string {
+  const { hostname, pathname } = window.location;
+  if (!hostname.endsWith(".github.io")) return "odds.json";
+  const owner = hostname.slice(0, -".github.io".length), repo = pathname.split("/")[1];
+  return `https://raw.githubusercontent.com/${owner}/${repo}/odds/odds.json`;
 }
 
 /** P(scoring more than the opponent) with independent Poisson goals. */

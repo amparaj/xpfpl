@@ -1,15 +1,19 @@
 """The website's data: JSON files in web/public/data/ for the static site in web/.
 
-The site looks back at the season. It never trains or plans; it reads these files. The only thing
-it fetches itself is live betting odds, because Polymarket's API accepts requests from any website
-and FPL's doesn't.
+The site looks back at the season. It never trains or plans; it reads these files. Live betting
+odds come from odds.json on the `odds` branch, which a scheduled GitHub Action
+(.github/workflows/odds-snapshot.yml) refreshes.
 
   meta.json          season, gameweeks, clubs, the club ratings for the next GW ("Our Odds")
   players.json       every player as FPL shows them now, plus the saved forecast for the next GW
   gws/gwNN.json      each played gameweek: every player's stats with the model's xP, and the fixtures
-  manager.json       one FPL team's season: points, rank, picks, transfers, chips, hindsight best XI
+  modelteam.json     the Model's Team: a paper FPL team run on the model's own advice, each week's
+                     decision (saved before the deadline) and what it scored
+  next.json          the forecast saved for the next gameweek, for every week of its horizon
   markets.json       Polymarket odds at each FPL deadline since 2024-25 next to what happened,
                      anytime-scorer odds, how the odds did against our ratings, season markets
+  market_history/<season>/gwNN.json
+                     each played match's home/draw/away prices before the deadline (movement chart)
   accuracy.json      the model reports: validation, comparison, tuning and the live scorecard
 
 `xpfpl export` writes them; `xpfpl publish` builds the site and pushes it to the gh-pages branch.
@@ -178,29 +182,23 @@ def _gameweek(gw: int, rows: pd.DataFrame, fx: list[dict], xp: pd.Series, source
             "fixtures": fixtures}
 
 
-def _manager(team_id: int, bs: dict, season_rows: pd.DataFrame, played: list[int]) -> dict:
-    from xpfpl import review
-
-    entry, history, transfers = api.entry(team_id), api.entry_history(team_id), api.entry_transfers(team_id)
-    gws = {}
-    for h in history["current"]:
-        gw = h["event"]
-        if gw not in played:
-            continue
-        rows = season_rows[season_rows["round"] == gw]
-        points = rows.groupby("element").agg(points=("total_points", "sum"), minutes=("minutes", "sum"))
-        r = review.review_picks(team_id, gw, bs, points)
-        best, plan = review.hindsight_best(r["picks"], gw, r["chip"])
-        gws[str(gw)] = {
-            "picks": [{"element": int(e), "slot": int(p.position), "multiplier": int(p.multiplier),
-                       "captain": bool(p.is_captain), "vice": bool(p.is_vice_captain)}
-                      for e, p in r["picks"].iterrows()],
-            "chip": r["chip"], "auto_subs": r["auto_subs"],
-            "best": round(float(best), 1), "best_xi": [int(p) for p in plan.lineups[gw]],
-            "best_captain": int(plan.captains[gw]),
-        }
-    return {"team_id": team_id, "name": entry["name"], "started": entry.get("started_event"),
-            "history": history["current"], "chips": history["chips"], "transfers": transfers, "gameweeks": gws}
+def _next_gameweek(bs: dict, season: str, model: str) -> dict | None:
+    """The forecast saved for the next gameweek (`model`'s if saved, otherwise any model's): xP
+    per player for every gameweek of its horizon, plus minutes and market odds where it has them."""
+    upcoming = next((ev for ev in bs["events"] if ev["is_next"]), None)
+    if upcoming is None:
+        return None
+    gw, saved = upcoming["id"], archive.predictions(season)
+    names = [f"gw{gw:02d}_{model}"] + sorted(k for k in saved if k.startswith(f"gw{gw:02d}_"))
+    key = next((k for k in names if k in saved), None)
+    if key is None:
+        return None
+    t = saved[key]
+    gws = sorted(int(c[3:]) for c in t if c.startswith("xp_") and c[3:].isdigit())
+    keep = ["element", *[f"xp_{g}" for g in gws], "xp_total",
+            *[c for c in ("xmins", "p_play", "mkt_anytime", "market_out") if c in t]]
+    return {"gw": gw, "deadline": upcoming["deadline_time"], "model": key.split("_", 1)[1], "gameweeks": gws,
+            "players": table(t[keep], digits=3)}
 
 
 def _markets(matches: pd.DataFrame) -> dict | None:
@@ -248,6 +246,28 @@ def _markets(matches: pd.DataFrame) -> dict | None:
     return out
 
 
+def _market_histories(market: pd.DataFrame) -> dict[tuple[str, int], dict]:
+    """Each played match's result prices up to the deadline, from the archive, per (season, gw):
+    slug -> {"hourly"/"fine": {"home_win"/"draw"/"away_win": [[t, p], ...]}}, the shape of
+    web/src/polymarket.ts's MatchHistory, for the movement chart."""
+    from xpfpl.data import markets
+    games = archive.polymarket_games()
+    windows = {"hourly": f"history_{markets.HISTORY_DAYS}d", "fine": f"history_{markets.FINE_HOURS}h_{markets.FINE_MINUTES}m"}
+    out: dict[tuple[str, int], dict] = {}
+    for r in market[["season", "gw", "slug"]].dropna().itertuples():
+        main = [e for e in games.get(r.slug, []) if e.get("slug") == r.slug]
+        found = {}
+        for name, m in markets._match_markets(main).items():
+            token = json.loads(m.get("clobTokenIds") or "[]")
+            if name in ("home_win", "draw", "away_win") and token:
+                for key, window in windows.items():
+                    points = archive.price_history(window, token[0]) or []
+                    found.setdefault(key, {})[name] = [[p["t"], round(p["p"], 4)] for p in points]
+        if found:
+            out.setdefault((r.season, int(r.gw)), {})[r.slug] = found
+    return out
+
+
 def _accuracy(season: str) -> dict:
     def load(path: Path):
         return json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
@@ -256,7 +276,8 @@ def _accuracy(season: str) -> dict:
             "scorecard": load(config.PREDICTIONS_DIR / season / "scorecard.json")}
 
 
-def export(team_id: int | None = None, model: str = config.MODEL, out: Path = config.SITE_DATA_DIR) -> list[Path]:
+def export(model: str = config.MODEL, out: Path = config.SITE_DATA_DIR) -> list[Path]:
+    from xpfpl.data import markets
     from xpfpl.data.history import load_matches
 
     bs, fx = api.bootstrap(), api.fixtures()
@@ -283,12 +304,17 @@ def export(team_id: int | None = None, model: str = config.MODEL, out: Path = co
             source = f"rebuilt ({model}, in-sample: no forecast was saved before this deadline)"
         written.append(_write(_gameweek(gw, rows[rows["round"] == gw], fx, xp, source, snapshots.get(gw)),
                               out / "gws" / f"gw{gw:02d}.json"))
-    if team_id:
-        print(f"Exporting FPL team {team_id}...")
-        written.append(_write(_manager(team_id, bs, rows, played), out / "manager.json"))
+    from xpfpl import modelteam
+    written.append(_write(modelteam.season_record(season, rows, bs), out / "modelteam.json"))
+    ahead = _next_gameweek(bs, season, model)
+    if ahead:
+        written.append(_write(ahead, out / "next.json"))
     market = _markets(matches)
     if market:
         written.append(_write(market, out / "markets.json"))
+        saved, _ = markets.load()
+        for (market_season, gw), histories in _market_histories(saved).items():
+            written.append(_write(histories, out / "market_history" / market_season / f"gw{gw:02d}.json"))
     written.append(_write(_accuracy(season), out / "accuracy.json"))
     return written
 

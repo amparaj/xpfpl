@@ -1,0 +1,69 @@
+# Saves Polymarket's live odds as odds.json on the `odds` branch, for the website's Markets page.
+# The browser never calls Polymarket itself: it's blocked on some networks (Australian ISPs among
+# them), and GitHub's runners aren't. The page reads the file through raw.githubusercontent.com,
+# which allows requests from any website and caches for 5 minutes.
+#
+# Scheduled runs only fetch when a refresh is due (`due` in web/scripts/odds-snapshot.ts) and
+# otherwise exit in seconds. A manual run (Actions -> Odds snapshot -> Run workflow) always fetches.
+#
+# A fetch is ~100 requests to Polymarket's public APIs, well under their rate limits. The file lives
+# on its own branch rather than gh-pages because every gh-pages push rebuilds the site, and Pages
+# has a soft limit of 10 builds an hour. The branch is one commit, replaced each time, so it
+# doesn't grow. Scheduled workflows only run from the default branch, and GitHub pauses them after
+# 60 days without activity in the repo.
+name: Odds snapshot
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: odds-snapshot
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: web
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+
+      # Node runs web/src/polymarket.ts directly (it strips the types), so there's no npm install.
+      - name: Fetch the odds (if due)
+        id: fetch
+        run: |
+          mkdir -p "$RUNNER_TEMP/odds"
+          git fetch --quiet --depth=1 origin gh-pages
+          git show FETCH_HEAD:data/meta.json > "$RUNNER_TEMP/meta.json"
+          when_due=""
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            if git fetch --quiet --depth=1 origin odds 2>/dev/null; then
+              git show FETCH_HEAD:odds.json > "$RUNNER_TEMP/previous.json"
+            fi
+            when_due="--when-due $RUNNER_TEMP/previous.json"
+          fi
+          node web/scripts/odds-snapshot.ts "$RUNNER_TEMP/meta.json" "$RUNNER_TEMP/odds/odds.json" $when_due
+          if [ -f "$RUNNER_TEMP/odds/odds.json" ]; then echo "fetched=true" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Replace the odds branch
+        if: steps.fetch.outputs.fetched == 'true'
+        working-directory: ${{ runner.temp }}/odds
+        run: |
+          git init --quiet -b odds
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add odds.json
+          git commit --quiet -m "Odds $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push --quiet --force "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" HEAD:odds
+        env:
+          GH_TOKEN: ${{ github.token }}

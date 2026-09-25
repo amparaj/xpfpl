@@ -99,6 +99,7 @@ xpfpl markets                      # betting odds (Polymarket) for every match s
 xpfpl train                        # train the model (after fetch and markets), validated on the last full season
 xpfpl predict                      # top xP picks per position for the next 5 GWs
 xpfpl recommend --team-id 1234567  # your team, transfers, captain and chip advice
+xpfpl modelteam                    # the website's Model's Team: its decision for the next GW
 xpfpl validate                     # score the model on a season it has never seen
 xpfpl compare                      # train every model on the same season and rank them
 xpfpl backtest --season 2024-25    # replay a whole season and count the points
@@ -391,7 +392,8 @@ only the consistent ones (across both seasons) are worth acting on.
    ```
    All three add their data to `archive/` as they go.
 2. **Before the deadline**: `xpfpl recommend --team-id <id>` (or the Plan Ahead tab). This saves
-   the forecast that the website's xP and the [live record](#the-live-record) are scored on.
+   the forecast that the website's xP and the [live record](#the-live-record) are scored on, and
+   makes the Model's Team's decision for the website (`archive/modelteam/`; `--no-model-team` skips it).
 3. **Update the website**: the sidebar's step 4, or `xpfpl publish`. It's live a minute or two later.
 4. **Commit the archive** every week or so. `main` only accepts pull requests, so the new files
    in `archive/` stay on your machine until you merge them (on Windows PowerShell, run the
@@ -426,22 +428,40 @@ drops the old season's match-by-match history.
 A public, read-only look back at the season, served by GitHub Pages from the `gh-pages` branch
 (https://amparaj.github.io/xpfpl/). Its pages, in order: **About** (where it opens: the project and
 how the model forecasts, picks a team and is tested, in plain language, with the latest accuracy
-figures), **Gameweeks** (every result, each player's points against the xP forecast), **Players**,
-**Markets** (the betting odds at each deadline against what happened), **My Team** (one FPL team's
-season: picks against the hindsight-best XI, transfers, chips), **Model Accuracy** and **Data** (the
-archive). It doesn't train or plan.
-The Markets page fetches upcoming matches' odds live from Polymarket, whose API accepts requests
-from any website (the FPL API doesn't, so everything else comes from the export).
+figures), **Model Accuracy**, **Next Gameweek** (the forecast saved for the coming gameweek: captain
+picks, the top players over the horizon, each club's fixtures with our win chances, and anyone the
+betting markets have ruled out), **Gameweeks** (every result, each player's points against the xP
+forecast), **Players**, **Markets** (the betting odds at each deadline against what happened),
+**The Model's Team** and **Data** (the archive). It doesn't train or plan.
+
+**The Model's Team** is a paper FPL team that does exactly what the model says. Before each
+deadline `xpfpl recommend` (or `xpfpl modelteam`) makes its transfers, XI, bench order, captain
+and chip with the same optimiser, config.py settings and chip rules, starting from the team's own
+squad, bank and free transfers, and saves the decision to `archive/modelteam/<season>/gwNN.json`.
+A decision is never changed after its deadline. The export scores each one against the results
+(auto-subs, vice-captain, chips, hits) and the hindsight-best XI from the same 15. Gameweeks
+played before the live record began are filled in once by the backtest (a model trained only on
+earlier seasons) and marked "replay"; a gameweek with no saved decision keeps last week's team.
+The Markets page's upcoming-match odds, price histories and season markets come from
+`odds.json` on the `odds` branch, which a scheduled GitHub Action (`.github/workflows/odds-snapshot.yml`)
+fetches from Polymarket on a schedule (Actions -> Odds snapshot -> Run workflow refreshes it by
+hand). The page reads it through raw.githubusercontent.com. The
+browser never calls Polymarket itself, because it's blocked on some networks (Australian ISPs, for
+one), and the file isn't on `gh-pages` because every push there rebuilds the site (Pages allows
+about 10 builds an hour). Played matches' price charts come from the export (`market_history/`,
+built from the archive). To see live odds locally, run
+`node web/scripts/odds-snapshot.ts web/public/data/meta.json web/public/data/odds.json`
+(Node 23.6+) after `xpfpl export`.
 
 ```bash
 xpfpl publish          # export -> build web/ -> push web/dist to gh-pages
 xpfpl publish --build-only && npm --prefix web run preview   # look at it locally first
 ```
 
-`xpfpl export` writes `web/public/data/` (about 1 MB of JSON; not committed). `xpfpl publish`
+`xpfpl export` writes `web/public/data/` (about 13 MB of JSON, most of it played matches' price histories; not committed). `xpfpl publish`
 builds the React app in `web/` (Vite + TypeScript, charts with Observable Plot; needs Node.js)
 and force-pushes `web/dist/` to `gh-pages` as a single commit, so the site's data never piles up
-in the repo's history. The team shown is the one saved in the dashboard (or `--team-id`). To turn
+in the repo's history. To turn
 the site on the first time: GitHub -> Settings -> Pages -> Deploy from a branch -> `gh-pages`, `/ (root)`.
 
 For development: `npm --prefix web install`, then `npm --prefix web run dev`.

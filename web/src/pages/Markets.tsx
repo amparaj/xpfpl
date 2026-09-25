@@ -1,10 +1,11 @@
 import * as Plot from "@observablehq/plot";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { color } from "../colors";
 import { Chart, Club, Legend, Loading, Note, Segmented, Table, plotDefaults, useClubName, type Column } from "../components/ui";
-import { rows, type Markets as MarketsFile, type Player, type Row } from "../data";
+import { rows, type Markets as MarketsFile, type Row } from "../data";
 import { dec, pct, pts, signed, when } from "../format";
-import { liveOdds, liveOutrights, poissonWin, resultHistory, type LiveScorer, type Outright } from "../polymarket";
+import { resultHistory, oddsUrl, type LiveScorer, type MatchHistory, type OddsSnapshot, type Outright } from "../polymarket";
+import { matchPlayer, ours } from "../ratings";
 import { useData, useSite, type Site } from "../site";
 
 const LIVE = "live";
@@ -36,37 +37,12 @@ function fromExport(r: Row, club: (c: number) => string): MatchView {
   };
 }
 
-/** Our Odds for an upcoming match: the club ratings exported for the next gameweek. */
-function ours(site: Site, home: number, away: number) {
-  const r = site.meta.ratings_next;
-  if (!r || !("clubs" in r)) return { ours_home: null, ours_away: null, ours_home_win: null, ours_away_win: null };
-  const [ha, hd] = r.clubs[String(home)] ?? r.prior;
-  const [aa, ad] = r.clubs[String(away)] ?? r.prior;
-  const gf = Math.exp(r.mu + r.home + ha - ad), ga = Math.exp(r.mu + aa - hd);
-  return { ours_home: gf, ours_away: ga, ours_home_win: poissonWin(gf, ga), ours_away_win: poissonWin(ga, gf) };
-}
-
 /** The FPL gameweek of an upcoming match: the fixture between the same clubs within a few days. */
 function fixtureGw(site: Site, home: number, away: number, kickoff: string): number | null {
   const h = site.teamByCode.get(home)?.id, a = site.teamByCode.get(away)?.id;
   const f = site.fixtures.find((x) => x.home === h && x.away === a && x.kickoff &&
     Math.abs(new Date(x.kickoff).getTime() - new Date(kickoff).getTime()) < 5 * 86400e3);
   return f?.gw ?? null;
-}
-
-const strip = (s: string) => s.normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z ]/g, "").trim();
-
-/** The FPL player a scorer market names, among the two clubs' players (as markets.match_players does). */
-function matchPlayer(site: Site, s: LiveScorer): Player | undefined {
-  const clubs = new Set([site.teamByCode.get(s.home_code)?.id, site.teamByCode.get(s.away_code)?.id]);
-  const key = strip(s.player);
-  const hits = site.players.filter((p) => {
-    if (!clubs.has(p.team)) return false;
-    const full = strip(`${p.first_name} ${p.second_name}`);
-    const parts = full.split(" ");
-    return [strip(p.web_name), full, `${parts[0]} ${parts[parts.length - 1]}`, strip(p.second_name)].includes(key);
-  });
-  return hits.length === 1 ? hits[0] : undefined;
 }
 
 // ---------------------------------------------------------------- charts
@@ -99,20 +75,15 @@ function WinOdds({ matches }: { matches: MatchView[] }) {
   );
 }
 
-function Movement({ matches, end }: { matches: MatchView[]; end: (m: MatchView) => Date }) {
+/** `histories`: slug -> price history, from odds.json (upcoming) or market_history/ (played). */
+function Movement({ matches, end, histories }: { matches: MatchView[]; end: (m: MatchView) => Date;
+                                                 histories: Record<string, MatchHistory> | null | undefined }) {
   const [slug, setSlug] = useState(matches[0]?.slug ?? "");
   const [days, setDays] = useState(3);
   const match = matches.find((m) => m.slug === slug) ?? matches[0];
-  const [data, setData] = useState<{ time: Date; outcome: string; p: number }[] | null | undefined>();
-  useEffect(() => {
-    if (!match) return;
-    let live = true;
-    setData(undefined);
-    resultHistory(match.slug, end(match), days).then((d) => live && setData(d)).catch(() => live && setData(null));
-    return () => {
-      live = false;
-    };
-  }, [match, days, end]);
+  const history = match && histories ? histories[match.slug] : undefined;
+  const data = useMemo(() => (history ? resultHistory(history, end(match), days) : histories === undefined ? undefined : null),
+    [history, histories, match, days, end]);
   const make = useCallback((width: number) => Plot.plot({
     ...plotDefaults(width),
     height: 260,
@@ -141,26 +112,23 @@ function Movement({ matches, end }: { matches: MatchView[]; end: (m: MatchView) 
       <Legend items={[{ label: "Home win", color: color.s1, kind: "line" }, { label: "Draw", color: color.neutral, kind: "line" },
                       { label: "Away win", color: color.s2, kind: "line" }]} />
       {data === undefined && <Loading />}
-      {data === null && <p className="muted">Couldn't reach Polymarket for the price history.</p>}
+      {data === null && <p className="muted">No price history saved for this match.</p>}
       {data && data.length === 0 && <p className="muted">No trades in this window.</p>}
       {data && data.length > 0 && <Chart make={make} height={260} ariaLabel={`Price history for ${match.label}`} />}
-      <p className="note">Fetched live from Polymarket, up to {when(end(match).toISOString())}.</p>
+      <p className="note">Polymarket prices up to {when(end(match).toISOString())}.</p>
     </div>
   );
 }
 
 // ---------------------------------------------------------------- season markets
 
-function SeasonMarkets({ snapshot }: { snapshot: MarketsFile["outrights"] }) {
-  const [live, setLive] = useState<Outright[] | null | undefined>();
-  useEffect(() => {
-    liveOutrights().then(setLive).catch(() => setLive(null));
-  }, []);
+function SeasonMarkets({ snapshot, live, fetched }: { snapshot: MarketsFile["outrights"]; live: Outright[] | null | undefined; fetched?: string }) {
   const saved = useMemo(() => rows<Outright>(snapshot as never), [snapshot]);
   const list = live && live.length ? live : saved;
   const events = useMemo(() => [...new Set(list.map((o) => o.event))].sort(), [list]);
   const [event, setEvent] = useState<string>("");
-  const chosen = events.includes(event) ? event : events.find((e) => /champion/i.test(e)) ?? events[0];
+  // The title race: "champion" as a word, not "EFL Championship" or "Champions League".
+  const chosen = events.includes(event) ? event : events.find((e) => /\bchampion\b/i.test(e)) ?? events[0];
   // An outcome nobody has traded sits at its opening price (often 50%): that isn't odds.
   const outcomes = list.filter((o) => o.event === chosen && !Number.isNaN(o.probability) && o.volume > 0)
     .sort((a, b) => b.probability - a.probability).slice(0, 12);
@@ -184,7 +152,7 @@ function SeasonMarkets({ snapshot }: { snapshot: MarketsFile["outrights"] }) {
         <select aria-label="Season market" value={chosen} onChange={(e) => setEvent(e.target.value)}>
           {events.map((e) => <option key={e} value={e}>{e}</option>)}
         </select>
-        <span className="muted">{live && live.length ? "Live" : `Saved ${when(snapshot?.snapshot)}`}</span>
+        <span className="muted">{live && live.length ? `Updated ${when(fetched)}` : `Saved ${when(snapshot?.snapshot)}`}</span>
       </div>
       {outcomes.length ? <Chart make={make} height={outcomes.length * 26 + 40} ariaLabel={`${chosen}: the market's chances`} />
                        : <p className="muted">Nobody has traded this market yet.</p>}
@@ -199,11 +167,16 @@ export default function MarketsPage() {
   const site = useSite();
   const club = useClubName();
   const file = useData<MarketsFile>("markets.json");
-  const [live, setLive] = useState<{ matches: MatchView[]; scorers: LiveScorer[] } | null | undefined>();
-  useEffect(() => {
-    liveOdds(site.meta.polymarket_teams).then(({ matches, scorers }) => setLive({
-      scorers,
-      matches: matches.map((m) => ({
+  // Live odds come from odds.json, which a scheduled GitHub Action refreshes: the browser
+  // never calls Polymarket (it's blocked on some networks). Matches that have kicked off since drop out.
+  const odds = useData<OddsSnapshot>(oddsUrl());
+  const live = useMemo(() => {
+    if (!odds) return odds;
+    const upcoming = odds.matches.filter((m) => new Date(m.kickoff).getTime() > Date.now());
+    const slugs = new Set(upcoming.map((m) => m.slug));
+    return {
+      scorers: odds.scorers.filter((s) => slugs.has(s.slug)),
+      matches: upcoming.map((m): MatchView => ({
         slug: m.slug, kickoff: m.kickoff, gw: fixtureGw(site, m.home_code, m.away_code, m.kickoff),
         home_code: m.home_code, away_code: m.away_code, home_win: m.prices.home_win, draw: m.prices.draw ?? NaN,
         away_win: m.prices.away_win ?? NaN, over25: nan(m.prices["over_2.5"]), btts: nan(m.prices.btts),
@@ -213,8 +186,8 @@ export default function MarketsPage() {
         goals_home: null, goals_away: null, xg_home: null, xg_away: null,
         label: `${club(m.home_code)} v ${club(m.away_code)}`, volume: m.volume,
       })),
-    })).catch(() => setLive(null));
-  }, [site]); // eslint-disable-line react-hooks/exhaustive-deps
+    };
+  }, [odds, site]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const saved = useMemo(() => rows(file?.matches).map((r) => ({ ...fromExport(r, club), season: r.season as string })),
     [file]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -232,31 +205,41 @@ export default function MarketsPage() {
     ? live?.matches ?? []
     : saved.filter((m) => m.season === season && m.gw === pick).sort((a, b) => a.kickoff.localeCompare(b.kickoff));
 
+  const played = useData<Record<string, MatchHistory>>(
+    !isLive && typeof pick === "number" ? `market_history/${season}/gw${String(pick).padStart(2, "0")}.json` : null);
+  const histories = isLive ? odds?.history : played;
+
   const deadline = useCallback((m: MatchView) => {
-    if (isLive) return new Date(Math.min(Date.now(), new Date(m.kickoff).getTime()));
+    if (isLive) return new Date(Math.min(new Date(odds!.fetched_at).getTime(), new Date(m.kickoff).getTime()));
     const ev = season === site.meta.season ? site.meta.events.find((e) => e.id === m.gw) : undefined;
     if (ev) return new Date(ev.deadline);
     const first = Math.min(...matches.map((x) => new Date(x.kickoff).getTime()));
     return new Date(first - 90 * 60e3);
-  }, [isLive, season, site, matches]);
+  }, [isLive, odds, season, site, matches]);
 
   if (file === undefined) return <Loading />;
 
   const matchColumns: Column<MatchView>[] = [
     { key: "match", label: "Match", value: (m) => m.label },
     ...only<MatchView>(isLive, [{ key: "ko", label: "Kick-off", value: (m: MatchView) => m.kickoff, render: (m: MatchView) => when(m.kickoff) }]),
-    { key: "home", label: "Home", numeric: true, value: (m) => m.home_win, render: (m) => pct(m.home_win), title: "Market odds of a home win" },
-    { key: "draw", label: "Draw", numeric: true, value: (m) => m.draw, render: (m) => pct(m.draw) },
-    { key: "away", label: "Away", numeric: true, value: (m) => m.away_win, render: (m) => pct(m.away_win) },
-    { key: "ours", label: "Ours H/D/A", value: (m) => m.ours_home_win, title: "The model's own team ratings",
-      render: (m) => m.ours_home_win === null ? "–" : `${pct(m.ours_home_win)} / ${pct(1 - m.ours_home_win - (m.ours_away_win ?? 0))} / ${pct(m.ours_away_win)}` },
-    { key: "xg", label: "Market goals", value: (m) => m.lam_home + m.lam_away, title: "Expected goals each side, fitted to all the goal markets",
-      render: (m) => `${dec(m.lam_home, 1)} – ${dec(m.lam_away, 1)}` },
-    { key: "oxg", label: "Our goals", value: (m) => m.ours_home, render: (m) => m.ours_home === null ? "–" : `${dec(m.ours_home, 1)} – ${dec(m.ours_away, 1)}` },
-    ...only<MatchView>(!isLive, [{ key: "actual", label: "Actual xG", value: (m: MatchView) => m.xg_home,
+    { key: "home", label: "Home", group: "Market", numeric: true, value: (m) => m.home_win, render: (m) => pct(m.home_win), title: "Market odds of a home win" },
+    { key: "draw", label: "Draw", group: "Market", numeric: true, value: (m) => m.draw, render: (m) => pct(m.draw), title: "Market odds of a draw" },
+    { key: "away", label: "Away", group: "Market", numeric: true, value: (m) => m.away_win, render: (m) => pct(m.away_win), title: "Market odds of an away win" },
+    { key: "ohome", label: "Home", group: "Our model", numeric: true, value: (m) => m.ours_home_win, render: (m) => pct(m.ours_home_win),
+      title: "Chance of a home win from the model's own club ratings" },
+    { key: "odraw", label: "Draw", group: "Our model", numeric: true, value: oursDraw, render: (m) => pct(oursDraw(m)),
+      title: "Chance of a draw from the model's own club ratings" },
+    { key: "oaway", label: "Away", group: "Our model", numeric: true, value: (m) => m.ours_away_win, render: (m) => pct(m.ours_away_win),
+      title: "Chance of an away win from the model's own club ratings" },
+    { key: "xg", label: "Market", group: "Goals (Home – Away)", value: (m) => m.lam_home + m.lam_away,
+      title: "Expected goals each side, fitted to all the goal markets", render: (m) => `${dec(m.lam_home, 1)} – ${dec(m.lam_away, 1)}` },
+    { key: "oxg", label: "Ours", group: "Goals (Home – Away)", value: (m) => m.ours_home, title: "Expected goals each side from the model's own club ratings",
+      render: (m) => m.ours_home === null ? "–" : `${dec(m.ours_home, 1)} – ${dec(m.ours_away, 1)}` },
+    ...only<MatchView>(!isLive, [{ key: "actual", label: "Actual xG", group: "Goals (Home – Away)", value: (m: MatchView) => m.xg_home,
+      title: "Expected goals (xG) each side in the match itself",
       render: (m: MatchView) => m.xg_home === null ? "–" : `${dec(m.xg_home, 1)} – ${dec(m.xg_away, 1)}` }]),
-    { key: "csh", label: "CS home", numeric: true, value: (m) => m.cs_home, render: (m) => pct(m.cs_home), title: "Clean-sheet chance, home side" },
-    { key: "csa", label: "CS away", numeric: true, value: (m) => m.cs_away, render: (m) => pct(m.cs_away) },
+    { key: "csh", label: "CS Home", numeric: true, value: (m) => m.cs_home, render: (m) => pct(m.cs_home), title: "Clean-sheet chance, home side" },
+    { key: "csa", label: "CS Away", numeric: true, value: (m) => m.cs_away, render: (m) => pct(m.cs_away), title: "Clean-sheet chance, away side" },
     { key: "o25", label: "Over 2.5", numeric: true, value: (m) => m.over25, render: (m) => pct(m.over25) },
     { key: "btts", label: "Both score", numeric: true, value: (m) => m.btts, render: (m) => pct(m.btts) },
     ...only<MatchView>(!isLive, [{ key: "fav", label: "Favourite won?", value: (m: MatchView) => { const f = favourite(m); return f === null ? null : Number(f); },
@@ -268,7 +251,7 @@ export default function MarketsPage() {
       <h2>Markets</h2>
       <p className="lede">
         What the betting markets (Polymarket) thought, next to the model's own club ratings. For played gameweeks the odds
-        are as they stood at the FPL deadline, beside what happened. Upcoming matches are fetched live.
+        are as they stood at the FPL deadline, beside what happened. Upcoming matches' odds are refreshed regularly.
       </p>
       <div className="toolbar">
         <label>
@@ -284,10 +267,11 @@ export default function MarketsPage() {
             {gws.map((g) => <option key={g} value={g}>GW{g} (played)</option>)}
           </select>
         </label>
-        {isLive && live === undefined && <span className="muted">Fetching live odds…</span>}
+        {isLive && live === undefined && <span className="muted">Loading odds…</span>}
+        {isLive && odds && <span className="muted">Odds updated {when(odds.fetched_at)}</span>}
       </div>
 
-      {isLive && live === null && <p>Couldn't reach Polymarket just now. Pick a played gameweek, or try again later.</p>}
+      {isLive && live === null && <p>No live odds saved yet. Pick a played gameweek.</p>}
       {isLive && live && !live.matches.length && (
         <p>Polymarket hasn't listed the next matches yet. They usually appear about a week before kick-off.</p>
       )}
@@ -300,10 +284,11 @@ export default function MarketsPage() {
           <h3>Match by match</h3>
           <Table columns={matchColumns} data={matches} rowKey={(m) => m.slug} />
           <Note>
-            "Market goals" are the expected goals for each side that best fit all of a match's goal markets at once
-            (result, totals, team totals, both teams to score). "Ours" are the model's club ratings{isLive ? ` for GW${site.meta.next_gw}` : " before that gameweek"}.
+            The market's goals are the expected goals for each side that best fit all of a match's goal markets at once
+            (result, totals, team totals, both teams to score). "Our model" and "Ours" come from the model's own club
+            ratings{isLive ? ` for GW${site.meta.next_gw}` : " before that gameweek"}.
           </Note>
-          <Movement key={`${season}-${pick}`} matches={matches} end={deadline} />
+          <Movement key={`${season}-${pick}`} matches={matches} end={deadline} histories={histories} />
           <h3>Anytime goalscorer odds</h3>
           {isLive ? <LiveScorers scorers={live?.scorers ?? []} />
                   : <PlayedScorers scorers={rows(file?.scorers).filter((s) => s.season === season && s.gw === pick)} />}
@@ -311,12 +296,17 @@ export default function MarketsPage() {
       )}
 
       <h3>Season markets</h3>
-      <SeasonMarkets snapshot={file?.outrights} />
+      <SeasonMarkets snapshot={file?.outrights} live={odds === undefined ? undefined : odds?.outrights ?? null} fetched={odds?.fetched_at} />
 
       <h3>How good are the odds?</h3>
       <MarketAccuracy data={rows(file?.accuracy)} />
     </>
   );
+}
+
+/** The model's chance of a draw: whatever its home and away win chances leave. */
+function oursDraw(m: MatchView): number | null {
+  return m.ours_home_win === null || m.ours_away_win === null ? null : 1 - m.ours_home_win - m.ours_away_win;
 }
 
 /** `cols` when `show`, else nothing: for columns that only apply to live or to played matches. */

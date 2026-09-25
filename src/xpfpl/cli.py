@@ -340,6 +340,29 @@ def _print_plan(players: pd.DataFrame, plan, gw: int, title: str) -> None:
         print(f"   {i + 1}. {pos}  {_label(players, p):35s} xP {players.at[p, col]:4.1f}")
 
 
+def _model_team(bs: dict, fx: list[dict], predicted=None) -> None:
+    """Make (or remake) the Model's Team's decision for the next gameweek, and say what it was."""
+    from xpfpl import modelteam
+    decision = modelteam.decide(bs, fx, config.MODEL, predicted)
+    if decision is None:
+        print("\nThe Model's Team: the deadline has passed, so its decision stands.")
+        return
+    names = predicted[0] if predicted else pd.DataFrame(
+        {"name": {e["id"]: e["web_name"] for e in bs["elements"]}})
+    print("\n" + modelteam.describe(decision, names))
+
+
+def cmd_modelteam(args) -> None:
+    """The Model's Team: its decision for the next gameweek (and the replay of earlier weeks)."""
+    from xpfpl import modelteam
+    from xpfpl.data import api
+    bs, fx = api.bootstrap(), api.fixtures()
+    if args.replay:
+        season, gw = api.current_season(bs), api.next_gameweek(bs)
+        print(f"Wrote GW{', GW'.join(map(str, modelteam.replay(season, gw - 1))) or ' nothing (all saved)'}.")
+    _model_team(bs, fx)
+
+
 def cmd_recommend(args) -> None:
     from xpfpl import chips
     from xpfpl.data import api
@@ -359,6 +382,10 @@ def cmd_recommend(args) -> None:
         doubles = [names[t] for t in counts.index if counts.at[t, g] >= 2]
         if blanks or doubles:
             print(f"  GW{g}: blank {blanks or '-'}  double {doubles or '-'}")
+
+    if not args.no_model_team:
+        same = args.horizon == config.HORIZON and args.model == config.MODEL
+        _model_team(bs, fx, (players, gameweeks) if same else None)
 
     if args.team_id is None:
         plan = solve(players, gameweeks, bank=args.budget)
@@ -497,21 +524,12 @@ def cmd_archive(args) -> None:
     print("\nArchive:\n" + archive.size_report())
 
 
-def _saved_team_id() -> int | None:
-    """The team id the dashboard saved (data/app_settings.json), if any."""
-    import json
-    path = config.DATA_DIR / "app_settings.json"
-    return json.loads(path.read_text(encoding="utf-8")).get("team_id") if path.exists() else None
-
-
 def cmd_export(args) -> None:
     """Write the website's data (web/public/data/)."""
     from xpfpl import export
-    team_id = args.team_id or _saved_team_id()
-    files = export.export(team_id=team_id, model=args.model)
+    files = export.export(model=args.model)
     size = sum(f.stat().st_size for f in files)
-    print(f"Wrote {len(files)} files ({size / 1e6:.1f} MB) to {config.SITE_DATA_DIR}"
-          + ("" if team_id else " - no team id, so no manager.json (use --team-id)"))
+    print(f"Wrote {len(files)} files ({size / 1e6:.1f} MB) to {config.SITE_DATA_DIR}")
 
 
 def cmd_publish(args) -> None:
@@ -640,7 +658,6 @@ def main(argv: list[str] | None = None) -> None:
     for name, func, help_ in (("export", cmd_export, "write the website's data to web/public/data/"),
                               ("publish", cmd_publish, "export, build the website and push it to GitHub Pages")):
         p = sub.add_parser(name, help=help_)
-        p.add_argument("--team-id", type=int, help="the FPL team to show (default: the one saved in the dashboard)")
         p.add_argument("--model", choices=models.NAMES, default=config.MODEL,
                        help="model whose xP to show where no forecast was saved before a deadline")
         p.set_defaults(func=func)
@@ -678,6 +695,13 @@ def main(argv: list[str] | None = None) -> None:
             p.add_argument("--budget", type=float, default=100.0, help="budget when building from scratch")
             p.add_argument("--sensitivity", type=int, default=0, metavar="N",
                            help="re-solve N times with noisy xP and report how often each move wins")
+            p.add_argument("--no-model-team", action="store_true",
+                           help="don't make the Model's Team's decision for the website this time")
+
+    p = sub.add_parser("modelteam", help="the Model's Team (the website's paper team): decide the next gameweek")
+    p.add_argument("--replay", action="store_true",
+                   help="first fill in any earlier gameweeks of this season from the backtest")
+    p.set_defaults(func=cmd_modelteam)
 
     args = parser.parse_args(argv)
     args.func(args)
