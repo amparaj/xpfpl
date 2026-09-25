@@ -1,0 +1,4 @@
+node_modules/
+dist/
+# written by `xpfpl export`; published with the site, never committed
+public/data/

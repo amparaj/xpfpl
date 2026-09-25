@@ -1,0 +1,200 @@
+:root {
+  color-scheme: light;
+  --page: #f9f9f7;
+  --surface: #fcfcfb;
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --muted: #898781;
+  --grid: #e1e0d9;
+  --baseline: #c3c2b7;
+  --border: rgba(11, 11, 11, 0.1);
+  --chip: #eceae4;
+  --hover: rgba(42, 120, 214, 0.07);
+  --selected: rgba(42, 120, 214, 0.14);
+  --s1: #2a78d6;      /* series 1: blue (points, home, market) */
+  --s2: #eb6834;      /* series 2: orange (xP, away) */
+  --s3: #1baf7a;      /* series 3: aqua */
+  --neutral: #b9b8b3; /* draw, "our odds" */
+  --good: #006300;
+  --bad: #b42323;
+  --focus: #2a78d6;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface: #1a1a19;
+    --ink: #ffffff;
+    --ink-2: #c3c2b7;
+    --muted: #898781;
+    --grid: #2c2c2a;
+    --baseline: #383835;
+    --border: rgba(255, 255, 255, 0.1);
+    --chip: #2c2c2a;
+    --hover: rgba(57, 135, 229, 0.1);
+    --selected: rgba(57, 135, 229, 0.2);
+    --s1: #3987e5;
+    --s2: #d95926;
+    --s3: #199e70;
+    --neutral: #6b6a65;
+    --good: #0ca30c;
+    --bad: #e66767;
+    --focus: #3987e5;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d;
+  --surface: #1a1a19;
+  --ink: #ffffff;
+  --ink-2: #c3c2b7;
+  --muted: #898781;
+  --grid: #2c2c2a;
+  --baseline: #383835;
+  --border: rgba(255, 255, 255, 0.1);
+  --chip: #2c2c2a;
+  --hover: rgba(57, 135, 229, 0.1);
+  --selected: rgba(57, 135, 229, 0.2);
+  --s1: #3987e5;
+  --s2: #d95926;
+  --s3: #199e70;
+  --neutral: #6b6a65;
+  --good: #0ca30c;
+  --bad: #e66767;
+  --focus: #3987e5;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--page);
+  color: var(--ink);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--s1); }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+/* ---------------------------------------------------------------- shell */
+
+.top {
+  position: sticky; top: 0; z-index: 5;
+  background: color-mix(in srgb, var(--page) 92%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--border);
+}
+.top-inner { max-width: 1180px; margin: 0 auto; padding: 10px 16px 0; }
+.brand { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.brand h1 { font-size: 18px; margin: 0; letter-spacing: -0.01em; }
+.brand .muted { font-size: 13px; }
+nav { display: flex; gap: 2px; overflow-x: auto; margin-top: 6px; scrollbar-width: none; }
+nav a {
+  padding: 8px 12px; text-decoration: none; color: var(--ink-2); white-space: nowrap;
+  border-bottom: 2px solid transparent; font-size: 14px;
+}
+nav a:hover { color: var(--ink); }
+nav a.on { color: var(--ink); border-bottom-color: var(--s1); font-weight: 600; }
+
+main { max-width: 1180px; margin: 0 auto; padding: 20px 16px 64px; }
+h2 { font-size: 22px; margin: 0 0 4px; letter-spacing: -0.01em; }
+h3 { font-size: 15px; margin: 28px 0 8px; }
+.lede { color: var(--ink-2); margin: 0 0 18px; max-width: 760px; }
+.muted { color: var(--muted); }
+.note { color: var(--muted); font-size: 13px; margin: 6px 0 0; max-width: 820px; }
+.good { color: var(--good); }
+.bad { color: var(--bad); }
+footer { max-width: 1180px; margin: 0 auto; padding: 0 16px 40px; color: var(--muted); font-size: 13px; }
+
+.card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px;
+  margin-top: 12px;
+}
+.grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 12px; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin: 4px 0 8px; }
+.toolbar label { font-size: 13px; color: var(--ink-2); display: flex; align-items: center; gap: 6px; }
+select, input[type="search"] {
+  font: inherit; font-size: 14px; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px;
+}
+input[type="search"] { min-width: 180px; }
+
+.segmented { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--surface); }
+.segmented button { border: 0; background: transparent; padding: 6px 12px; cursor: pointer; font-size: 14px; color: var(--ink-2); }
+.segmented button + button { border-left: 1px solid var(--border); }
+.segmented button.on { background: var(--selected); color: var(--ink); font-weight: 600; }
+
+.link { background: none; border: 0; color: var(--s1); cursor: pointer; padding: 6px 0; font-size: 14px; }
+
+/* ---------------------------------------------------------------- tiles */
+
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 8px 0 4px; }
+.tile { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; }
+.tile-label { font-size: 13px; color: var(--ink-2); }
+.tile-value { font-size: 24px; font-weight: 600; letter-spacing: -0.01em; }
+.tile-note { font-size: 12px; color: var(--muted); }
+
+/* ---------------------------------------------------------------- chips, legends */
+
+.club {
+  display: inline-block; min-width: 40px; text-align: center; font-size: 12px; font-weight: 600;
+  padding: 1px 6px; border-radius: 4px; background: var(--chip);
+}
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; color: var(--ink-2); margin: 2px 0 6px; }
+.legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.key { display: inline-block; }
+.key-rect { width: 10px; height: 10px; border-radius: 2px; }
+.key-line { width: 14px; height: 2px; border-radius: 1px; }
+.key-dot { width: 9px; height: 9px; border-radius: 50%; }
+.tag { font-size: 12px; padding: 1px 6px; border-radius: 4px; background: var(--chip); color: var(--ink-2); white-space: nowrap; }
+.tag.warn { background: color-mix(in srgb, var(--bad) 16%, transparent); color: var(--bad); }
+
+/* ---------------------------------------------------------------- tables */
+
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+th { font-weight: 600; color: var(--ink-2); font-size: 13px; position: sticky; top: 0; background: var(--surface); }
+th button { background: none; border: 0; padding: 0; cursor: pointer; font-weight: inherit; color: inherit; display: inline-flex; gap: 3px; }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+th.num button { flex-direction: row-reverse; }
+.sort-mark { font-size: 9px; color: var(--muted); min-width: 8px; display: inline-block; }
+tr.clickable { cursor: pointer; }
+tbody tr:hover { background: var(--hover); }
+tr.selected { background: var(--selected) !important; }
+
+/* ---------------------------------------------------------------- charts */
+
+.chart { width: 100%; }
+.chart svg { display: block; }
+.chart [aria-label="tip"] { color: var(--ink); }
+
+/* ---------------------------------------------------------------- fixtures */
+
+.fixtures { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); gap: 8px; }
+.fixture {
+  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 14px;
+}
+.fixture .score { font-weight: 700; font-variant-numeric: tabular-nums; text-align: center; }
+.fixture .xg { grid-column: 1 / -1; text-align: center; font-size: 12px; color: var(--muted); }
+.fixture .away { text-align: right; }
+
+/* ---------------------------------------------------------------- pitch (picks) */
+
+.picks { display: flex; flex-direction: column; gap: 8px; }
+.picks-row { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; }
+.pick {
+  width: 92px; text-align: center; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 6px 4px; font-size: 12px;
+}
+.pick .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.pick .pts { font-size: 18px; font-weight: 700; }
+.pick.bench { opacity: 0.7; }
+.pick .badge { font-size: 10px; font-weight: 700; color: var(--s1); }
+
+@media (max-width: 640px) {
+  main { padding-top: 14px; }
+  .tile-value { font-size: 20px; }
+  .pick { width: 74px; }
+}

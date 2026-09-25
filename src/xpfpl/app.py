@@ -318,6 +318,13 @@ with st.sidebar:
     if len(trained_models) > 1:
         st.caption("Also trained: " + ", ".join(n for n in trained_models
                                                 if n not in (config.MODEL, "baseline")) or "")
+    if st.button("4. Publish the website", width="stretch",
+                 help="xpfpl publish (~1 min): exports the season, your team, the odds and the accuracy "
+                      "reports, builds the site in web/ and pushes it to the gh-pages branch (GitHub Pages)"):
+        run_cli("publish")
+    meta_path = config.SITE_DATA_DIR / "meta.json"
+    st.caption(f"Website data exported: **{datetime.fromtimestamp(meta_path.stat().st_mtime):%a %d %b %H:%M}**"
+               if meta_path.exists() else "Website not published yet.")
 
 if not team_id:
     st.info("Enter your FPL team id in the sidebar to get started.")

@@ -1,0 +1,91 @@
+// Loading the JSON that `xpfpl export` writes to public/data/, and the shapes it has.
+
+/** A column-wise table as exported: {"col": [values...]}. */
+export type Columns = Record<string, unknown[]>;
+export type Row = Record<string, any>;
+
+/** Column-wise -> one object per row. */
+export function rows<T = Row>(cols: Columns | undefined | null): T[] {
+  if (!cols) return [];
+  const keys = Object.keys(cols);
+  const n = keys.length ? cols[keys[0]].length : 0;
+  const out: T[] = [];
+  for (let i = 0; i < n; i++) {
+    const r: Row = {};
+    for (const k of keys) r[k] = cols[k][i];
+    out.push(r as T);
+  }
+  return out;
+}
+
+export interface Team { id: number; code: number; name: string; short: string }
+export interface Event {
+  id: number; deadline: string; finished: boolean; checked: boolean;
+  average: number | null; highest: number | null; most_captained: number | null; top_element: number | null;
+}
+export interface Fixture {
+  id: number; gw: number | null; kickoff: string | null; home: number; away: number;
+  home_score: number | null; away_score: number | null; home_fdr: number; away_fdr: number;
+}
+export interface Meta {
+  generated: string; season: string; model: string; model_description: string;
+  played: number[]; next_gw: number | null; next_deadline: string | null;
+  teams: Team[]; events: Event[]; chips: { name: string; start: number; stop: number }[];
+  fixtures: Columns; club_colours: Record<string, [string, string]>;
+  polymarket_teams: Record<string, number>; out_threshold: number;
+  ratings_next: { gw: number; mu: number; home: number; prior: [number, number]; clubs: Record<string, [number, number]> } | Record<string, never>;
+  repo: string | null;
+}
+export interface Player {
+  id: number; code: number; web_name: string; first_name: string; second_name: string; team: number;
+  element_type: number; now_cost: number; selected_by_percent: number; status: string; news: string;
+  chance_of_playing_next_round: number | null; total_points: number; minutes: number; goals_scored: number;
+  assists: number; clean_sheets: number; bonus: number; expected_goals: number; expected_assists: number;
+  defensive_contribution: number; starts: number; form: number; points_per_game: number;
+  cost_change_start: number; forecast: number | null;
+}
+export interface GwRow {
+  element: number; fixture: number; opponent_team: number; was_home: boolean; minutes: number;
+  total_points: number; goals_scored: number; assists: number; clean_sheets: number; goals_conceded: number;
+  own_goals: number; penalties_saved: number; penalties_missed: number; yellow_cards: number; red_cards: number;
+  saves: number; bonus: number; bps: number; expected_goals: number | null; expected_assists: number | null;
+  expected_goals_conceded: number | null; defensive_contribution: number | null; starts: number | null;
+  value: number; selected: number; transfers_balance: number; xp: number | null;
+  pre_chance?: number | null; pre_news?: string | null;
+}
+export interface Gameweek {
+  gw: number; xp_source: string; players: Columns;
+  fixtures: { id: number; kickoff: string; home: number; away: number; home_score: number | null; away_score: number | null }[];
+}
+export interface ManagerGw {
+  picks: { element: number; slot: number; multiplier: number; captain: boolean; vice: boolean }[];
+  chip: string | null; auto_subs: { element_in: number; element_out: number }[];
+  best: number; best_xi: number[]; best_captain: number;
+}
+export interface Manager {
+  team_id: number; name: string; started: number;
+  history: {
+    event: number; points: number; total_points: number; rank: number | null; overall_rank: number;
+    bank: number; value: number; event_transfers: number; event_transfers_cost: number; points_on_bench: number;
+  }[];
+  chips: { name: string; event: number }[];
+  transfers: { event: number; element_in: number; element_in_cost: number; element_out: number; element_out_cost: number; time: string }[];
+  gameweeks: Record<string, ManagerGw>;
+}
+export interface Markets {
+  matches: Columns; accuracy: Columns; scorers?: Columns;
+  outrights?: Columns & { snapshot: string };
+}
+export interface Accuracy { validation: any; comparison: any; tuning: any; scorecard: any }
+
+const cache = new Map<string, Promise<any>>();
+
+/** A file from public/data/, fetched once. Resolves to null if it doesn't exist. */
+export function load<T>(path: string): Promise<T | null> {
+  if (!cache.has(path)) {
+    cache.set(path, fetch(`./data/${path}`).then((r) => (r.ok ? r.json() : null)).catch(() => null));
+  }
+  return cache.get(path)!;
+}
+
+export const gwFile = (gw: number) => `gws/gw${String(gw).padStart(2, "0")}.json`;
