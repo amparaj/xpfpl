@@ -334,8 +334,9 @@ if not config.MATCHES_PATH.exists():
                "**Fetch betting odds**, then **Retrain**.")
     st.stop()
 
-tab_guide, tab_players, tab_markets, tab_plan, tab_review, tab_season = st.tabs(
-    ["Guide", "Players & Fixtures", "Markets", "Plan Ahead", "Gameweek Review", "My Season"])
+# The Guide's weekly routine, left to right: look back at the week, research, plan; then the season.
+tab_guide, tab_review, tab_players, tab_markets, tab_plan, tab_season = st.tabs(
+    ["Guide", "Gameweek Review", "Players & Fixtures", "Markets", "Plan Ahead", "My Season"])
 
 with tab_guide:
     guide.render()
