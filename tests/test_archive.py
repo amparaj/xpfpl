@@ -101,3 +101,44 @@ def test_polymarket_events_and_prices_come_back(tmp_archive, tmp_path, monkeypat
     assert archive.price_history("history_14d", "tok1") == [{"t": 1, "p": 0.4}, {"t": 2, "p": 0.5}]
     assert archive.price_history("history_14d", "tok2") == []           # archived as "no trades"
     assert archive.price_history("history_14d", "tok3") is None
+
+
+def test_pull_snapshots_copies_the_branch_and_keeps_the_later_one(tmp_path, monkeypatch):
+    import subprocess
+
+    from xpfpl import config
+
+    def git(cwd, *args):
+        subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True)
+
+    def snapshot(path, taken):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame({"id": [1], "taken_at": [pd.Timestamp(taken, tz="UTC")]}).to_parquet(path)
+
+    remote, action, local = tmp_path / "remote.git", tmp_path / "action", tmp_path / "local"
+    git(tmp_path, "init", "-q", "--bare", str(remote))
+    git(tmp_path, "init", "-q", "-b", "deadline-snapshots", str(action))
+    folder = "archive/fpl/2026-27/deadlines"
+    snapshot(action / folder / "gw06.parquet", "2026-10-10 08:00")
+    snapshot(action / folder / "gw07.parquet", "2026-10-17 08:00")
+    for args in (("add", "-A"), ("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "s"),
+                 ("push", "-q", str(remote), "deadline-snapshots")):
+        git(action, *args)
+
+    git(tmp_path, "init", "-q", str(local))
+    git(local, "remote", "add", "origin", str(remote))
+    snapshot(local / folder / "gw06.parquet", "2026-10-10 09:00")     # later than the branch's: kept
+    monkeypatch.setattr(config, "ROOT", local)
+    written = archive.pull_snapshots()
+    assert [p.name for p in written] == ["gw07.parquet"]
+    assert pd.read_parquet(local / folder / "gw06.parquet")["taken_at"].iloc[0].hour == 9
+    assert archive.pull_snapshots() == []                              # nothing new the second time
+
+
+def test_pull_snapshots_without_the_branch_does_nothing(tmp_path, monkeypatch):
+    import subprocess
+
+    from xpfpl import config
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    monkeypatch.setattr(config, "ROOT", tmp_path)
+    assert archive.pull_snapshots() == []

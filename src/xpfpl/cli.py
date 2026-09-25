@@ -9,8 +9,17 @@ import pandas as pd
 from xpfpl import config, models
 
 
+def _pull_snapshots() -> None:
+    from xpfpl.data import archive
+    got = archive.pull_snapshots()
+    if got:
+        print(f"Copied {len(got)} deadline snapshot(s) from the {archive.SNAPSHOT_BRANCH} branch into archive/ "
+              "(commit them with your next pull request).")
+
+
 def cmd_fetch(args) -> None:
     from xpfpl.data.history import build_matches
+    _pull_snapshots()
     build_matches(refresh=args.refresh)
 
 
@@ -483,6 +492,7 @@ def cmd_archive(args) -> None:
         path = archive.save_deadline(api.bootstrap())
         print(f"Saved {path}" if path else "No deadline ahead.")
         return
+    _pull_snapshots()
     archive.backfill(markets_too=not args.no_markets)
     print("\nArchive:\n" + archive.size_report())
 
