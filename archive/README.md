@@ -17,6 +17,8 @@ or any Parquet reader.
 | `fpl/<season>/deadlines/gwNN.parquet` | Every player shortly before gameweek NN's deadline: price, injury news, `chance_of_playing_next_round`, ownership, that week's transfers | FPL API `bootstrap-static` |
 | `predictions/<season>/gwNN_<model>.parquet` | xP-FPL's forecasts, saved before each deadline | this project |
 | `modelteam/<season>/gwNN.json` | The Model's Team: its transfers, XI, bench order, captain and chip for gameweek NN, saved before the deadline (`source` "live"), or filled in by the backtest for weeks before the live record began ("replay"). `next` is the squad, bank and free transfers it hands to the following week. | this project |
+| `cups/<season>/fixtures/gwNN.parquet` | Cup and European matches (Champions/Europa/Conference League, EFL Cup) of each EPL club, filed under the FPL gameweek they come before, from 2025-26 on. `team_code` is FPL's club code; later gameweeks are fixtures not yet played | [olbauday/FPL-Core-Insights](https://github.com/olbauday/FPL-Core-Insights) `By Gameweek/GWn/fixtures.csv` |
+| `cups/<season>/minutes/gwNN.parquet` | Minutes per player (FPL `code`) in those matches, and whether he started | FPL-Core-Insights `playermatchstats.csv` |
 | `polymarket/<season>/events/gwNN.parquet` | Every Polymarket event for each played match (result, goal totals, both teams to score, anytime scorer), as trimmed JSON | [Polymarket Gamma API](https://gamma-api.polymarket.com) |
 | `polymarket/<season>/prices/gwNN.parquet` | Price histories for those markets up to the FPL deadline: `window` is `history_14d` (hourly, 14 days) or `history_3h_5m` (every 5 minutes, 3 hours). `t` is a Unix time; `p` is the probability of "Yes". A row with `t = -1` means no trades. | Polymarket CLOB API |
 | `polymarket/outrights/<date>.parquet` | Season-long markets (title, top four, relegation, top scorer...) as priced that day | Polymarket |
@@ -27,5 +29,6 @@ scheduled GitHub Action (`.github/workflows/deadline-snapshot.yml`, which pushes
 `deadline-snapshots` branch until they're merged here), or by hand with
 `xpfpl archive --deadline`.
 
-Data before 2026-27 comes from vaastav's repository; please credit it if you use it. FPL data
+Data before 2026-27 comes from vaastav's repository; please credit it if you use it. Cup and European
+matches come from olbauday's FPL-Core-Insights. FPL data
 belongs to the Premier League, and the odds belong to Polymarket.

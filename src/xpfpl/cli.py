@@ -21,6 +21,17 @@ def cmd_fetch(args) -> None:
     from xpfpl.data.history import build_matches
     _pull_snapshots()
     build_matches(refresh=args.refresh)
+    _fetch_cups()
+
+
+def _fetch_cups() -> None:
+    """This season's cup and European matches and minutes (data/cups.py), for rotation risk."""
+    from xpfpl.data import api, cups
+    try:
+        season = api.current_season(api.bootstrap())
+        print(f"Cup and European matches: {cups.fetch(season)} archive file(s) written for {season}.")
+    except Exception as exc:          # a missing source shouldn't stop the FPL fetch
+        print(f"  (cup and European matches not updated: {exc})")
 
 
 def _metrics(y_true: np.ndarray, y_pred: np.ndarray) -> str:
@@ -102,9 +113,22 @@ def cmd_train(args) -> None:
     predictor.meta["val_season"] = args.val_season
     predictor.save(models.path(args.model))
     print(f"Saved model to {models.path(args.model)}")
+    _fit_rotation(frame, predictor, args.model)
     if args.model != config.MODEL:
         print(f"config.MODEL is still '{config.MODEL}' - set it to '{args.model}' in "
               f"src/xpfpl/config.py to use this model by default.")
+
+
+def _fit_rotation(frame: pd.DataFrame, predictor, name: str) -> None:
+    """Refit the midweek-rotation xP factors (data/cups.py) for this model, and show them."""
+    from xpfpl.data import cups
+
+    rows = frame["season"] >= cups.FIRST_SEASON
+    if not rows.any():
+        return
+    fitted = cups.fit(frame[rows], predictor.predict(frame[rows]), name)
+    print(f"\nMidweek rotation factors (next GW's xP, from {', '.join(fitted['seasons'])}):")
+    print(pd.DataFrame(fitted["groups"]).T[["rows", "points", "xp", "ratio", "factor"]].to_string())
 
 
 def _split(val_season: str, horizons: int = 1):
@@ -511,6 +535,28 @@ def cmd_markets(args) -> None:
     print(table[[c for c in cols if c in table]].round(2).to_string(index=False))
 
 
+def cmd_cups(args) -> None:
+    """Cup and European matches (FPL-Core-Insights): fixtures and minutes, for rotation risk."""
+    from xpfpl.data import api, cups
+
+    now = api.current_season(api.bootstrap())
+    seasons = [args.season] if args.season else [s for s in config.HISTORY_SEASONS + [now] if s >= cups.FIRST_SEASON]
+    for season in seasons:
+        print(f"{season}: {cups.fetch(season, refresh=args.refresh)} archive file(s) written")
+    fx, _ = cups.load()
+    print(fx.groupby(["season", "tournament"]).size().rename("club matches").to_string())
+    ahead = fx[fx["kickoff_time"] > pd.Timestamp.now(tz="UTC")].sort_values("kickoff_time").head(12)
+    if len(ahead):
+        print("\nNext up:")
+        print(ahead[["gw", "kickoff_time", "tournament", "team_code", "match_id"]].to_string(index=False))
+
+    if models.path(args.model).exists():       # refit the xP factors (also done by `train`)
+        from xpfpl.data.history import load_matches
+        from xpfpl.features import build_training_frame
+        frame = build_training_frame(load_matches())
+        _fit_rotation(frame[frame["season"] >= cups.FIRST_SEASON], models.load(args.model), args.model)
+
+
 def cmd_archive(args) -> None:
     """Copy everything on disk into archive/ (git-tracked), or take the pre-deadline snapshot."""
     from xpfpl.data import api, archive
@@ -648,6 +694,13 @@ def main(argv: list[str] | None = None) -> None:
     p = sub.add_parser("markets", help="fetch betting-market odds (Polymarket) for every match since 2024-25")
     p.add_argument("--refresh", action="store_true", help="re-download price histories already cached")
     p.set_defaults(func=cmd_markets)
+
+    p = sub.add_parser("cups", help="fetch cup and European fixtures and minutes (rotation risk, 2025-26 on)")
+    p.add_argument("--season", help="one season only (default: every season with data)")
+    p.add_argument("--refresh", action="store_true", help="re-download gameweeks already cached")
+    p.add_argument("--model", choices=models.NAMES, default=config.MODEL,
+                   help="model whose next-GW xP factors to refit (train refits them too)")
+    p.set_defaults(func=cmd_cups)
 
     p = sub.add_parser("archive", help="copy the downloaded data into archive/ (fetch and markets do this as they go)")
     p.add_argument("--deadline", action="store_true",
