@@ -461,11 +461,13 @@ drops the old season's match-by-match history.
 A public, read-only look back at the season, served by GitHub Pages from the `gh-pages` branch
 (https://amparaj.github.io/xpfpl/). Its pages, in order: **About** (where it opens: the project and
 how the model forecasts, picks a team and is tested, in plain language, with the latest accuracy
-figures), **Model Accuracy**, **Past Gameweeks** (every result, each player's points against the xP
-forecast), **Next Gameweek** (the forecast saved for the coming gameweek: captain picks, the top
-players over the horizon, each club's fixtures with our win chances, and anyone the betting
-markets have ruled out), **Players**, **Markets** (the betting odds at each deadline against what happened),
-**The Model's Team** and **Data** (the archive). It doesn't train or plan.
+figures and the midweek factors), **Model Accuracy**, **Past Gameweeks** (every result, the cup and
+European results before it, each player's points against the xP forecast and his midweek minutes),
+**Next Gameweek** (the forecast saved for the coming gameweek: captain picks, the top players over
+the horizon with any midweek factor on their xP, each club's fixtures with our win chances and a
+badge for its cup or European matches, and anyone the betting markets have ruled out), **Players**, **Markets** (the betting odds at each deadline against what happened),
+**The Model's Team** (its pitch marks a club's midweek match) and **Data** (the archive). It
+doesn't train or plan.
 
 **The Model's Team** is a paper FPL team that does exactly what the model says. Before each
 deadline `xpfpl recommend` (or `xpfpl modelteam`) makes its transfers, XI, bench order, captain

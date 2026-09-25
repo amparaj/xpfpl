@@ -2,6 +2,9 @@
 
 import * as Plot from "@observablehq/plot";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import type { MidweekMatch } from "../data";
+import { when } from "../format";
+import { competition, describe, matchDay } from "../midweek";
 import { useSite } from "../site";
 
 // ---------------------------------------------------------------- club chip
@@ -105,10 +108,11 @@ export function plotDefaults(width: number): Plot.PlotOptions {
   };
 }
 
-/** Band padding that keeps each bar at most 24px wide, whatever the chart width and bar count. */
+/** Band padding that keeps bars narrow (about 24px) whatever the chart width and bar count. Capped at
+ * 0.8: with few bars on a wide screen (0.88 for five gameweeks at desktop width) the chart came out blank. */
 export function barPadding(width: number, bars: number, margins = 64): number {
   const band = (width - margins) / Math.max(bars, 1);
-  return Math.min(0.9, Math.max(0.35, 1 - 24 / band));
+  return Math.min(0.8, Math.max(0.35, 1 - 24 / band));
 }
 
 // ---------------------------------------------------------------- table
@@ -244,4 +248,19 @@ export function Loading() {
 
 export function Note({ children }: { children: ReactNode }) {
   return <p className="note">{children}</p>;
+}
+
+/** A badge for a club's midweek cup or European match: "UCL Tue", with the match on hover. */
+export function MidweekBadge({ matches }: { matches: MidweekMatch[] }) {
+  const site = useSite();
+  if (!matches.length) return null;
+  return <>{matches.map((m) => {
+    const c = competition(m.tournament);
+    const dayName = matchDay(m.kickoff);
+    return (
+      <span key={m.match_id} className="tag cup" title={`${c.name}, ${when(m.kickoff)}: ${describe(site, m)}`}>
+        {c.short}{dayName && ` ${dayName}`}
+      </span>
+    );
+  })}</>;
 }

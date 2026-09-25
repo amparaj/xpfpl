@@ -1,7 +1,7 @@
 // The data every page shares (meta.json and players.json), and hooks for the rest.
 
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { load, rows, type Fixture, type Meta, type Player, type Team } from "./data";
+import { load, rows, type Fixture, type Meta, type MidweekMatch, type Player, type Team } from "./data";
 
 export interface Site {
   meta: Meta;
@@ -10,6 +10,7 @@ export interface Site {
   team: Map<number, Team>;
   teamByCode: Map<number, Team>;
   fixtures: Fixture[];
+  midweek: MidweekMatch[];
 }
 
 export const SiteContext = createContext<Site | null>(null);
@@ -28,6 +29,7 @@ export function buildSite(meta: Meta, players: Player[]): Site {
     team: new Map(meta.teams.map((t) => [t.id, t])),
     teamByCode: new Map(meta.teams.map((t) => [t.code, t])),
     fixtures: rows<Fixture>(meta.fixtures),
+    midweek: rows<MidweekMatch>(meta.midweek),
   };
 }
 

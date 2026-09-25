@@ -1,9 +1,11 @@
 // The dashboard's pitch (app.py show_pitch), for the website: the XI by position on a striped
 // pitch, then the bench in auto-sub order. Each card has the player's photo (the club shirt where
 // the Premier League has none), the name on the club's colour, the fixture shaded by FPL's
-// difficulty, and a line of numbers under it.
+// difficulty, the club's cup or European match that week if it has one, and a line of numbers.
 
 import { useState, type ReactNode } from "react";
+import { clubMidweek, competition, describe, matchDay } from "../midweek";
+import { when } from "../format";
 import { useSite } from "../site";
 
 const PHOTO_URL = (code: number) => `https://resources.premierleague.com/premierleague25/photos/players/110x140/${code}.png`;
@@ -65,6 +67,7 @@ function Card({ element, gw, order, captain, vice, line, marked, flag }: {
   const level = fixtures.length
     ? Math.round(fixtures.reduce((s, f) => s + (f.home === p.team ? f.home_fdr : f.away_fdr), 0) / fixtures.length) : null;
   const chance = p.chance_of_playing_next_round;
+  const midweek = clubMidweek(site, p.team, gw);
 
   return (
     <div className={`xp-card${marked ? " xp-marked" : ""}`}
@@ -84,6 +87,11 @@ function Card({ element, gw, order, captain, vice, line, marked, flag }: {
       )}
       <div className="xp-name" style={{ background: club, color: clubText }}>{p.web_name}</div>
       <div className="xp-fix" style={level ? { background: FDR_BG[level], color: FDR_FG[level] } : undefined}>{label || "no fixture"}</div>
+      {midweek.length > 0 && (
+        <div className="xp-mid" title={midweek.map((m) => `${competition(m.tournament).name}, ${when(m.kickoff)}: ${describe(site, m)}`).join("\n")}>
+          {midweek.map((m) => `${competition(m.tournament).short} ${matchDay(m.kickoff)}`.trim()).join(", ")} midweek
+        </div>
+      )}
       <div className="xp-pts">{line}</div>
     </div>
   );

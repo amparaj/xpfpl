@@ -2,6 +2,7 @@ import * as Plot from "@observablehq/plot";
 import { useCallback, useMemo, useState } from "react";
 import { color } from "../colors";
 import { Chart, Club, Note, Loading, Table, Tiles, plotDefaults, type Column } from "../components/ui";
+import { competition, side } from "../midweek";
 import { gwFile, rows, type Gameweek, type GwRow } from "../data";
 import { POSITIONS, compact, dec, int, pts, signed, when } from "../format";
 import { totals, type PlayerGw } from "../season";
@@ -24,6 +25,8 @@ export default function Gameweeks() {
     });
   }, [data, site]);
   const playedLines = lines.filter((l) => l.minutes > 0);
+  const midweek = site.midweek.filter((m) => m.gw === gw && m.finished);
+  const hasMidweek = playedLines.some((l) => l.midweek !== null);
   const scored = playedLines.filter((l) => l.xp !== null);
   const mae = scored.length ? scored.reduce((s, l) => s + Math.abs(l.points - l.xp!), 0) / scored.length : null;
   const top = [...lines].sort((a, b) => b.points - a.points)[0];
@@ -71,6 +74,9 @@ export default function Gameweeks() {
       render: (l) => l.opponents.map((o) => `${site.team.get(o.team)?.short ?? "?"} (${o.home ? "H" : "A"})`).join(", ") },
     { key: "price", label: "£m", numeric: true, value: (l) => l.price, render: (l) => dec(l.price, 1) },
     { key: "minutes", label: "Mins", numeric: true, value: (l) => l.minutes },
+    ...(hasMidweek ? [{ key: "midweek", label: "Midweek", numeric: true, value: (l: Line) => l.midweek,
+                        render: (l: Line) => l.midweek === null ? <span className="muted">–</span> : l.midweek,
+                        title: "Minutes in his club's cup or European match before this gameweek" } as Column<Line>] : []),
     { key: "points", label: "Points", numeric: true, value: (l) => l.points },
     { key: "xp", label: "xP", numeric: true, value: (l) => l.xp, render: (l) => pts(l.xp),
       title: "The model's expected points before the deadline" },
@@ -128,6 +134,22 @@ export default function Gameweeks() {
             })}
           </div>
 
+          {midweek.length > 0 && (
+            <>
+              <h3>Midweek before GW{gw}</h3>
+              <div className="fixtures">
+                {midweek.map((m) => (
+                  <div className="fixture" key={m.match_id}>
+                    <span>{m.home_code !== null && site.teamByCode.has(m.home_code) ? <Club code={m.home_code} /> : side(site, m, true)}</span>
+                    <span className="score">{m.home_score ?? "–"} – {m.away_score ?? "–"}</span>
+                    <span className="away">{m.away_code !== null && site.teamByCode.has(m.away_code) ? <Club code={m.away_code} /> : side(site, m, false)}</span>
+                    <span className="xg">{competition(m.tournament).name} · {when(m.kickoff)}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
           <div className="card">
             <h3 style={{ marginTop: 0 }}>Points against xP</h3>
             <p className="note" style={{ marginTop: 0 }}>
@@ -141,6 +163,8 @@ export default function Gameweeks() {
           <Note>
             xP here is {data.xp_source}. A red % tag is the injury flag FPL showed before the deadline, where one
             was recorded. Prices (£m) are as they stood during the gameweek.
+            {hasMidweek && <> Midweek is his minutes in his club's cup or European match before this gameweek
+              (0: in the squad but not used; – : his club had no midweek match).</>}
           </Note>
         </>
       )}

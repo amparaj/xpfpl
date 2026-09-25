@@ -1,5 +1,6 @@
 import type { Accuracy } from "../data";
 import { dec, int } from "../format";
+import { ROTATION } from "../midweek";
 import { useData, useSite } from "../site";
 
 // The landing page: what the project is and how it works, in plain language. Every number comes
@@ -25,6 +26,8 @@ export default function About() {
   const tuning = report?.tuning;
   const replay = tuning?.trials?.length ? Math.max(...tuning.trials.map((t: { mean_points: number }) => t.mean_points)) : undefined;
   const trainedOn = report?.validation?.trained_on as string | undefined;
+  const rotation = report?.rotation;
+  const groups = rotation ? Object.entries(rotation.groups).filter(([, g]) => g.rows > 0) : [];
 
   return (
     <article className="about">
@@ -69,6 +72,8 @@ export default function About() {
         <li><strong>The fixture</strong>: how strong both clubs are, home or away, and how many goals the betting odds expect.</li>
         <li><strong>The crowd</strong>: how many managers are buying or selling him before the deadline, which often
           reflects injury news the stats can't see yet.</li>
+        <li><strong>Midweek matches</strong>: whether his club played a cup or European match that week, and how
+          many minutes he got in it.</li>
       </ul>
       <p>
         It learned how those things relate to points by studying past seasons.{" "}
@@ -76,6 +81,34 @@ export default function About() {
           ? <>The model is a small neural network built with a machine-learning library.</>
           : <>The model in use is "{site.meta.model}": {site.meta.model_description}.</>}{" "}
         Its forecast is then adjusted for FPL's injury flags, and double gameweeks count both matches.
+      </p>
+      <p>
+        <strong>Midweek matches.</strong> A club with a Champions League match on Tuesday might rest its stars on
+        Saturday. In the data since 2025-26, that doesn't show up: regular starters at clubs in Europe score no less
+        after a midweek match than in other weeks. A squad player's midweek role does tell you something. One who
+        wasn't used midweek tends to score less than the model expects that weekend, and one who played tends to score
+        more. So once the midweek match has been played, the next gameweek's forecast for each player at that club is
+        multiplied by:
+      </p>
+      {groups.length > 0 && (
+        <table className="compact">
+          <thead><tr><th>Before the weekend</th><th className="num">Forecast ×</th><th className="num">Player-matches</th></tr></thead>
+          <tbody>
+            {groups.map(([name, g]) => (
+              <tr key={name}>
+                <td>{ROTATION[name] ?? name}</td>
+                <td className="num">{dec(g.factor)}</td>
+                <td className="num">{int(g.rows)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <p>
+        A regular starter is one who has averaged 60 minutes or more over his last five matches.{" "}
+        {rotation && <>The numbers come from {rotation.seasons.join(" and ")}, and are pulled towards 1 where there are
+          few matches to go on.</>}{" "}
+        Later gameweeks aren't adjusted, but the <a href="#next">Next Gameweek</a> page marks each club's midweek matches.
       </p>
 
       <h3>3. Picking the team</h3>
@@ -121,8 +154,10 @@ export default function About() {
       <h3>What's on this site</h3>
       <ul>
         <li><a href="#accuracy">Model Accuracy</a>: the full test results.</li>
-        <li><a href="#gameweeks">Past Gameweeks</a>: every result, and each player's points against their forecast.</li>
-        <li><a href="#next">Next Gameweek</a>: the forecast for the coming gameweek, captain picks and each club's fixtures.</li>
+        <li><a href="#gameweeks">Past Gameweeks</a>: every result, the cup and European matches before it, and each
+          player's points against their forecast.</li>
+        <li><a href="#next">Next Gameweek</a>: the forecast for the coming gameweek, captain picks, and each club's
+          fixtures and midweek matches.</li>
         <li><a href="#players">Players</a>: every player's season, week by week.</li>
         <li><a href="#markets">Markets</a>: what the betting odds said before each deadline, next to what happened. Upcoming
           matches' odds are refreshed regularly.</li>

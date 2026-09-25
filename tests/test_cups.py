@@ -112,3 +112,43 @@ def test_fit_and_adjust_move_xp_between_squad_players(tmp_path, monkeypatch):
     assert week2["rotation_factor"].tolist() == [2.0, 0.0]
     assert (out.loc[epl["gw"] != 2, "rotation_factor"] == 1.0).all()     # later weeks untouched
     assert cups.factors("gbm") is None
+
+
+def test_names_come_from_the_match_id():
+    assert cups.names("26-27-champions-league-club-brugge-vs-aston-villa-2026-09-08", "champions-league") == (
+        "Club Brugge", "Aston Villa")
+    assert cups.names("26-27-efl-cup-preston-north-end-vs-everton-2026-08-26", "efl-cup") == ("Preston North End", "Everton")
+    assert cups.names("26-27-europa-league-ac-milan-vs-sabah-fk", "europa-league") == ("AC Milan", "Sabah FK")
+
+
+def _fixtures_for_site():
+    """Villa at Brugge (CL); Fulham v Bournemouth (EFL) with Bournemouth's code missing on
+    Fulham's row; Bournemouth's own tie tells us its code."""
+    rows = [("cl-x", "26-27-champions-league-club-brugge-vs-aston-villa-2026-09-08", "champions-league", 7, None, False, 3, 2),
+            ("efl-a", "26-27-efl-cup-fulham-vs-afc-bournemouth-2026-08-25", "efl-cup", 54, None, True, 3, 0),
+            ("efl-b", "26-27-efl-cup-afc-bournemouth-vs-lincoln-city-2026-09-08", "efl-cup", 91, None, True, 4, 0)]
+    return pd.DataFrame([{"season": "2026-27", "gw": 4, "match_id": mid, "tournament": t, "team_code": code,
+                          "opp_code": pd.NA if opp is None else opp, "was_home": home, "goals_for": gf,
+                          "goals_against": ga, "finished": True,
+                          "kickoff_time": pd.Timestamp("2026-09-08T19:00", tz="UTC")}
+                         for _, mid, t, code, opp, home, gf, ga in rows])
+
+
+def test_matches_orient_scores_and_fill_missing_codes(monkeypatch):
+    monkeypatch.setattr(cups, "load", lambda: (_fixtures_for_site(), pd.DataFrame(columns=["match_id", "code", "minutes"])))
+    m = cups.matches("2026-27").set_index("match_id")
+    villa = m.loc["26-27-champions-league-club-brugge-vs-aston-villa-2026-09-08"]
+    assert (villa["home_name"], villa["away_code"], villa["home_score"], villa["away_score"]) == ("Club Brugge", 7, 2, 3)
+    assert pd.isna(villa["home_code"])
+    fulham = m.loc["26-27-efl-cup-fulham-vs-afc-bournemouth-2026-08-25"]
+    assert (fulham["home_code"], fulham["away_code"]) == (54, 91)      # Bournemouth's code, from its name
+
+
+def test_export_midweek_minutes_give_unlisted_squad_players_zero(monkeypatch):
+    from xpfpl import export
+    fx = _fixtures_for_site()
+    mins = pd.DataFrame({"match_id": [fx["match_id"][0]], "code": [501], "team_code": [7], "minutes": [90], "started": [True]})
+    monkeypatch.setattr(cups, "load", lambda: (fx, mins))
+    people = pd.DataFrame({"id": [1, 2, 3], "code": [501, 502, 999], "team_code": [7, 7, 3]})
+    got = export._midweek_minutes("2026-27", 4, people)
+    assert got.to_dict() == {1: 90.0, 2: 0.0}            # Arsenal's player (club 3) had no midweek match
