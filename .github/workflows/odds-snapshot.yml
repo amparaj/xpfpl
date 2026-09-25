@@ -3,11 +3,8 @@
 # them), and GitHub's runners aren't. The page reads the file through raw.githubusercontent.com,
 # which allows requests from any website and caches for 5 minutes.
 #
-# The schedule wakes every 5 minutes (the shortest GitHub allows; runs are often a few minutes
-# late), but the script only fetches when it's worth it: on every run from 48 hours before an FPL
-# deadline until 2 hours after that gameweek's last kick-off, and every 3 hours otherwise (the
-# deadlines and kick-offs come from the published site's meta.json). A run that isn't due exits
-# in seconds. A manual run (Actions -> Odds snapshot -> Run workflow) always fetches.
+# Scheduled runs only fetch when a refresh is due (`due` in web/scripts/odds-snapshot.ts) and
+# otherwise exit in seconds. A manual run (Actions -> Odds snapshot -> Run workflow) always fetches.
 #
 # A fetch is ~100 requests to Polymarket's public APIs, well under their rate limits. The file lives
 # on its own branch rather than gh-pages because every gh-pages push rebuilds the site, and Pages

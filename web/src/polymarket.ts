@@ -262,7 +262,7 @@ export interface OddsSnapshot {
 
 /** Where the page reads odds.json. On GitHub Pages (<owner>.github.io/<repo>/), the `odds` branch
  * through raw.githubusercontent.com, which allows any website and caches for 5 minutes: the
- * Action refreshes it (every 5 minutes near a deadline) without rebuilding the site. Anywhere else (npm run dev), data/odds.json. */
+ * Action refreshes it without rebuilding the site. Anywhere else (npm run dev), data/odds.json. */
 export function oddsUrl(): string {
   const { hostname, pathname } = window.location;
   if (!hostname.endsWith(".github.io")) return "odds.json";

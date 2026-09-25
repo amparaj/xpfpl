@@ -191,7 +191,7 @@ export default function MarketsPage() {
   const site = useSite();
   const club = useClubName();
   const file = useData<MarketsFile>("markets.json");
-  // Live odds come from odds.json, which a GitHub Action refreshes (every 5 minutes near a deadline): the browser
+  // Live odds come from odds.json, which a scheduled GitHub Action refreshes: the browser
   // never calls Polymarket (it's blocked on some networks). Matches that have kicked off since drop out.
   const odds = useData<OddsSnapshot>(oddsUrl());
   const live = useMemo(() => {
@@ -269,7 +269,7 @@ export default function MarketsPage() {
       <h2>Markets</h2>
       <p className="lede">
         What the betting markets (Polymarket) thought, next to the model's own club ratings. For played gameweeks the odds
-        are as they stood at the FPL deadline, beside what happened. Upcoming matches' odds are refreshed every 5 minutes in the two days before a deadline and while the gameweek is on, every 3 hours otherwise.
+        are as they stood at the FPL deadline, beside what happened. Upcoming matches' odds are refreshed regularly.
       </p>
       <div className="toolbar">
         <label>

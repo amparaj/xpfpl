@@ -123,7 +123,7 @@ export default function About() {
         <li><a href="#gameweeks">Gameweeks</a>: every result, and each player's points against their forecast.</li>
         <li><a href="#players">Players</a>: every player's season, week by week.</li>
         <li><a href="#markets">Markets</a>: what the betting odds said before each deadline, next to what happened. Upcoming
-          matches' odds are refreshed every 5 minutes around each gameweek.</li>
+          matches' odds are refreshed regularly.</li>
         <li><a href="#team">My Team</a>: one FPL team's season, each week against the best team it could have picked.</li>
         <li><a href="#accuracy">Model Accuracy</a>: the full test results.</li>
         <li><a href="#data">Data</a>: the archive behind all of it, free to download.</li>
