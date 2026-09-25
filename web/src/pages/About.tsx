@@ -121,8 +121,8 @@ export default function About() {
       <h3>What's on this site</h3>
       <ul>
         <li><a href="#accuracy">Model Accuracy</a>: the full test results.</li>
+        <li><a href="#gameweeks">Past Gameweeks</a>: every result, and each player's points against their forecast.</li>
         <li><a href="#next">Next Gameweek</a>: the forecast for the coming gameweek, captain picks and each club's fixtures.</li>
-        <li><a href="#gameweeks">Gameweeks</a>: every result, and each player's points against their forecast.</li>
         <li><a href="#players">Players</a>: every player's season, week by week.</li>
         <li><a href="#markets">Markets</a>: what the betting odds said before each deadline, next to what happened. Upcoming
           matches' odds are refreshed regularly.</li>
