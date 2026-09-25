@@ -238,9 +238,54 @@ def _pick_chip(players, gws, plan, available, solve_kwargs, thresholds):
     return (best.chip if best else None), advice
 
 
+def play_chip(pool: pd.DataFrame, gws: list[int], base: dict, chip: str | None, plan, *,
+              free_transfers: int, max_hits: int, plan_transfers: bool):
+    """The plan re-solved with `chip` played in the first of `gws` (the plan itself if no chip)."""
+    gw = gws[0]
+    kwargs = dict(free_transfers=free_transfers, max_hits=max_hits, plan_transfers=plan_transfers)
+    if chip == "3xc":
+        return solve(pool, gws, **base, **kwargs, triple_captain_gw=gw)
+    if chip == "bboost":
+        return solve(pool, gws, **base, **kwargs, bench_boost_gw=gw)
+    if chip == "freehit":
+        return solve(pool, [gw], **base, unlimited_transfers=True)
+    if chip == "wildcard":
+        return solve(pool, gws, **base, unlimited_transfers=True)
+    return plan
+
+
+def settle(squad: dict[int, int], bank: float, free_transfers: int, plan, chip: str | None,
+           now_cost: dict[int, int], selling: dict[int, float], budget: float) -> tuple[dict[int, int], float, int]:
+    """The squad (element -> purchase price in tenths), bank and free transfers after the week.
+
+    A Free Hit squad is handed back at the end of the week. Building the opening squad is free
+    and doesn't earn next week's free transfer; a Wildcard or Free Hit doesn't use any up."""
+    squad, had_squad = dict(squad), bool(squad)
+    moves = len(plan.transfers_in) if had_squad else 0
+    if chip != "freehit":
+        for p in plan.transfers_out:
+            bank += selling[p]
+        for p in plan.transfers_in:
+            bank -= now_cost[p] / 10.0
+            squad[p] = now_cost[p]
+        for p in plan.transfers_out:
+            squad.pop(p, None)
+        if not squad:
+            squad = {p: now_cost[p] for p in plan.squad}
+            bank = budget - sum(squad.values()) / 10.0
+    if had_squad:
+        used = 0 if chip in ("wildcard", "freehit") else moves
+        free_transfers = min(max(free_transfers - used, 0) + 1, config.MAX_FREE_TRANSFERS)
+    return squad, bank, free_transfers
+
+
 def run(settings: Settings, frame: pd.DataFrame | None = None, predictor=None,
-        verbose: bool = True, price_table: dict | None = None) -> "Result":
-    """Replay `settings.season` and return the per-gameweek record plus a summary."""
+        verbose: bool = True, price_table: dict | None = None, observer=None) -> "Result":
+    """Replay `settings.season` and return the per-gameweek record plus a summary.
+
+    `observer`, if given, is called once per gameweek with a dict of that week's decision (gw,
+    plan, chip, pool, the squad/bank/free transfers it started from, selling prices, now_cost,
+    and the state it left): the Model's Team replay records its weeks from it."""
     frame = build_training_frame(load_matches()) if frame is None else frame
     rows = frame[frame["season"] == settings.season]
     if rows.empty:
@@ -279,20 +324,11 @@ def run(settings: Settings, frame: pd.DataFrame | None = None, predictor=None,
         if settings.chips and squad:
             chip, advice = _pick_chip(pool, gws, plan, _available_chips(used_chips, gw),
                                       {k: v for k, v in base.items()}, settings.thresholds)
-        if chip == "3xc":
-            plan = solve(pool, gws, **base, free_transfers=free_transfers, max_hits=settings.max_hits,
-                         plan_transfers=settings.plan_transfers, triple_captain_gw=gw)
-        elif chip == "bboost":
-            plan = solve(pool, gws, **base, free_transfers=free_transfers, max_hits=settings.max_hits,
-                         plan_transfers=settings.plan_transfers, bench_boost_gw=gw)
-        elif chip == "freehit":
-            plan = solve(pool, [gw], **base, unlimited_transfers=True)
-        elif chip == "wildcard":
-            plan = solve(pool, gws, **base, unlimited_transfers=True)
+        plan = play_chip(pool, gws, base, chip, plan, free_transfers=free_transfers,
+                         max_hits=settings.max_hits, plan_transfers=settings.plan_transfers)
         if chip:
             used_chips.setdefault(chip, []).append(gw)
 
-        had_squad = bool(squad)
         gw_actual = actual.loc[gw] if gw in actual.index.get_level_values(0) else actual.iloc[:0]
         points = gw_actual[TARGET].to_dict()
         minutes = gw_actual["minutes"].to_dict()
@@ -316,21 +352,12 @@ def run(settings: Settings, frame: pd.DataFrame | None = None, predictor=None,
                   f"C: {records[-1]['captain_name']} ({result['captain_points']:.0f})"
                   f"{'  ' + chip.upper() if chip else ''}")
 
-        # Settle up: a Free Hit squad is handed back at the end of the week.
-        if chip != "freehit":
-            for p in plan.transfers_out:
-                bank += selling[p]
-            for p in plan.transfers_in:
-                bank -= now_cost[p] / 10.0
-                squad[p] = now_cost[p]
-            for p in plan.transfers_out:
-                squad.pop(p, None)
-            if not squad:
-                squad = {p: now_cost[p] for p in plan.squad}
-                bank = settings.budget - sum(squad.values()) / 10.0
-        if had_squad:  # building the opening squad is free and doesn't earn next week's transfer
-            used = 0 if chip in ("wildcard", "freehit") else moves
-            free_transfers = min(max(free_transfers - used, 0) + 1, config.MAX_FREE_TRANSFERS)
+        before = dict(squad=dict(squad), bank=bank, free_transfers=free_transfers)
+        squad, bank, free_transfers = settle(squad, bank, free_transfers, plan, chip, now_cost, selling,
+                                             settings.budget)
+        if observer is not None:
+            observer(dict(gw=gw, plan=plan, chip=chip, pool=pool, selling=selling, now_cost=now_cost, **before,
+                          after=dict(squad=dict(squad), bank=bank, free_transfers=free_transfers)))
 
     return Result(settings, pd.DataFrame(records))
 

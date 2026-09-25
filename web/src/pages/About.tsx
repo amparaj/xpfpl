@@ -121,11 +121,13 @@ export default function About() {
       <h3>What's on this site</h3>
       <ul>
         <li><a href="#accuracy">Model Accuracy</a>: the full test results.</li>
+        <li><a href="#next">Next Gameweek</a>: the forecast for the coming gameweek, captain picks and each club's fixtures.</li>
         <li><a href="#gameweeks">Gameweeks</a>: every result, and each player's points against their forecast.</li>
         <li><a href="#players">Players</a>: every player's season, week by week.</li>
         <li><a href="#markets">Markets</a>: what the betting odds said before each deadline, next to what happened. Upcoming
           matches' odds are refreshed regularly.</li>
-        <li><a href="#team">My Team</a>: one FPL team's season, each week against the best team it could have picked.</li>
+        <li><a href="#model-team">The Model's Team</a>: a paper FPL team that does whatever the model says, decided before
+          every deadline and scored like any other team.</li>
         <li><a href="#data">Data</a>: the archive behind all of it, free to download.</li>
       </ul>
 

@@ -7,6 +7,7 @@ const FILES = [
   ["fpl/<season>/teams.parquet, fixtures…", "Clubs, fixtures and scores, and gameweek deadlines and averages."],
   ["fpl/<season>/deadlines/gwNN.parquet", "Every player shortly before each deadline: price, injury news, chance of playing, ownership, transfers."],
   ["predictions/<season>/gwNN_<model>.parquet", "This model's forecasts, saved before each deadline."],
+  ["modelteam/<season>/gwNN.json", "The Model's Team: its transfers, team, captain and chip for each gameweek, saved before the deadline."],
   ["polymarket/<season>/events, prices", "Every Polymarket market on each played match, and its price history up to the FPL deadline (from 2024-25)."],
   ["polymarket/outrights/<date>.parquet", "Season-long markets: title, top four, relegation, top scorer…"],
 ];

@@ -16,12 +16,13 @@ or any Parquet reader.
 | `fpl/<season>/events.parquet` | Gameweeks: deadlines, average and highest scores, chip plays | FPL API |
 | `fpl/<season>/deadlines/gwNN.parquet` | Every player shortly before gameweek NN's deadline: price, injury news, `chance_of_playing_next_round`, ownership, that week's transfers | FPL API `bootstrap-static` |
 | `predictions/<season>/gwNN_<model>.parquet` | xP-FPL's forecasts, saved before each deadline | this project |
+| `modelteam/<season>/gwNN.json` | The Model's Team: its transfers, XI, bench order, captain and chip for gameweek NN, saved before the deadline (`source` "live"), or filled in by the backtest for weeks before the live record began ("replay"). `next` is the squad, bank and free transfers it hands to the following week. | this project |
 | `polymarket/<season>/events/gwNN.parquet` | Every Polymarket event for each played match (result, goal totals, both teams to score, anytime scorer), as trimmed JSON | [Polymarket Gamma API](https://gamma-api.polymarket.com) |
 | `polymarket/<season>/prices/gwNN.parquet` | Price histories for those markets up to the FPL deadline: `window` is `history_14d` (hourly, 14 days) or `history_3h_5m` (every 5 minutes, 3 hours). `t` is a Unix time; `p` is the probability of "Yes". A row with `t = -1` means no trades. | Polymarket CLOB API |
 | `polymarket/outrights/<date>.parquet` | Season-long markets (title, top four, relegation, top scorer...) as priced that day | Polymarket |
 
 Past seasons never change. The current season gains a few files every week, written by
-`xpfpl fetch`, `xpfpl markets` and `xpfpl predict`. The deadline snapshots are taken by a
+`xpfpl fetch`, `xpfpl markets`, `xpfpl predict` and `xpfpl recommend`. The deadline snapshots are taken by a
 scheduled GitHub Action (`.github/workflows/deadline-snapshot.yml`, which pushes them to the
 `deadline-snapshots` branch until they're merged here), or by hand with
 `xpfpl archive --deadline`.

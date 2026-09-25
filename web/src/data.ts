@@ -57,21 +57,20 @@ export interface Gameweek {
   gw: number; xp_source: string; players: Columns;
   fixtures: { id: number; kickoff: string; home: number; away: number; home_score: number | null; away_score: number | null }[];
 }
-export interface ManagerGw {
-  picks: { element: number; slot: number; multiplier: number; captain: boolean; vice: boolean }[];
-  chip: string | null; auto_subs: { element_in: number; element_out: number }[];
-  best: number; best_xi: number[]; best_captain: number;
+/** One gameweek of the Model's Team: the decision saved before the deadline and, once played,
+ * what it scored. `source`: "live" (decided before the deadline), "replay" (filled in by the
+ * backtest for weeks before the live record began) or "carried" (no decision saved: last week's team). */
+export interface ModelWeek {
+  gw: number; source: "live" | "replay" | "carried"; model: string; made_at: string; chip: string | null;
+  free_transfers: number; bank: number; hits: number;
+  transfers: { out: number; in: number; sold: number; bought: number }[];
+  squad: number[]; lineup: number[]; bench: number[]; captain: number; vice: number; xp: number | null;
+  points?: number; gross?: number; captain_played?: number | null; autosubs?: [number, number][];
+  best?: number; best_xi?: number[]; best_captain?: number;
 }
-export interface Manager {
-  team_id: number; name: string; started: number;
-  history: {
-    event: number; points: number; total_points: number; rank: number | null; overall_rank: number;
-    bank: number; value: number; event_transfers: number; event_transfers_cost: number; points_on_bench: number;
-  }[];
-  chips: { name: string; event: number }[];
-  transfers: { event: number; element_in: number; element_in_cost: number; element_out: number; element_out_cost: number; time: string }[];
-  gameweeks: Record<string, ManagerGw>;
-}
+export interface ModelTeam { model: string; gameweeks: ModelWeek[]; next: ModelWeek | null }
+/** The forecast saved for the next gameweek: xP per player for each gameweek of its horizon. */
+export interface NextGw { gw: number; deadline: string; model: string; gameweeks: number[]; players: Columns }
 export interface Markets {
   matches: Columns; accuracy: Columns; scorers?: Columns;
   outrights?: Columns & { snapshot: string };

@@ -2,9 +2,10 @@ import * as Plot from "@observablehq/plot";
 import { useCallback, useMemo, useState } from "react";
 import { color } from "../colors";
 import { Chart, Club, Legend, Loading, Note, Segmented, Table, plotDefaults, useClubName, type Column } from "../components/ui";
-import { rows, type Markets as MarketsFile, type Player, type Row } from "../data";
+import { rows, type Markets as MarketsFile, type Row } from "../data";
 import { dec, pct, pts, signed, when } from "../format";
-import { poissonWin, resultHistory, oddsUrl, type LiveScorer, type MatchHistory, type OddsSnapshot, type Outright } from "../polymarket";
+import { resultHistory, oddsUrl, type LiveScorer, type MatchHistory, type OddsSnapshot, type Outright } from "../polymarket";
+import { matchPlayer, ours } from "../ratings";
 import { useData, useSite, type Site } from "../site";
 
 const LIVE = "live";
@@ -36,37 +37,12 @@ function fromExport(r: Row, club: (c: number) => string): MatchView {
   };
 }
 
-/** Our Odds for an upcoming match: the club ratings exported for the next gameweek. */
-function ours(site: Site, home: number, away: number) {
-  const r = site.meta.ratings_next;
-  if (!r || !("clubs" in r)) return { ours_home: null, ours_away: null, ours_home_win: null, ours_away_win: null };
-  const [ha, hd] = r.clubs[String(home)] ?? r.prior;
-  const [aa, ad] = r.clubs[String(away)] ?? r.prior;
-  const gf = Math.exp(r.mu + r.home + ha - ad), ga = Math.exp(r.mu + aa - hd);
-  return { ours_home: gf, ours_away: ga, ours_home_win: poissonWin(gf, ga), ours_away_win: poissonWin(ga, gf) };
-}
-
 /** The FPL gameweek of an upcoming match: the fixture between the same clubs within a few days. */
 function fixtureGw(site: Site, home: number, away: number, kickoff: string): number | null {
   const h = site.teamByCode.get(home)?.id, a = site.teamByCode.get(away)?.id;
   const f = site.fixtures.find((x) => x.home === h && x.away === a && x.kickoff &&
     Math.abs(new Date(x.kickoff).getTime() - new Date(kickoff).getTime()) < 5 * 86400e3);
   return f?.gw ?? null;
-}
-
-const strip = (s: string) => s.normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z ]/g, "").trim();
-
-/** The FPL player a scorer market names, among the two clubs' players (as markets.match_players does). */
-function matchPlayer(site: Site, s: LiveScorer): Player | undefined {
-  const clubs = new Set([site.teamByCode.get(s.home_code)?.id, site.teamByCode.get(s.away_code)?.id]);
-  const key = strip(s.player);
-  const hits = site.players.filter((p) => {
-    if (!clubs.has(p.team)) return false;
-    const full = strip(`${p.first_name} ${p.second_name}`);
-    const parts = full.split(" ");
-    return [strip(p.web_name), full, `${parts[0]} ${parts[parts.length - 1]}`, strip(p.second_name)].includes(key);
-  });
-  return hits.length === 1 ? hits[0] : undefined;
 }
 
 // ---------------------------------------------------------------- charts

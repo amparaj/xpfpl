@@ -117,6 +117,7 @@ select, input[type="search"] {
   font: inherit; font-size: 14px; color: var(--ink); background: var(--surface);
   border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px;
 }
+select { max-width: 100%; text-overflow: ellipsis; }   /* long option names (season markets) on a phone */
 input[type="search"] { min-width: 180px; }
 
 .segmented { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--surface); }
@@ -217,3 +218,8 @@ tr.selected { background: var(--selected) !important; }
 }
 .step-title { font-weight: 600; margin-top: 8px; }
 .step-text { font-size: 13px; color: var(--ink-2); }
+
+/* ---------------------------------------------------------------- next gameweek */
+
+.fixture-cells { display: inline-flex; gap: 4px; }
+.fixture-cell { display: inline-block; padding: 2px 6px; border-radius: 4px; color: var(--ink); font-variant-numeric: tabular-nums; }
