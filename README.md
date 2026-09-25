@@ -426,10 +426,10 @@ drops the old season's match-by-match history.
 A public, read-only look back at the season, served by GitHub Pages from the `gh-pages` branch
 (https://amparaj.github.io/xpfpl/). Its pages, in order: **About** (where it opens: the project and
 how the model forecasts, picks a team and is tested, in plain language, with the latest accuracy
-figures), **Gameweeks** (every result, each player's points against the xP forecast), **Players**,
-**Markets** (the betting odds at each deadline against what happened), **My Team** (one FPL team's
-season: picks against the hindsight-best XI, transfers, chips), **Model Accuracy** and **Data** (the
-archive). It doesn't train or plan.
+figures), **Model Accuracy**, **Gameweeks** (every result, each player's points against the xP
+forecast), **Players**, **Markets** (the betting odds at each deadline against what happened),
+**My Team** (one FPL team's season: picks against the hindsight-best XI, transfers, chips) and
+**Data** (the archive). It doesn't train or plan.
 The Markets page's upcoming-match odds, price histories and season markets come from
 `odds.json` on the `odds` branch, which a scheduled GitHub Action (`.github/workflows/odds-snapshot.yml`)
 fetches from Polymarket on a schedule (Actions -> Odds snapshot -> Run workflow refreshes it by

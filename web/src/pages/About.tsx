@@ -120,12 +120,12 @@ export default function About() {
 
       <h3>What's on this site</h3>
       <ul>
+        <li><a href="#accuracy">Model Accuracy</a>: the full test results.</li>
         <li><a href="#gameweeks">Gameweeks</a>: every result, and each player's points against their forecast.</li>
         <li><a href="#players">Players</a>: every player's season, week by week.</li>
         <li><a href="#markets">Markets</a>: what the betting odds said before each deadline, next to what happened. Upcoming
           matches' odds are refreshed regularly.</li>
         <li><a href="#team">My Team</a>: one FPL team's season, each week against the best team it could have picked.</li>
-        <li><a href="#accuracy">Model Accuracy</a>: the full test results.</li>
         <li><a href="#data">Data</a>: the archive behind all of it, free to download.</li>
       </ul>
 

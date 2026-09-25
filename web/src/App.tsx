@@ -10,15 +10,15 @@ import MyTeam from "./pages/MyTeam";
 import Players from "./pages/Players";
 import { SiteContext, useSiteData } from "./site";
 
-// About first (where the site opens), then look back at the week, research, one team's season,
-// how far to trust it, and the raw data last.
+// About first (where the site opens), then how far to trust the model, then look back at the
+// week, research, one team's season, and the raw data last.
 const PAGES = [
   { id: "about", label: "About", component: About },
+  { id: "accuracy", label: "Model Accuracy", component: Accuracy },
   { id: "gameweeks", label: "Gameweeks", component: Gameweeks },
   { id: "players", label: "Players", component: Players },
   { id: "markets", label: "Markets", component: MarketsPage },
   { id: "team", label: "My Team", component: MyTeam },
-  { id: "accuracy", label: "Model Accuracy", component: Accuracy },
   { id: "data", label: "Data", component: DataPage },
 ] as const;
 
