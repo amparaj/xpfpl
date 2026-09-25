@@ -430,15 +430,20 @@ figures), **Gameweeks** (every result, each player's points against the xP forec
 **Markets** (the betting odds at each deadline against what happened), **My Team** (one FPL team's
 season: picks against the hindsight-best XI, transfers, chips), **Model Accuracy** and **Data** (the
 archive). It doesn't train or plan.
-The Markets page fetches upcoming matches' odds live from Polymarket, whose API accepts requests
-from any website (the FPL API doesn't, so everything else comes from the export).
+The Markets page's upcoming-match odds, price histories and season markets come from
+`data/odds.json`, which a scheduled GitHub Action (`.github/workflows/odds-snapshot.yml`) fetches
+from Polymarket every 30 minutes and adds to the `gh-pages` commit. The browser never calls
+Polymarket itself, because it's blocked on some networks (Australian ISPs, for one). `publish` keeps
+the branch's latest `odds.json`. Played matches' price charts come from the export
+(`market_history/`, built from the archive). To look at live odds locally, run
+`node web/scripts/odds-snapshot.ts web/public` (Node 23.6+) after `xpfpl export`.
 
 ```bash
 xpfpl publish          # export -> build web/ -> push web/dist to gh-pages
 xpfpl publish --build-only && npm --prefix web run preview   # look at it locally first
 ```
 
-`xpfpl export` writes `web/public/data/` (about 1 MB of JSON; not committed). `xpfpl publish`
+`xpfpl export` writes `web/public/data/` (about 13 MB of JSON, most of it played matches' price histories; not committed). `xpfpl publish`
 builds the React app in `web/` (Vite + TypeScript, charts with Observable Plot; needs Node.js)
 and force-pushes `web/dist/` to `gh-pages` as a single commit, so the site's data never piles up
 in the repo's history. The team shown is the one saved in the dashboard (or `--team-id`). To turn

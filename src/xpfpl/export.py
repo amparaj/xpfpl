@@ -1,8 +1,8 @@
 """The website's data: JSON files in web/public/data/ for the static site in web/.
 
-The site looks back at the season. It never trains or plans; it reads these files. The only thing
-it fetches itself is live betting odds, because Polymarket's API accepts requests from any website
-and FPL's doesn't.
+The site looks back at the season. It never trains or plans; it reads these files. Live betting
+odds come from data/odds.json, which a scheduled GitHub Action (.github/workflows/odds-snapshot.yml)
+refreshes on the gh-pages branch every 30 minutes; `publish` carries the latest one over.
 
   meta.json          season, gameweeks, clubs, the club ratings for the next GW ("Our Odds")
   players.json       every player as FPL shows them now, plus the saved forecast for the next GW
@@ -10,6 +10,8 @@ and FPL's doesn't.
   manager.json       one FPL team's season: points, rank, picks, transfers, chips, hindsight best XI
   markets.json       Polymarket odds at each FPL deadline since 2024-25 next to what happened,
                      anytime-scorer odds, how the odds did against our ratings, season markets
+  market_history/<season>/gwNN.json
+                     each played match's home/draw/away prices before the deadline (movement chart)
   accuracy.json      the model reports: validation, comparison, tuning and the live scorecard
 
 `xpfpl export` writes them; `xpfpl publish` builds the site and pushes it to the gh-pages branch.
@@ -248,6 +250,28 @@ def _markets(matches: pd.DataFrame) -> dict | None:
     return out
 
 
+def _market_histories(market: pd.DataFrame) -> dict[tuple[str, int], dict]:
+    """Each played match's result prices up to the deadline, from the archive, per (season, gw):
+    slug -> {"hourly"/"fine": {"home_win"/"draw"/"away_win": [[t, p], ...]}}, the shape of
+    web/src/polymarket.ts's MatchHistory, for the movement chart."""
+    from xpfpl.data import markets
+    games = archive.polymarket_games()
+    windows = {"hourly": f"history_{markets.HISTORY_DAYS}d", "fine": f"history_{markets.FINE_HOURS}h_{markets.FINE_MINUTES}m"}
+    out: dict[tuple[str, int], dict] = {}
+    for r in market[["season", "gw", "slug"]].dropna().itertuples():
+        main = [e for e in games.get(r.slug, []) if e.get("slug") == r.slug]
+        found = {}
+        for name, m in markets._match_markets(main).items():
+            token = json.loads(m.get("clobTokenIds") or "[]")
+            if name in ("home_win", "draw", "away_win") and token:
+                for key, window in windows.items():
+                    points = archive.price_history(window, token[0]) or []
+                    found.setdefault(key, {})[name] = [[p["t"], round(p["p"], 4)] for p in points]
+        if found:
+            out.setdefault((r.season, int(r.gw)), {})[r.slug] = found
+    return out
+
+
 def _accuracy(season: str) -> dict:
     def load(path: Path):
         return json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
@@ -257,6 +281,7 @@ def _accuracy(season: str) -> dict:
 
 
 def export(team_id: int | None = None, model: str = config.MODEL, out: Path = config.SITE_DATA_DIR) -> list[Path]:
+    from xpfpl.data import markets
     from xpfpl.data.history import load_matches
 
     bs, fx = api.bootstrap(), api.fixtures()
@@ -289,6 +314,9 @@ def export(team_id: int | None = None, model: str = config.MODEL, out: Path = co
     market = _markets(matches)
     if market:
         written.append(_write(market, out / "markets.json"))
+        saved, _ = markets.load()
+        for (market_season, gw), histories in _market_histories(saved).items():
+            written.append(_write(histories, out / "market_history" / market_season / f"gw{gw:02d}.json"))
     written.append(_write(_accuracy(season), out / "accuracy.json"))
     return written
 
@@ -310,7 +338,7 @@ def build_site() -> Path:
 def publish(dist: Path, branch: str = "gh-pages", remote: str = "origin", url: str | None = None) -> None:
     """Push `dist` to `branch` as a single commit that replaces whatever was there, so the site's
     data never piles up in the repo's history. GitHub Pages serves that branch. `url` overrides
-    the remote's URL."""
+    the remote's URL. The branch's data/odds.json (the Action's live odds) is carried over."""
     (dist / ".nojekyll").write_text("", encoding="utf-8")         # serve files as they are
     url = url or subprocess.run(["git", "remote", "get-url", remote], cwd=config.ROOT, check=True,
                                 capture_output=True, text=True).stdout.strip()
@@ -322,6 +350,13 @@ def publish(dist: Path, branch: str = "gh-pages", remote: str = "origin", url: s
             value = subprocess.run(["git", "config", key], cwd=config.ROOT, capture_output=True, text=True).stdout.strip()
             if value:
                 subprocess.run([*git, "config", key, value], check=True)
+        # The live odds are written on the branch by the scheduled Action, not here: keep its latest.
+        odds = dist / "data" / "odds.json"
+        if subprocess.run([*git, "fetch", "-q", "--depth=1", url, branch], capture_output=True).returncode == 0:
+            kept = subprocess.run([*git, "show", "FETCH_HEAD:data/odds.json"], capture_output=True)
+            if kept.returncode == 0:
+                odds.parent.mkdir(parents=True, exist_ok=True)
+                odds.write_bytes(kept.stdout)
         subprocess.run([*git, "add", "-A"], check=True)
         stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
         subprocess.run([*git, "commit", "-q", "-m", f"Publish the site ({stamp})"], check=True)

@@ -1,0 +1,68 @@
+# Saves Polymarket's live odds as data/odds.json on the gh-pages branch, so the website's Markets
+# page reads them from its own domain. The browser never calls Polymarket itself: it's blocked on
+# some networks (Australian ISPs among them), and GitHub's runners aren't.
+#
+# Every 30 minutes: ~100 requests to Polymarket's public APIs a run, far under their rate limits,
+# and 48 Pages deploys a day, under GitHub's soft limit of 10 an hour. Scheduled runs are often
+# a few minutes late, and GitHub pauses schedules after 60 days without a commit to the repo.
+#
+# gh-pages holds one commit (`xpfpl publish` force-pushes it), so this amends that commit rather
+# than adding one, and `publish` carries the latest odds.json over. Scheduled workflows only run
+# from the default branch.
+name: Odds snapshot
+
+on:
+  schedule:
+    - cron: "11,41 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write            # to request a Pages build after the push
+
+concurrency:
+  group: odds-snapshot
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: main
+          sparse-checkout: web
+
+      - uses: actions/checkout@v5
+        with:
+          ref: gh-pages
+          path: site
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+
+      # Runs web/src/polymarket.ts directly (Node strips the types), so no npm install.
+      - name: Fetch the odds
+        run: node main/web/scripts/odds-snapshot.ts site
+
+      - name: Amend the gh-pages commit
+        working-directory: site
+        run: |
+          git add data/odds.json
+          if git diff --cached --quiet; then
+            echo "Nothing new."
+            exit 0
+          fi
+          base=$(git rev-parse HEAD)
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit --quiet --amend --no-edit
+          # The lease fails if a publish landed while this ran: the next run adds the odds to it.
+          git push --quiet --force-with-lease=gh-pages:$base origin HEAD:gh-pages \
+            || { echo "gh-pages moved on during the run; the next run will catch up."; exit 0; }
+          gh api --method POST "repos/${{ github.repository }}/pages/builds" --silent \
+            || echo "Couldn't request a Pages build (the push may already have started one)."
+        env:
+          GH_TOKEN: ${{ github.token }}

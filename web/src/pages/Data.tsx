@@ -46,7 +46,7 @@ select * from '${repo ? repo.replace("github.com", "raw.githubusercontent.com") 
       <ul>
         <li>Past seasons: <a href="https://github.com/vaastav/Fantasy-Premier-League">vaastav/Fantasy-Premier-League</a>. Please credit it.</li>
         <li>This season: the public <a href="https://fantasy.premierleague.com">Fantasy Premier League</a> API. The data belongs to the Premier League.</li>
-        <li>Odds: <a href="https://polymarket.com">Polymarket</a>. Upcoming matches on the Markets page are fetched live from its public API.</li>
+        <li>Odds: <a href="https://polymarket.com">Polymarket</a>. Upcoming matches on the Markets page are fetched from its public API every 30 minutes.</li>
       </ul>
     </>
   );
