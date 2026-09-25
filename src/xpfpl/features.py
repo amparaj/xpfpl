@@ -410,7 +410,7 @@ def build_future_frame(matches: pd.DataFrame, bs: dict, fixtures: list[dict], ga
             continue
         for team, opp, home in ((f["team_h"], f["team_a"], True), (f["team_a"], f["team_h"], False)):
             rows.append({"gw": f["event"], "fixture": f["id"], "team": team, "opponent_team": opp,
-                         "was_home": home})
+                         "was_home": home, "kickoff_time": f["kickoff_time"]})
     fx = pd.DataFrame(rows)
 
     df = players.rename(columns={"id": "element", "element_type": "position", "now_cost": "value"})

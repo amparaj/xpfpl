@@ -60,3 +60,55 @@ def test_rest_features_before_after_and_own_minutes():
     assert city["cup_after_days"] == cups.WINDOW_DAYS
     assert f.iloc[3].tolist() == [0, 0, cups.WINDOW_DAYS, 0, 0, cups.WINDOW_DAYS, 0, 0, 0]   # no data that season
     assert f.index.equals(epl.index)
+
+
+def test_unplayed_midweek_match_leaves_minutes_unknown():
+    fx = cups.club_fixtures(_raw_fixtures(), "2026-27")
+    epl = pd.DataFrame({"season": ["2026-27"], "team_code": [3], "code": [1001],
+                        "kickoff_time": [pd.Timestamp("2026-09-12T14:00", tz="UTC")]})
+    f = cups.rest_features(epl, fx, pd.DataFrame(columns=["match_id", "code", "team_code", "minutes", "started"]))
+    assert f.iloc[0]["cup_before"] == 1
+    assert pd.isna(f.iloc[0]["cup_mins_before"]) and pd.isna(f.iloc[0]["cup_started_before"])
+    assert cups.group(f.assign(minutes_r5=90.0)).isna().all()
+
+
+def test_group_splits_regulars_and_squad_players_by_midweek_minutes():
+    df = pd.DataFrame({"cup_before": [1, 1, 1, 1, 1, 0],
+                       "cup_mins_before": [0, 30 / 90, 1.0, 0, 0.5, 0],
+                       "minutes_r5": [85, 85, 85, 10, 10, 85]})
+    assert cups.group(df).tolist()[:5] == ["regular_rested", "regular_part", "regular_full",
+                                           "squad_unused", "squad_played"]
+    assert pd.isna(cups.group(df).iloc[5])
+
+
+def _season_rows(n_weeks=4):
+    """Two EPL rows per week at club 3, each after a midweek match: a squad player who played
+    midweek and scored 4, and one who didn't and scored 0."""
+    fx, mins, epl = [], [], []
+    for w in range(n_weeks):
+        cup_time = pd.Timestamp("2026-09-08T19:00", tz="UTC") + pd.Timedelta(weeks=w)
+        fx.append({"season": "2026-27", "gw": w + 1, "match_id": f"cl{w}", "tournament": "champions-league",
+                   "kickoff_time": cup_time, "team_code": 3})
+        mins.append({"match_id": f"cl{w}", "code": 1, "team_code": 3, "minutes": 90, "started": True})
+        for code, pts in ((1, 4), (2, 0)):
+            epl.append({"season": "2026-27", "team_code": 3, "code": code, "minutes_r5": 10.0,
+                        "kickoff_time": cup_time + pd.Timedelta(days=4), "total_points": pts, "gw": w + 1})
+    return pd.DataFrame(fx), pd.DataFrame(mins), pd.DataFrame(epl)
+
+
+def test_fit_and_adjust_move_xp_between_squad_players(tmp_path, monkeypatch):
+    fx, mins, epl = _season_rows()
+    monkeypatch.setattr(cups, "load", lambda: (fx, mins))
+    monkeypatch.setattr(cups, "FACTORS_PATH", tmp_path / "cups.json")
+    monkeypatch.setattr(cups, "PRIOR_XP", 0.0)
+    fitted = cups.fit(epl, [2.0] * len(epl), "mlp")
+    g = fitted["groups"]
+    assert g["squad_played"]["rows"] == 4 and g["squad_played"]["factor"] == 2.0
+    assert g["squad_unused"]["factor"] == 0.0
+    assert g["regular_full"]["rows"] == 0
+
+    out = cups.adjust(epl, next_gw=2, model="mlp")
+    week2 = out[epl["gw"] == 2]
+    assert week2["rotation_factor"].tolist() == [2.0, 0.0]
+    assert (out.loc[epl["gw"] != 2, "rotation_factor"] == 1.0).all()     # later weeks untouched
+    assert cups.factors("gbm") is None

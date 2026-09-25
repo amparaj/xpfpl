@@ -15,10 +15,12 @@ archive/cups/<season>/minutes/gwNN.parquet    one row per player per played non-
 
 `rest_features` turns these into features for each Premier League player-match: how recently
 the club played another competition (and how big), whether another one follows soon after, and
-how many minutes the player himself played in it.
+how many minutes the player himself played in it. `fit` / `adjust` turn the player's own midweek
+role into a factor on next week's xP (see "adjusting xP" below); `predict.py` applies it.
 """
 
 import io
+import json
 
 import numpy as np
 import pandas as pd
@@ -153,7 +155,7 @@ def _nearest(epl: pd.DataFrame, cups: pd.DataFrame, direction: str) -> pd.DataFr
              .rename(columns={"kickoff_time": "cup_time"}).sort_values("cup_time"))   # TBD ties have no time
     right["team_code"] = right["team_code"].astype(int)
     left["team_code"] = left["team_code"].astype(int)
-    left["kickoff_time"] = left["kickoff_time"].astype(right["cup_time"].dtype)
+    left["kickoff_time"] = pd.to_datetime(left["kickoff_time"], utc=True).astype(right["cup_time"].dtype)
     got = pd.merge_asof(left, right, left_on="kickoff_time", right_on="cup_time", by="team_code",
                         direction=direction, allow_exact_matches=False,
                         tolerance=pd.Timedelta(days=WINDOW_DAYS))
@@ -171,8 +173,9 @@ def rest_features(epl: pd.DataFrame, fixtures: pd.DataFrame, minutes: pd.DataFra
       cup_mins_before     the player's minutes in that match / 90 (0 if unknown or not played)
       cup_started_before  1 if he started it
 
-    `cup_mins_before` is only known once that match is played: fine for training and for the
-    next gameweek (the midweek match is before the deadline), not for weeks further ahead.
+    `cup_mins_before` and `cup_started_before` are only known once that match is played (NaN
+    before): fine for training and for the next gameweek (the midweek match is before the
+    deadline), not for weeks further ahead.
     """
     out = pd.DataFrame(index=epl.index)
     out["cup_era"] = epl["season"].isin(fixtures["season"].unique()).astype(float)
@@ -187,6 +190,98 @@ def rest_features(epl: pd.DataFrame, fixtures: pd.DataFrame, minutes: pd.DataFra
             key = pd.DataFrame({"match_id": near["match_id"], "code": epl["code"]}, index=epl.index)
             played = key.reset_index().merge(minutes[["match_id", "code", "minutes", "started"]],
                                              on=["match_id", "code"], how="left").set_index("index")
-            out["cup_mins_before"] = (played["minutes"].fillna(0) / 90.0).clip(upper=4 / 3)
-            out["cup_started_before"] = played["started"].fillna(False).astype(float)
+            # A player missing from a played match's stats wasn't used (0); a match not played
+            # yet leaves his minutes unknown (NaN), which `group` then ignores.
+            unplayed = near["match_id"].notna() & ~near["match_id"].isin(set(minutes["match_id"]))
+            out["cup_mins_before"] = (played["minutes"].fillna(0) / 90.0).clip(upper=4 / 3).mask(unplayed)
+            out["cup_started_before"] = played["started"].fillna(False).astype(float).mask(unplayed)
     return out[FEATURES].astype("float32")
+
+
+# ---------------------------------------------------------------- adjusting xP
+
+# The model can't see midweek matches, so what it gets wrong around them is the adjustment: points
+# scored / xP per rotation group, relative to weeks with no midweek match, on every season with cup
+# data. Only the next gameweek is adjusted, from each player's own minutes in the midweek match
+# (played before the deadline). For later weeks only the club's fixture list is known, and at club
+# level there was no rotation penalty to apply: on 2025-26 + 2026-27 GW1-5, regulars at European
+# clubs beat the model's xP *more* in weeks with a midweek match (0.99-1.09 vs 0.92), which is club
+# quality, not rest. So later weeks only show the midweek matches (`predict`'s `cup_<gw>` columns).
+FACTORS_PATH = config.MODELS_DIR / "cups.json"
+REGULAR_MINUTES = 60      # minutes_r5 at or above this: a regular starter
+FULL_MINUTES = 76         # midweek minutes at or above this: played (nearly) the whole match
+PRIOR_XP = 200.0          # each factor is shrunk towards 1 as if it had this much xP at ratio 1
+GROUPS = ["regular_rested", "regular_part", "regular_full", "squad_unused", "squad_played"]
+
+
+def group(df: pd.DataFrame) -> pd.Series:
+    """Each row's midweek rotation group (NaN where there's no played midweek match to go on).
+
+    `df` needs `minutes_r5` and the `rest_features` columns. Regulars (5-match minutes >= 60) are
+    split by their midweek minutes (0 / some / 76+); squad players by whether they got any."""
+    mins = df["cup_mins_before"] * 90
+    known = (df["cup_before"] > 0) & mins.notna()
+    regular = df["minutes_r5"] >= REGULAR_MINUTES
+    labels = pd.Series(np.nan, index=df.index, dtype=object)
+    labels[known & regular & (mins == 0)] = "regular_rested"
+    labels[known & regular & (mins > 0) & (mins < FULL_MINUTES)] = "regular_part"
+    labels[known & regular & (mins >= FULL_MINUTES)] = "regular_full"
+    labels[known & ~regular & (mins == 0)] = "squad_unused"
+    labels[known & ~regular & (mins > 0)] = "squad_played"
+    return labels
+
+
+def fit(frame: pd.DataFrame, xp, model: str, save: bool = True) -> dict:
+    """The xP factor per rotation group for `model`, from its predictions `xp` on the training
+    `frame` (the rows of seasons with cup data are used). Saved under `model` in models/cups.json."""
+    fixtures, minutes = load()
+    rows = frame["season"].isin(fixtures["season"].unique())
+    f = frame.loc[rows, ["season", "team_code", "code", "kickoff_time", "minutes_r5", "total_points"]]
+    f = f.assign(xp=pd.Series(np.asarray(xp, dtype=float), index=frame.index)[rows].clip(lower=0))
+    f = f.join(rest_features(f, fixtures, minutes))
+    labels = group(f)
+    table, bases = {}, {}
+    for name in GROUPS:
+        # Relative to every player of the same kind (regular / squad) whose club played midweek,
+        # not to quiet weeks: clubs in Europe beat the model anyway (they're good), and that is
+        # not rotation. So the factors only move xP between a club's players, by midweek role.
+        kind = name.split("_")[0]
+        if kind not in bases:
+            same = f[labels.str.startswith(kind, na=False)]
+            bases[kind] = same["total_points"].sum() / same["xp"].sum() if same["xp"].sum() > 0 else 1.0
+        base = bases[kind] or 1.0
+        g = f[labels == name]
+        points, expected = float(g["total_points"].sum()), float(g["xp"].sum())
+        factor = (points / base + PRIOR_XP) / (expected + PRIOR_XP) if expected + PRIOR_XP > 0 else 1.0
+        table[name] = {"rows": len(g), "points": points, "xp": round(expected, 1),
+                       "ratio": round(points / base / expected, 3) if expected else None,
+                       "factor": round(factor, 3)}
+    fitted = {"seasons": sorted(f["season"].unique()),
+              "base_ratio": {k: round(float(v), 3) for k, v in bases.items()}, "groups": table}
+    if save:
+        saved = json.loads(FACTORS_PATH.read_text(encoding="utf-8")) if FACTORS_PATH.exists() else {}
+        saved[model] = fitted
+        FACTORS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        FACTORS_PATH.write_text(json.dumps(saved, indent=1), encoding="utf-8")
+    return fitted
+
+
+def factors(model: str) -> dict[str, float] | None:
+    """{group: factor} fitted for `model`, or None if `xpfpl train` hasn't fitted any yet."""
+    if not FACTORS_PATH.exists():
+        return None
+    fitted = json.loads(FACTORS_PATH.read_text(encoding="utf-8")).get(model)
+    return {k: v["factor"] for k, v in fitted["groups"].items()} if fitted else None
+
+
+def adjust(frame: pd.DataFrame, next_gw: int, model: str) -> pd.DataFrame:
+    """For upcoming fixtures (`build_future_frame`, with `kickoff_time`): each row's
+    `rest_features`, its `rotation` group and the `rotation_factor` to multiply its xP by
+    (1 except in the next gameweek, and 1 everywhere if no factors are fitted)."""
+    fixtures, minutes = load()
+    out = rest_features(frame, fixtures, minutes)
+    labels = group(frame[["minutes_r5"]].join(out)).where(frame["gw"] == next_gw)
+    table = factors(model) or {}
+    out["rotation"] = labels
+    out["rotation_factor"] = labels.map(table).fillna(1.0).astype(float)
+    return out

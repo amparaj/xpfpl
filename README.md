@@ -80,7 +80,7 @@ data or the model is out of date:
 | When | Button | Command | What it does |
 | --- | --- | --- | --- |
 | Any time before a GW deadline | Refresh live FPL data | - | Re-downloads today's prices, injury flags, fixtures and your team (otherwise cached for 5-10 min). Saves nothing and needs no retraining |
-| Start of the season / after a GW is complete | 1. Fetch match data | `xpfpl fetch` | Rebuilds the saved training dataset (`matches.parquet`) from every finished match |
+| Start of the season / after a GW is complete | 1. Fetch match data | `xpfpl fetch` | Rebuilds the saved training dataset (`matches.parquet`) from every finished match, and this season's cup and European matches |
 | | 2. Fetch betting odds | `xpfpl markets` | Polymarket odds for every match since 2024-25, saved to disk |
 | | 3. Retrain | `xpfpl train` | Refits the model on the two above. Run it last |
 | | 4. Publish the website | `xpfpl publish` | Exports the season and pushes the [public site](#website) to GitHub Pages |
@@ -96,6 +96,7 @@ Your team id is remembered in `data/app_settings.json` (gitignored).
 ```bash
 xpfpl fetch                        # download history + this season (re-run after each gameweek)
 xpfpl markets                      # betting odds (Polymarket) for every match since 2024-25
+xpfpl cups                         # cup and European matches since 2025-26 (fetch does this season's)
 xpfpl train                        # train the model (after fetch and markets), validated on the last full season
 xpfpl predict                      # top xP picks per position for the next 5 GWs
 xpfpl recommend --team-id 1234567  # your team, transfers, captain and chip advice
@@ -224,6 +225,35 @@ goalscorer odds are shown in the dashboard but deliberately left out of the mode
 priced scorers about 60% too high and ranked them barely better than chance (AUC 0.58, against
 0.73 for the model's own goal predictions), and most of those markets hardly trade. Their one use
 is the "ruled out" signal above.
+
+## Midweek matches (rotation)
+
+`xpfpl cups` reads every Champions, Europa and Conference League and EFL Cup match an EPL club
+plays, with each player's minutes, from
+[FPL-Core-Insights](https://github.com/olbauday/FPL-Core-Insights) (2025-26 onwards; saved in
+`archive/cups/`). `xpfpl fetch` updates this season's.
+
+The idea was that a club with a big midweek match rests its stars at the weekend. On 2025-26 and
+2026-27 GW1-5, that doesn't show up at club level: regulars at European clubs start just as often
+and beat the model's xP by *more* after a midweek match, which is club quality, not rest. What
+does show up is the player's own midweek role, measured against every player of the same kind at
+clubs that played midweek:
+
+| Midweek match, then the weekend | Points vs xP (mlp) | xP factor |
+| --- | --- | --- |
+| Regular (60+ minutes a match lately) rested midweek | 0.99 | 0.99 |
+| Regular who played part of it | 0.99 | 0.99 |
+| Regular who played 76+ minutes | 1.02 | 1.02 |
+| Squad player left out midweek | 0.72 | 0.77 |
+| Squad player who played midweek | 1.12 | 1.11 |
+
+So `predict` multiplies the **next** gameweek's xP by these factors, once the midweek match has
+been played (before the deadline). Each factor is shrunk towards 1 by 200 xP of evidence, and
+refitted for the model by `xpfpl train` and `xpfpl cups`
+(`models/cups.json`). Later gameweeks aren't adjusted: the forecast only shows which competition
+each player's club plays in the week before (`cup_<gw>`: 3 Champions League, 2 Europa League, 1
+another, 0 none), for planning by hand. There is one season and a bit of data, so treat the
+factors as a first estimate.
 
 ## Tuning
 

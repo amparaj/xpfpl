@@ -45,6 +45,13 @@ def predict_upcoming(horizon: int = config.HORIZON, model: str = config.MODEL,
     xp = pd.Series(predictor.predict(frame), index=frame.index).astype(float).clip(lower=0.0)
     frame = frame.assign(xp=xp * availability(frame["status"],
                                               frame["chance_of_playing_next_round"], offset))
+    # Midweek cup/European matches (data/cups.py): next week's xP moves by what the player's own
+    # minutes in the midweek match said about his place on 2025-26 onwards. Later weeks only
+    # show the club's midweek matches (`cup_<gw>`): no rotation penalty showed up at club level.
+    from xpfpl.data import cups
+    rotation = cups.adjust(frame, next_gw, model)
+    frame = frame.join(rotation[["cup_before_level", "rotation", "rotation_factor"]])
+    frame["xp"] = frame["xp"] * frame["rotation_factor"]
     # The scorer market pricing a player at ~0 for the next gameweek means he's out (team news
     # the FPL flag may not show yet): cut that week's xP as the data says (config.py).
     from xpfpl.data import markets
@@ -73,6 +80,7 @@ def predict_upcoming(horizon: int = config.HORIZON, model: str = config.MODEL,
     out = out.join(_components(predictor, frame, next_gw))
     out = out.join(_minutes(predictor, frame, next_gw))
     out = out.join(_scorer_odds(scorers, players))
+    out = out.join(_rotation(frame, next_gw, gameweeks))
     out.index.name = "element"
 
     folder = config.PREDICTIONS_DIR / api.current_season(bs)
@@ -81,6 +89,17 @@ def predict_upcoming(horizon: int = config.HORIZON, model: str = config.MODEL,
     out.sort_values("xp_total", ascending=False).to_csv(path, encoding="utf-8")
     archive.save_prediction(path, api.current_season(bs))
     return out, gameweeks
+
+
+def _rotation(frame: pd.DataFrame, next_gw: int, gameweeks: list[int]) -> pd.DataFrame:
+    """Per element: `cup_<gw>`, the biggest midweek match his club plays in the 6 days before
+    each gameweek's fixture (cups.LEVELS: 3 Champions League, 2 Europa, 1 other, 0 none), and
+    next week's `rotation` group and the `rotation_factor` its xP was multiplied by."""
+    level = frame.pivot_table(index="element", columns="gw", values="cup_before_level", aggfunc="max")
+    level = level.reindex(columns=gameweeks).fillna(0).astype(int)
+    level.columns = [f"cup_{gw}" for gw in gameweeks]
+    rows = frame[frame["gw"] == next_gw].drop_duplicates("element").set_index("element")
+    return level.join(rows[["rotation", "rotation_factor"]], how="outer")
 
 
 def _scorer_odds(scorers: pd.DataFrame | None, players: pd.DataFrame) -> pd.DataFrame:
