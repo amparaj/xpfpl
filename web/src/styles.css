@@ -185,23 +185,9 @@ tr.selected { background: var(--selected) !important; }
 .fixture .xg { grid-column: 1 / -1; text-align: center; font-size: 12px; color: var(--muted); }
 .fixture .away { text-align: right; }
 
-/* ---------------------------------------------------------------- pitch (picks) */
-
-.picks { display: flex; flex-direction: column; gap: 8px; }
-.picks-row { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; }
-.pick {
-  width: 92px; text-align: center; background: var(--surface); border: 1px solid var(--border);
-  border-radius: 8px; padding: 6px 4px; font-size: 12px;
-}
-.pick .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
-.pick .pts { font-size: 18px; font-weight: 700; }
-.pick.bench { opacity: 0.7; }
-.pick .badge { font-size: 10px; font-weight: 700; color: var(--s1); }
-
 @media (max-width: 640px) {
   main { padding-top: 14px; }
   .tile-value { font-size: 20px; }
-  .pick { width: 74px; }
 }
 
 /* ---------------------------------------------------------------- about */
@@ -232,4 +218,48 @@ tr.selected { background: var(--selected) !important; }
 @media (max-width: 640px) {
   .defs { grid-template-columns: 1fr; gap: 2px; }
   .defs dd { margin-bottom: 8px; }
+}
+
+/* ---------------------------------------------------------------- pitch (the dashboard's, app.py PITCH_CSS) */
+/* Fixed colours, as on FPL: a green pitch reads the same in light and dark mode. */
+
+.xp-pitch-wrap { max-width: 860px; margin: 0 auto; }
+.xp-pitch { padding: 12px 8px 4px; border-radius: 10px 10px 0 0;
+  background: repeating-linear-gradient(180deg, #2e8b47 0 58px, #29803f 58px 116px);
+  box-shadow: inset 0 0 0 2px rgba(255,255,255,.35); }
+.xp-bench { padding: 6px 8px 8px; border-radius: 0 0 10px 10px; background: #dfe6e0; }
+.xp-row { display: flex; justify-content: center; gap: 12px; margin: 6px 0 10px; }
+.xp-card { position: relative; flex: 0 1 110px; min-width: 0; text-align: center; font-size: 12.5px; line-height: 1.4; color: #111111; }
+.xp-marked { outline: 2px dashed #ffffff; outline-offset: 3px; border-radius: 6px; }
+.xp-bench .xp-marked { outline-color: #2e8b47; }
+.xp-face { width: 64px; height: 64px; margin: 0 auto 4px; border-radius: 50%; border: 3px solid;
+  background: #f4f4f2 center 2px / 100% auto no-repeat; position: relative; overflow: visible; }
+.xp-photo { width: 100%; height: 100%; object-fit: cover; object-position: center 2px; border-radius: 50%; display: block; }
+.xp-shirt { background-size: 80% auto; background-position: center 55%; }
+.xp-crest { position: absolute; width: 26px; right: -10px; bottom: -4px; }
+.xp-name { font-weight: 700; font-size: 13.5px; padding: 1px 4px; border-radius: 4px 4px 0 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.xp-fix { padding: 0 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: #f0efec; color: #555555; }
+.xp-pts { background: #ffffff; color: #111111; padding: 0 4px; border-radius: 0 0 4px 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.xp-badge { position: absolute; top: 0; z-index: 1; min-width: 21px; height: 21px; padding: 0 4px;
+  border-radius: 11px; font-size: 11.5px; font-weight: 700; line-height: 21px; }
+.xp-bench .xp-badge { top: 18px; }
+.xp-cap { right: 8px; background: #111111; color: #ffffff; }
+.xp-vc { right: 8px; background: #ffffff; color: #111111; border: 1px solid #111111; line-height: 19px; }
+.xp-flag { left: 8px; color: #111111; cursor: help; }
+.xp-order { font-size: 11.5px; font-weight: 700; color: #3d4a40; }
+
+/* A phone: five cards to a row still fit. */
+@media (max-width: 640px) {
+  .xp-pitch, .xp-bench { padding-left: 4px; padding-right: 4px; }
+  .xp-row { gap: 4px; }
+  .xp-card { font-size: 10.5px; }
+  .xp-face { width: 48px; height: 48px; }
+  .xp-crest { width: 20px; right: -6px; }
+  .xp-name { font-size: 11px; }
+  .xp-badge { min-width: 18px; height: 18px; line-height: 18px; font-size: 10px; }
+  .xp-cap, .xp-vc { right: 0; }
+  .xp-vc { line-height: 16px; }
+  .xp-flag { left: 0; }
+  .xp-extra { display: none; }        /* the price (or xP) after the main number: no room at this width */
 }

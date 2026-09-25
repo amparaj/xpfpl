@@ -1,10 +1,11 @@
 import * as Plot from "@observablehq/plot";
 import { useCallback, useMemo, useState } from "react";
 import { color } from "../colors";
-import { Chart, barPadding, Club, Legend, Loading, Note, Table, Tiles, plotDefaults, type Column } from "../components/ui";
+import { Pitch } from "../components/Pitch";
+import { Chart, barPadding, Legend, Loading, Note, Table, Tiles, plotDefaults, type Column } from "../components/ui";
 import type { ModelTeam, ModelWeek } from "../data";
-import { POSITIONS, int, money, pts, signed, when } from "../format";
-import { totals, useAllGameweeks, type PlayerGw } from "../season";
+import { int, money, pts, signed, when } from "../format";
+import { totals, useAllGameweeks } from "../season";
 import { useData, useSite } from "../site";
 
 const CHIP_NAMES: Record<string, string> = { wildcard: "Wildcard", freehit: "Free Hit", bboost: "Bench Boost", "3xc": "Triple Captain" };
@@ -85,9 +86,9 @@ export default function ModelTeamPage() {
     <>
       <h2>The Model's Team</h2>
       <p className="lede">
-        A paper FPL team that does exactly what the model says. Before every deadline it makes its transfers, picks its
-        XI, bench order, captain and chips with the same optimiser and settings as the app, and the decision is saved
-        before the deadline. Then it's scored like any FPL team: auto-subs, the vice-captain, chips and transfer hits.
+        An FPL team run entirely by the model. Before every deadline it chooses the transfers, starting XI, bench order,
+        captain and chips, and the decision is saved. After the gameweek it's scored like any other FPL team, with auto-subs,
+        the vice-captain, chips and transfer hits all counted.
       </p>
       {weeks.length > 0 && (
         <Tiles tiles={[
@@ -128,29 +129,21 @@ export default function ModelTeamPage() {
               : week.source === "carried" ? "No decision was saved this week, so last week's team played on." : "No transfers."}
             {" "}{money(week.bank)} in the bank and {week.free_transfers} free transfer{week.free_transfers === 1 ? "" : "s"} before the week.
           </p>
-          <div className="picks">
-            {[1, 2, 3, 4].map((pos) => (
-              <div className="picks-row" key={pos}>
-                {week.lineup.filter((p) => site.player.get(p)?.element_type === pos).map((p) => (
-                  <Pick key={p} element={p} captain={p === week.captain} vice={p === week.vice}
-                        multiplier={p === week.captain_played || (!played && p === week.captain) ? (week.chip === "3xc" ? 3 : 2) : 1}
-                        inBest={!!week.best_xi?.includes(p)} gw={scores?.get(p)} played={!!played} />
-                ))}
-              </div>
-            ))}
-            <div className="picks-row" style={{ borderTop: "1px solid var(--grid)", paddingTop: 8 }}>
-              {week.bench.map((p) => (
-                <Pick key={p} element={p} bench multiplier={week.chip === "bboost" ? 1 : 0}
-                      inBest={!!week.best_xi?.includes(p)} gw={scores?.get(p)} played={!!played} />
-              ))}
-            </div>
-          </div>
+          <Pitch gw={week.gw} lineup={week.lineup} bench={week.bench} captain={week.captain} vice={week.vice}
+                 marked={played ? new Set(week.best_xi) : undefined} flags={!played}
+                 line={(p) => {
+                   const player = site.player.get(p);
+                   if (!played) return <><b>{pts(player?.forecast)}</b> xP<span className="xp-extra"> · £{player?.now_cost.toFixed(1)}</span></>;
+                   const g = scores?.get(p);
+                   const multiplier = p === week.captain_played ? (week.chip === "3xc" ? 3 : 2) : 1;
+                   return <><b>{(g?.points ?? 0) * multiplier}</b> pts<span className="xp-extra"> · {pts(g?.xp)} xP</span></>;
+                 }} />
           {!!week.autosubs?.length && (
             <p className="note">Auto-subs: {week.autosubs.map(([out, sub]) => `${name(sub)} on for ${name(out)}`).join(", ")}.</p>
           )}
           <p className="note">
-            {played ? "Points count the captain's multiplier; bench points count only with Bench Boost. A dashed outline marks a player the hindsight-best XI would have started."
-              : `Each player's xP is the model's forecast for GW${week.gw}.`}
+            {played ? "The captain's points are doubled (tripled with Triple Captain); bench points count only with Bench Boost. A dashed outline marks a player the hindsight-best XI would have started."
+              : `xP is each player's expected points for GW${week.gw}. The fixture is shaded by FPL's difficulty rating, and a number in the corner is FPL's chance of playing.`}
           </p>
         </div>
       )}
@@ -161,21 +154,15 @@ export default function ModelTeamPage() {
           <Table columns={columns} data={[...weeks].reverse()} rowKey={(w) => w.gw} />
           <dl className="defs">
             <dt>Live</dt>
-            <dd>
-              Decided and saved before that gameweek's deadline, using only what was known then: the honest record, like
-              entering a real team.
-            </dd>
+            <dd>Decided and saved before the gameweek's deadline, using only information available at the time.</dd>
             <dt>Replay</dt>
             <dd>
-              Reconstructed afterwards, for the weeks before the live record began. The backtest (the same tool that tests
-              the model on past seasons) decided them with a model trained only on earlier seasons, each player's form as
-              it stood at each deadline, and the same optimiser, settings and chip rules. Two things make a replay a little
-              less trustworthy: it has no injury news, so a player who had been ruled out can look available, and it was
-              decided after the matches, so it relies on the code being fair rather than a timestamp before the deadline.
-              That's why the chart shows replays paler.
+              Worked out afterwards for the gameweeks before the team began, using a model trained only on earlier seasons
+              and each player's form at the time. Injury news isn't included, so treat these weeks as a guide. They're shown
+              paler in the chart.
             </dd>
             <dt>Carried over</dt>
-            <dd>No decision was saved before the deadline, so last week's team played on and a free transfer was banked, as FPL does.</dd>
+            <dd>No decision was saved before the deadline, so the previous week's team played on and a free transfer was banked.</dd>
           </dl>
         </>
       )}
@@ -205,24 +192,5 @@ export default function ModelTeamPage() {
         The model is <strong>{data.model}</strong>. It starts with £100m and pays FPL's selling prices, so it can't profit from rises it didn't hold.
       </Note>
     </>
-  );
-}
-
-function Pick({ element, captain, vice, bench, multiplier, inBest, gw, played }: {
-  element: number; captain?: boolean; vice?: boolean; bench?: boolean; multiplier: number; inBest: boolean;
-  gw?: PlayerGw; played: boolean;
-}) {
-  const site = useSite();
-  const p = site.player.get(element);
-  const shown = played ? (gw ? gw.points * Math.max(multiplier, bench ? 1 : 0) : 0) : null;
-  return (
-    <div className={`pick${bench ? " bench" : ""}`} style={inBest ? { outline: "1px dashed var(--s1)", outlineOffset: 1 } : undefined}
-         title={gw ? `${gw.minutes} min · xP ${pts(gw.xp)}` : undefined}>
-      <div className="badge">{captain ? "C" : vice ? "VC" : " "}</div>
-      <div className="name">{p?.web_name ?? element}</div>
-      <div><Club id={p?.team} /> <span className="muted">{p ? POSITIONS[p.element_type] : ""}</span></div>
-      {played ? <div className="pts">{shown}</div> : <div className="pts">{pts(p?.forecast)}</div>}
-      <div className="muted">{played ? `xP ${pts(gw?.xp)}` : "xP"}</div>
-    </div>
   );
 }
