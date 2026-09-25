@@ -291,7 +291,7 @@ def cmd_backtest(args) -> None:
                              horizon=args.horizon, discount=args.discount, ft_value=args.ft_value,
                              bench_weight=args.bench_weight, max_hits=args.max_hits,
                              budget=args.budget, model=args.model, chips=args.chips,
-                             plan_transfers=not args.no_plan, price_weight=args.price_weight,
+                             plan_transfers=args.plan, price_weight=args.price_weight,
                              pool_size=args.pool_size)
     print("Building features...")
     frame = build_training_frame(load_matches())
@@ -445,7 +445,7 @@ def cmd_recommend(args) -> None:
         print(f"\n--- Chips ---\n  {name} is active: no other chip can be played in GW{gw}.")
         return
 
-    plan_transfers = not args.no_plan
+    plan_transfers = args.plan
     plan = solve(players, gameweeks, **kwargs, free_transfers=ft, max_hits=args.max_hits,
                  plan_transfers=plan_transfers, price_weight=config.PRICE_WEIGHT,
                  pool_size=config.POOL_SIZE if plan_transfers else None)
@@ -681,8 +681,9 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--budget", type=float, default=100.0)
     p.add_argument("--model", choices=models.NAMES, default=config.MODEL)
     p.add_argument("--chips", action="store_true", help="also play chips, using the config.py thresholds")
-    p.add_argument("--no-plan", action="store_true",
-                   help="hold one squad for the whole horizon instead of planning transfers week by week")
+    p.add_argument("--plan", action=argparse.BooleanOptionalAction, default=config.PLAN_TRANSFERS,
+                   help="plan transfers week by week (--plan) or hold one squad for the horizon (--no-plan); "
+                        f"default {'--plan' if config.PLAN_TRANSFERS else '--no-plan'} (config.PLAN_TRANSFERS)")
     p.add_argument("--price-weight", type=float, default=config.PRICE_WEIGHT,
                    help="xP per GBP million of expected price change (0 ignores price rises)")
     p.add_argument("--pool-size", type=int, default=config.POOL_SIZE,
@@ -741,8 +742,9 @@ def main(argv: list[str] | None = None) -> None:
             p.add_argument("--bank", type=float, help="override money in the bank (£m)")
             p.add_argument("--max-hits", type=int, default=config.MAX_HITS,
                            help=f"max extra transfers at -{config.HIT_COST} each")
-            p.add_argument("--no-plan", action="store_true",
-                           help="don't plan the following weeks' transfers, just this week's")
+            p.add_argument("--plan", action=argparse.BooleanOptionalAction, default=config.PLAN_TRANSFERS,
+                           help="also plan the following weeks' transfers (--plan), or just this week's "
+                                f"(--no-plan); default {'--plan' if config.PLAN_TRANSFERS else '--no-plan'}")
             p.add_argument("--active-chip", choices=["wildcard", "freehit"],
                            help="a chip you've already activated for the upcoming GW (not visible via the API)")
             p.add_argument("--budget", type=float, default=100.0, help="budget when building from scratch")

@@ -41,7 +41,7 @@ MAX_FREE_TRANSFERS = 5
 HIT_COST = 4
 
 # Which model `predict`, `recommend` and the dashboard use by default. See xpfpl.models.NAMES.
-MODEL = "mlp"
+MODEL = "ensemble"
 
 # Optimiser tuning parameters, all set by `xpfpl tune`: it scores candidate values by replaying 2023-24 and
 # 2024-25 in full and keeps whatever wins. The report is data/backtests/tuning.json.
