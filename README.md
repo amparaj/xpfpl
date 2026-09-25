@@ -412,7 +412,9 @@ match since 2024-25. `fetch` reads the archive first and only downloads what it 
 When a season ends, add it to `config.HISTORY_SEASONS` and it loads from the archive like
 vaastav's seasons, so vaastav is no longer needed. `fetch`, `markets` and `predict` add to it as
 they go. A GitHub Action (`.github/workflows/deadline-snapshot.yml`) takes the pre-deadline
-snapshot every gameweek, so pull before you push.
+snapshot every gameweek. `main` only accepts pull requests, so the Action pushes the snapshots to
+the `deadline-snapshots` branch; `xpfpl fetch` (and `xpfpl archive`) copies them into `archive/`,
+and they reach `main` with your next pull request.
 
 ## Project layout
 

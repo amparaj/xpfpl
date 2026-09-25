@@ -3,6 +3,10 @@
 # values, so this is the only way to keep them. Runs every two hours and snapshots only when the
 # next deadline is under three hours away, so each gameweek gets one or two commits.
 #
+# main only accepts changes through pull requests, so the snapshots go to the unprotected
+# `deadline-snapshots` branch. `xpfpl fetch` and `xpfpl archive` copy them into your working tree
+# (archive.pull_snapshots), and they reach main with your next pull request.
+#
 # Scheduled workflows only run from the default branch.
 name: Deadline snapshot
 
@@ -27,9 +31,9 @@ jobs:
   snapshot:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -47,15 +51,30 @@ jobs:
             python -m xpfpl.data.archive deadline --within-hours 3
           fi
 
-      - name: Commit
+      - name: Commit to the deadline-snapshots branch
         run: |
-          git add archive/
+          # Only the files this run wrote: main's older copies must not overwrite the branch's.
+          changed=$(git status --porcelain --untracked-files=all -- archive/fpl | awk '{print $2}' | grep '/deadlines/' || true)
+          if [ -z "$changed" ]; then
+            echo "Nothing new."
+            exit 0
+          fi
+          mkdir -p "$RUNNER_TEMP/snap"
+          for f in $changed; do mkdir -p "$RUNNER_TEMP/snap/$(dirname "$f")"; cp "$f" "$RUNNER_TEMP/snap/$f"; done
+          git stash --include-untracked --quiet
+          if git fetch --quiet origin deadline-snapshots 2>/dev/null; then
+            git checkout --quiet -B deadline-snapshots FETCH_HEAD
+          else
+            git checkout --quiet -b deadline-snapshots      # first run: start the branch from main
+          fi
+          cp -r "$RUNNER_TEMP/snap/archive/." archive/
+          git add -- $changed
           if git diff --cached --quiet; then
             echo "Nothing new."
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "Deadline snapshot $(date -u +%Y-%m-%dT%H:%MZ)"
-          git pull --rebase --quiet
-          git push
+          git commit --quiet -m "Deadline snapshot $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push --quiet origin deadline-snapshots
+          echo "Pushed: $changed"

@@ -25,6 +25,8 @@ haven't changed, so re-running a step leaves nothing to commit.
 The pipeline reads the archive first: `history.load_past_season` and `markets.build` only go to
 vaastav / Polymarket for what isn't here. `python -m xpfpl.data.archive deadline` takes the
 pre-deadline snapshot on its own (no torch needed), which is what the scheduled GitHub Action runs.
+main only accepts pull requests, so the Action pushes to the `deadline-snapshots` branch and
+`pull_snapshots` (run by `xpfpl fetch` and `xpfpl archive`) copies them into the working tree.
 """
 
 import io
@@ -180,6 +182,41 @@ def save_deadline(bs: dict, taken_at: pd.Timestamp | None = None) -> Path | None
 
 def deadline_snapshots(season: str) -> dict[int, pd.DataFrame]:
     return {int(p.stem[2:]): pd.read_parquet(p) for p in sorted((FPL / season / "deadlines").glob("gw*.parquet"))}
+
+
+SNAPSHOT_BRANCH = "deadline-snapshots"
+
+
+def _taken_at(data: bytes) -> pd.Timestamp:
+    t = pd.read_parquet(io.BytesIO(data), columns=["taken_at"])["taken_at"]
+    return pd.Timestamp(t.max()) if len(t) else pd.Timestamp.min.tz_localize("UTC")
+
+
+def pull_snapshots(remote: str = "origin") -> list[Path]:
+    """Copy the scheduled Action's deadline snapshots into archive/. main only takes changes
+    through pull requests, so the Action pushes them to the SNAPSHOT_BRANCH branch instead; this
+    brings them into the working tree, and they reach main with the next pull request. Where both
+    sides have a gameweek, the later snapshot wins. Returns the files written (none if offline)."""
+    import subprocess
+
+    def git(*args: str) -> subprocess.CompletedProcess:
+        return subprocess.run(["git", *args], cwd=config.ROOT, capture_output=True)
+
+    if git("fetch", "--quiet", remote, SNAPSHOT_BRANCH).returncode != 0:
+        return []                      # offline, no git, or the Action hasn't run yet
+    listing = git("ls-tree", "-r", "--name-only", "FETCH_HEAD", "--", "archive/fpl").stdout.decode()
+    written = []
+    for name in listing.split():
+        if "/deadlines/" not in name:
+            continue
+        theirs = git("show", f"FETCH_HEAD:{name}").stdout
+        path = config.ROOT / name
+        if path.exists() and (path.read_bytes() == theirs or _taken_at(path.read_bytes()) >= _taken_at(theirs)):
+            continue
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(theirs)
+        written.append(path)
+    return written
 
 
 def save_prediction(csv_path: Path, season: str) -> bool:

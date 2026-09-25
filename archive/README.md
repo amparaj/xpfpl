@@ -22,7 +22,8 @@ or any Parquet reader.
 
 Past seasons never change. The current season gains a few files every week, written by
 `xpfpl fetch`, `xpfpl markets` and `xpfpl predict`. The deadline snapshots are taken by a
-scheduled GitHub Action (`.github/workflows/deadline-snapshot.yml`), or by hand with
+scheduled GitHub Action (`.github/workflows/deadline-snapshot.yml`, which pushes them to the
+`deadline-snapshots` branch until they're merged here), or by hand with
 `xpfpl archive --deadline`.
 
 Data before 2026-27 comes from vaastav's repository; please credit it if you use it. FPL data
