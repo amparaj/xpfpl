@@ -380,6 +380,47 @@ between settings as the useful part. A replay is also chaotic - one different ca
 October changes everything after it - so differences of 20 or 30 points a season are noise, and
 only the consistent ones (across both seasons) are worth acting on.
 
+## Each gameweek
+
+1. **After the gameweek is complete** (the sidebar says so, or FPL shows the data as confirmed),
+   run the sidebar's steps 1-3, or:
+   ```bash
+   xpfpl fetch       # new results; also copies in the Action's deadline snapshots (see below)
+   xpfpl markets     # odds for the played matches
+   xpfpl train
+   ```
+   All three add their data to `archive/` as they go.
+2. **Before the deadline**: `xpfpl recommend --team-id <id>` (or the Plan Ahead tab). This saves
+   the forecast that the website's xP and the [live record](#the-live-record) are scored on.
+3. **Update the website**: the sidebar's step 4, or `xpfpl publish`. It's live a minute or two later.
+4. **Commit the archive** every week or so. `main` only accepts pull requests, so the new files
+   in `archive/` stay on your machine until you merge them (on Windows PowerShell, run the
+   commands one per line; `&&` doesn't work there):
+   ```bash
+   git checkout main
+   git pull
+   git checkout -b archive-gw06
+   git add archive
+   git commit -m "Archive to GW6"
+   git push -u origin archive-gw06
+   ```
+   Open the pull request from the link `git push` prints, merge it, then
+   `git checkout main`, `git pull` and `git branch -d archive-gw06`.
+
+Nothing is needed for the deadline snapshots: the scheduled Action takes them.
+
+**When a season ends**, add it to `config.HISTORY_SEASONS` (it loads from the archive from then
+on), and commit the archive as above before FPL resets for the new season, because the API
+drops the old season's match-by-match history.
+
+### Branches
+
+| Branch | What it is | You |
+| --- | --- | --- |
+| `main` | The code and the archive. Protected: changes only through pull requests | Work on a branch, merge by pull request |
+| `gh-pages` | The built website that GitHub Pages serves. `xpfpl publish` replaces it with one fresh commit each time | Never edit or merge it |
+| `deadline-snapshots` | Where the scheduled Action pushes each pre-deadline snapshot | Never merge it: `xpfpl fetch` copies the snapshots into `archive/` |
+
 ## Website
 
 A public, read-only look back at the season, served by GitHub Pages from the `gh-pages` branch:
@@ -414,7 +455,8 @@ vaastav's seasons, so vaastav is no longer needed. `fetch`, `markets` and `predi
 they go. A GitHub Action (`.github/workflows/deadline-snapshot.yml`) takes the pre-deadline
 snapshot every gameweek. `main` only accepts pull requests, so the Action pushes the snapshots to
 the `deadline-snapshots` branch; `xpfpl fetch` (and `xpfpl archive`) copies them into `archive/`,
-and they reach `main` with your next pull request.
+and they reach `main` with your next pull request. How and when to commit the archive is in
+[Each gameweek](#each-gameweek).
 
 ## Project layout
 
