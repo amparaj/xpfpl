@@ -35,6 +35,19 @@ def _solver(time_limit: int) -> pulp.LpSolver:
     return pulp.PULP_CBC_CMD(msg=False, timeLimit=time_limit)
 
 
+def _run(prob: pulp.LpProblem, time_limit: int, attempts: int = 2) -> int:
+    """Solve `prob`, trying again if the CBC process itself fails. It very occasionally exits
+    with an error on a model it solves fine the next time (once in ~500 season replays run in
+    parallel by `xpfpl tune`), and one crash shouldn't end a whole run."""
+    for attempt in range(attempts):
+        try:
+            return prob.solve(_solver(time_limit))
+        except pulp.PulpSolverError:
+            if attempt == attempts - 1:
+                raise
+    raise AssertionError("unreachable")
+
+
 def shortlist(players: pd.DataFrame, keep_ids=(), per_position: int = 50) -> pd.DataFrame:
     """The best `per_position` candidates in each position, plus anyone in `keep_ids`.
 
@@ -209,7 +222,7 @@ def solve(players: pd.DataFrame, gameweeks: list[int], *,
             objective.append(-w * config.HIT_COST * hit_terms[i])
     prob += pulp.lpSum(objective) + ft_value * ft_end
 
-    status = pulp.LpStatus[prob.solve(_solver(time_limit))]
+    status = pulp.LpStatus[_run(prob, time_limit)]
     first = gameweeks[0]
     if squad_vars[first][ids[0]].value() is None:
         raise RuntimeError(f"Solver status: {status} - check budget/squad inputs.")

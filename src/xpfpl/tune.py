@@ -133,7 +133,7 @@ class _Runner:
 
     def close(self) -> None:
         if self.pool is not None:
-            self.pool.shutdown()
+            self.pool.shutdown(cancel_futures=True)   # after an error, drop the queued replays
 
 
 def _summarise_candidate(choice: dict, points: dict[str, list[float]]) -> dict:
@@ -173,7 +173,8 @@ def _fitted_models(frame, seasons: list[str], model: str, workers: int) -> dict:
 def tune(seasons: list[str], model: str = config.MODEL, base: Settings | None = None,
          frame=None, stages=None, chip_stages=None, verbose: bool = False,
          fitted: dict | None = None, replays: int = 1, workers: int = 1,
-         noise_sd: float = NOISE_SD, confirm_seasons: list[str] | None = None) -> dict:
+         noise_sd: float = NOISE_SD, confirm_seasons: list[str] | None = None,
+         chosen: dict | None = None, trials: list[dict] | None = None) -> dict:
     """Run the coordinate descent and return the report (also written to config.TUNING_PATH).
 
     `fitted` lets a caller pass in {season: predictor} instead of training them here (in-process
@@ -181,6 +182,8 @@ def tune(seasons: list[str], model: str = config.MODEL, base: Settings | None = 
     copies) are averaged; `workers` > 1 spreads them over processes, which build their own
     features and load the models from robustness.py's cache. `confirm_seasons`: afterwards,
     replay the winner, today's config and the pre-tuning settings on these unseen seasons.
+    `chosen`/`trials` resume an interrupted run: the winners and trials of the stages it
+    finished (pass only the stages still to run).
     """
     from xpfpl.robustness import PRE_TUNING
 
@@ -196,8 +199,8 @@ def tune(seasons: list[str], model: str = config.MODEL, base: Settings | None = 
     tables = {s: prices.fit(frame, before_season=s) for s in every} if workers <= 1 else {}
     runner = _Runner(frame, fitted, tables, every, model, workers, noise_sd, verbose)
 
-    chosen: dict = {}
-    trials: list[dict] = []
+    chosen = dict(chosen or {})
+    trials = list(trials or [])
     confirmation: list[dict] = []
     try:
         for name, grid in [(n, g) for n, g in stages] + [(n, g) for n, g in chip_stages]:
