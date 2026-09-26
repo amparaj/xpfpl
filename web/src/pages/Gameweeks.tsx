@@ -3,7 +3,7 @@ import { useCallback, useMemo, useState } from "react";
 import { color } from "../colors";
 import { Chart, Club, Note, Loading, Table, Tiles, plotDefaults, type Column } from "../components/ui";
 import { competition, side } from "../midweek";
-import { gwFile, rows, type Gameweek, type GwRow } from "../data";
+import { gwFile, rows, type Gameweek, type GwRow, type ModelTeam } from "../data";
 import { POSITIONS, compact, dec, int, pts, signed, when } from "../format";
 import { totals, type PlayerGw } from "../season";
 import { useData, useSite } from "../site";
@@ -15,6 +15,8 @@ export default function Gameweeks() {
   const played = site.meta.played;
   const [gw, setGw] = useState(played[played.length - 1]);
   const data = useData<Gameweek>(gw ? gwFile(gw) : null);
+  const team = useData<ModelTeam>("modelteam.json");
+  const teamWeek = team?.gameweeks.find((w) => w.gw === gw);
   const event = site.meta.events.find((e) => e.id === gw);
 
   const lines: Line[] = useMemo(() => {
@@ -29,6 +31,13 @@ export default function Gameweeks() {
   const hasMidweek = playedLines.some((l) => l.midweek !== null);
   const scored = playedLines.filter((l) => l.xp !== null);
   const mae = scored.length ? scored.reduce((s, l) => s + Math.abs(l.points - l.xp!), 0) / scored.length : null;
+  // Everyone with a forecast, including those who didn't play: their xP already allowed for that
+  // chance, so leaving them out would make the forecasts look too low.
+  const forecast = lines.filter((l) => l.xp !== null);
+  const xpSum = forecast.reduce((s, l) => s + l.xp!, 0);
+  const pointsSum = forecast.reduce((s, l) => s + l.points, 0);
+  // The model's own top forecasts this week (whoever played), and what they scored.
+  const topForecasts = [...lines].filter((l) => l.xp !== null).sort((a, b) => b.xp! - a.xp!).slice(0, 10);
   const top = [...lines].sort((a, b) => b.points - a.points)[0];
   const captained = event?.most_captained ? site.player.get(event.most_captained) : undefined;
   const captainPts = captained ? lines.find((l) => l.element === captained.id)?.points : undefined;
@@ -93,6 +102,17 @@ export default function Gameweeks() {
       title: "Transfers in minus out before this deadline" },
   ];
 
+  const forecastColumns: Column<Line>[] = [
+    { key: "name", label: "Player", value: (l) => l.name },
+    { key: "team", label: "Club", value: (l) => site.team.get(l.team)?.short, render: (l) => <Club id={l.team} /> },
+    { key: "pos", label: "Pos", value: (l) => l.position, render: (l) => POSITIONS[l.position] },
+    { key: "xp", label: "xP", numeric: true, value: (l) => l.xp, render: (l) => pts(l.xp), title: "The model's expected points before the deadline" },
+    { key: "points", label: "Points", numeric: true, value: (l) => l.points },
+    { key: "diff", label: "Points − xP", numeric: true, value: (l) => (l.xp === null ? null : l.points - l.xp),
+      render: (l) => (l.xp === null ? "–" : <span className={l.points >= l.xp ? "good" : "bad"}>{signed(l.points - l.xp)}</span>) },
+    { key: "minutes", label: "Mins", numeric: true, value: (l) => l.minutes },
+  ];
+
   return (
     <>
       <h2>Gameweek {gw}</h2>
@@ -117,6 +137,10 @@ export default function Gameweeks() {
               note: captainPts !== undefined ? `${captainPts * 2} with the armband` : undefined },
             { label: "Model error", value: mae === null ? "–" : pts(mae),
               note: `average miss in points, ${scored.length} players who played` },
+            ...(forecast.length ? [{ label: "Forecast vs scored", value: `${int(xpSum)} → ${int(pointsSum)}`,
+              note: `all ${forecast.length} players with a forecast, played or not: ${signed(pointsSum - xpSum, 0)} points` }] : []),
+            ...(teamWeek?.forecast != null ? [{ label: "The Model's Team", value: `${pts(teamWeek.forecast)} → ${teamWeek.gross}`,
+              note: <>forecast → scored (before hits); <a href="#model-team">see the team</a></> }] : []),
           ]} />
 
           <h3>Results</h3>
@@ -157,6 +181,14 @@ export default function Gameweeks() {
             </p>
             <Chart make={scatter} height={340} ariaLabel={`Points against xP for GW${gw}`} />
           </div>
+
+          {topForecasts.length > 0 && (
+            <>
+              <h3>The model's top forecasts</h3>
+              <p className="note" style={{ marginTop: 0 }}>The ten highest xP before the deadline, and what they scored.</p>
+              <Table columns={forecastColumns} data={topForecasts} sort="xp" rowKey={(l) => l.element} />
+            </>
+          )}
 
           <h3>Players who played</h3>
           <Table columns={columns} data={playedLines} sort="points" rowKey={(l) => l.element} limit={40} />

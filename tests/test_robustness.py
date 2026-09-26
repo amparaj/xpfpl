@@ -122,3 +122,19 @@ def test_fit_holdout_early_stops_on_the_last_training_season(monkeypatch):
     models.fit_holdout("mlp", history, quiet=True)
     assert calls[0][:2] == (["2021-22", "2022-23"], ["2023-24"])
     assert calls[1] == (["2021-22", "2022-23", "2023-24"], None, 7)
+
+
+def test_latest_retune_picks_the_newest_report_checked_on_unseen_seasons(tmp_path):
+    import json
+    confirmed = {"generated": "2026-09-26T22:00:00", "model": "ensemble", "seasons": ["2023-24"], "replays": 4,
+                 "chosen": {"horizon": 8}, "confirm_seasons": ["2025-26"],
+                 "confirmation": [{"label": "tuned", "mean_points": 2200.0, "se": 10.0,
+                                   "points_per_season": {"2025-26": 2200.0}, "replays": {"2025-26": [2200.0]}}]}
+    (tmp_path / "tuning_old.json").write_text(json.dumps({**confirmed, "generated": "2026-09-20T00:00:00"}))
+    (tmp_path / "tuning_new.json").write_text(json.dumps(confirmed))
+    (tmp_path / "tuning.json").write_text(json.dumps({"generated": "2026-09-30T00:00:00", "trials": []}))
+    got = robustness.latest_retune(tmp_path)
+    assert got["generated"] == "2026-09-26T22:00:00"
+    assert got["confirmation"] == [{"label": "tuned", "mean_points": 2200.0, "se": 10.0,
+                                    "points_per_season": {"2025-26": 2200.0}}]
+    assert robustness.latest_retune(tmp_path / "missing") is None

@@ -609,6 +609,55 @@ def load_report(path: Path = REPORT_PATH) -> dict | None:
         return None
 
 
+def latest_retune(directory: Path | None = None) -> dict | None:
+    """The newest `xpfpl tune` report that was checked on unseen seasons (`--confirm-seasons`),
+    trimmed to what the Guide and the website show."""
+    directory = directory or config.BACKTEST_DIR
+    found = []
+    for path in directory.glob("tuning*.json") if directory.exists() else []:
+        try:
+            report = json.loads(path.read_text(encoding="utf-8"))
+        except ValueError:
+            continue
+        if report.get("confirmation"):
+            found.append(report)
+    if not found:
+        return None
+    r = max(found, key=lambda x: x.get("generated", ""))
+    return {"generated": r.get("generated"), "model": r.get("model"), "seasons": r.get("seasons"),
+            "replays": r.get("replays"), "chosen": r.get("chosen"), "confirm_seasons": r.get("confirm_seasons"),
+            "confirmation": [{k: c.get(k) for k in ("label", "mean_points", "se", "points_per_season")}
+                             for c in r["confirmation"]]}
+
+
+def site_summary(report: dict | None) -> dict | None:
+    """The parts of the report the Guide and the website show (the full one is ~1 MB)."""
+    if not report:
+        return None
+    bt = report.get("backtest") or {}
+    shown = {"ensemble", "gbm", "mlp", "xmins", "baseline", "oracle", "pre-tuning settings", "planning on",
+             "chips on", "recalibrated (linear)", "recalibrated (isotonic)"}
+    return {
+        "generated": report["generated"], "seasons": report["seasons"], "active_rows": report["active_rows"],
+        "accuracy": [{k: r[k] for k in ("season", "model", "rmse", "mae", "bias", "spearman")} for r in report["accuracy"]],
+        "spread": report["spread"],
+        "bootstrap": [b for b in report["bootstrap"] if b["scope"] == "all seasons"],
+        "calibration": next((dict(c) for c in report["calibration"] if c["season"] == "all"), None),
+        "winners_curse": [w for w in report["winners_curse"] if w["season"] == "all"],
+        "p_play": {k: report["p_play"].get(k) for k in ("brier", "brier_naive")} if report.get("p_play") else None,
+        "seeds": report["seeds"],
+        "horizons": report["horizons"],
+        "leak_probe": [{"season": p["season"], "gw": p["gw"], "rows": p["rows_compared"],
+                        "features": p["features_compared"], "leaking": len(p["leaking"]),
+                        "drift": max((d["max_diff"] for d in p["drift"]), default=0.0)} for p in report["leak_probe"]],
+        "backtest": {"points": {v: s for v, s in (bt.get("points") or {}).items() if v in shown},
+                     "gaps": [g for g in bt.get("gaps", []) if g["variant"] in shown],
+                     "noise_sd": (bt.get("noise_floor") or {}).get("noise_sd"),
+                     "noise_range": (bt.get("noise_floor") or {}).get("noise_range_by_season")},
+        "retune": latest_retune(),
+    }
+
+
 def summarise(report: dict) -> str:
     """The report as text, for the end of `xpfpl robustness`."""
     lines = [f"Out-of-sample checks over {', '.join(report['seasons'])} ({report['active_rows']:,} active rows)"]

@@ -16,20 +16,56 @@ def gameweek_points(gw: int) -> pd.DataFrame:
                           "minutes": e["stats"]["minutes"]} for e in live]).set_index("element")
 
 
-def past_predictions(matches: pd.DataFrame, season: str, gw: int,
-                     model: str = config.MODEL) -> pd.Series:
-    """The model's pre-match xP per player for a past gameweek (summed over double gameweeks).
+SAVED, REBUILT = "saved", "rebuilt"     # where a past gameweek's xP came from
 
-    Features only use matches before each fixture, but the saved model was refitted on every
-    season including this one, so treat this as in-sample, i.e. a little optimistic.
-    """
+
+def saved_forecasts(season: str, model: str = config.MODEL) -> dict[int, pd.Series]:
+    """GW -> xP per element, from the forecasts saved before each deadline (archive/predictions):
+    `model`'s if it was saved that week, otherwise any model's. The Series is named after the model."""
+    from xpfpl.data import archive
+
+    out: dict[int, tuple[bool, pd.Series]] = {}
+    for name, t in archive.predictions(season).items():
+        gw, saved_model = int(name[2:4]), name.split("_", 1)[1]
+        col = f"xp_{gw}"
+        if col not in t or (gw in out and out[gw][0]):
+            continue
+        out[gw] = (saved_model == model, t.set_index("element")[col].rename(saved_model))
+    return {gw: s for gw, (_, s) in out.items()}
+
+
+def rebuilt_forecasts(matches: pd.DataFrame, season: str, gws: list[int], model: str = config.MODEL) -> pd.DataFrame:
+    """(gw, element, xp) rebuilt from the training frame for gameweeks with no saved forecast
+    (double gameweeks summed). Features only use matches before each fixture, but the model was
+    refitted on this season too, so these are in-sample: a little optimistic."""
+    if not gws:
+        return pd.DataFrame(columns=["gw", "element", "xp"])
     frame = build_training_frame(matches)
-    rows = frame[(frame["season"] == season) & (frame["gw"] == gw)].copy()
-    if rows.empty:
-        return pd.Series(dtype=float, name="xp")
-    rows["xp"] = models.load(model).predict(rows)
-    rows["xp"] = rows["xp"].astype(float).clip(lower=0.0)
-    return rows.groupby("element")["xp"].sum()
+    rows = frame[(frame["season"] == season) & frame["gw"].isin(gws)].copy()
+    rows["xp"] = models.load(model).predict(rows).astype(float).clip(min=0.0)
+    return rows.groupby(["gw", "element"], as_index=False)["xp"].sum()
+
+
+def season_forecasts(matches: pd.DataFrame, season: str, model: str = config.MODEL) -> pd.DataFrame:
+    """xP per player for every played gameweek of `season`: gw, element, xp, source (SAVED: the
+    forecast saved before that deadline; REBUILT: in-sample, where none was saved)."""
+    played = sorted(int(g) for g in matches.loc[matches["season"] == season, "gw"].unique())
+    saved = saved_forecasts(season, model)
+    parts = [pd.DataFrame({"gw": gw, "element": s.index.astype(int), "xp": s.to_numpy(dtype=float), "source": SAVED})
+             for gw, s in saved.items() if gw in played]
+    rebuilt = rebuilt_forecasts(matches, season, [g for g in played if g not in saved], model)
+    parts.append(rebuilt.assign(source=REBUILT))
+    parts = [p for p in parts if len(p)]
+    if not parts:
+        return pd.DataFrame(columns=["gw", "element", "xp", "source"])
+    return pd.concat(parts, ignore_index=True)
+
+
+def team_forecast(picks: pd.DataFrame, xp: pd.Series) -> float:
+    """What the model expected a team to score as picked: each player's xP times his FPL
+    multiplier (0 on the bench, 2 for the captain, 3 with Triple Captain, 1 for the bench with
+    Bench Boost). Compare it with the points before transfer penalties."""
+    return float((xp.reindex(picks.index).fillna(0.0) * picks["multiplier"]).sum())
 
 
 def review_picks(team_id: int, gw: int, bs: dict, points: pd.DataFrame) -> dict:

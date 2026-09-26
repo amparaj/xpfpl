@@ -23,8 +23,17 @@ export default function About() {
   const baseline = mae("baseline");
   const fpl = mae("FPL xP");
   const ceiling = comparison?.ceiling?.mae_median as number | undefined;
-  const tuning = report?.tuning;
-  const replay = tuning?.trials?.length ? Math.max(...tuning.trials.map((t: { mean_points: number }) => t.mean_points)) : undefined;
+  // Season replays (`xpfpl robustness`): each season played by a model trained only on the seasons before it.
+  const replays = report?.robustness?.backtest;
+  const seasonMean = (variant: string): number | undefined => {
+    const bySeason = replays?.points?.[variant] as Record<string, number> | undefined;
+    const values = bySeason ? Object.values(bySeason) : [];
+    return values.length ? values.reduce((a, b) => a + b, 0) / values.length : undefined;
+  };
+  const replayModel = seasonMean("ensemble");
+  const replayBaseline = seasonMean("baseline");
+  const replaySeasons = report?.robustness?.seasons as string[] | undefined;
+  const noise = replays?.noise_sd as number | undefined;
   const trainedOn = report?.validation?.trained_on as string | undefined;
   const rotation = report?.rotation;
   const groups = rotation ? Object.entries(rotation.groups).filter(([, g]) => g.rows > 0) : [];
@@ -150,10 +159,15 @@ export default function About() {
       <p>
         <strong>Backtesting.</strong> To test the team picking, the whole system replays past seasons one deadline at a
         time, seeing only what was known before each deadline. It picks a team, makes transfers, scores the real points
-        and moves on to the next week. The settings, such as how many weeks to look ahead and how much a free transfer
-        is worth, were chosen by trying different values and keeping whichever scored the most points
-        {tuning?.seasons ? ` over ${tuning.seasons.join(" and ")}` : ""}
-        {replay !== undefined && <>: about <strong>{int(replay)} points a season</strong></>}.
+        and moves on to the next week.
+        {replayModel !== undefined && replaySeasons && <> Replaying {replaySeasons.length} seasons ({replaySeasons[0]} to{" "}
+          {replaySeasons[replaySeasons.length - 1]}), each with a model trained only on the seasons before it, it averaged
+          about <strong>{int(replayModel)} points a season</strong>
+          {replayBaseline !== undefined && <>, against {int(replayBaseline)} picking by the average of each player's last five matches</>}.</>}
+        {" "}The settings, such as how many weeks to look ahead and how much a free transfer is worth, were tested the same
+        way. They matter much less than the forecasts
+        {noise !== undefined && <>: a replayed season moves by about {int(noise)} points on luck alone, more than most of
+          them are worth</>}.
       </p>
 
       <h3>What's on this site</h3>

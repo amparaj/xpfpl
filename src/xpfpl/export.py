@@ -94,29 +94,8 @@ def _write(obj, path: Path) -> Path:
 
 # ---------------------------------------------------------------- xP per played gameweek
 
-def _saved_forecasts(season: str, model: str) -> dict[int, pd.Series]:
-    """GW -> xP per element, from the forecasts saved before each deadline (`model`'s if saved,
-    otherwise any model's)."""
-    out: dict[int, tuple[bool, pd.Series]] = {}
-    for name, t in archive.predictions(season).items():
-        gw, saved_model = int(name[2:4]), name.split("_", 1)[1]
-        col = f"xp_{gw}"
-        if col not in t or (gw in out and out[gw][0]):
-            continue
-        out[gw] = (saved_model == model, t.set_index("element")[col].rename(saved_model))
-    return {gw: s for gw, (_, s) in out.items()}
-
-
-def _in_sample(matches: pd.DataFrame, season: str, gws: list[int], model: str) -> pd.DataFrame:
-    """(gw, element) -> xP rebuilt from the training frame, as the dashboard's review does. The
-    model was refitted on this season too, so it's a little optimistic."""
-    if not gws:
-        return pd.DataFrame(columns=["gw", "element", "xp"])
-    from xpfpl.features import build_training_frame
-    frame = build_training_frame(matches)
-    rows = frame[(frame["season"] == season) & frame["gw"].isin(gws)].copy()
-    rows["xp"] = np.clip(models.load(model).predict(rows).astype(float), 0.0, None)
-    return rows.groupby(["gw", "element"], as_index=False)["xp"].sum()
+# The forecasts saved before each deadline, and the in-sample rebuild for weeks without one, live
+# in review.py (the dashboard's Gameweek Review and My Season use the same ones).
 
 
 # ---------------------------------------------------------------- the files
@@ -285,10 +264,11 @@ def _midweek_minutes(season: str, gw: int, people: pd.DataFrame | None) -> pd.Se
 def _accuracy(season: str, model: str) -> dict:
     def load(path: Path):
         return json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
+    from xpfpl import robustness
     from xpfpl.data import cups
     rotation = load(cups.FACTORS_PATH) or {}
     return {"validation": load(config.VALIDATION_PATH), "comparison": load(config.COMPARISON_PATH),
-            "tuning": load(config.TUNING_PATH),
+            "tuning": load(config.TUNING_PATH), "robustness": robustness.site_summary(robustness.load_report()),
             "scorecard": load(config.PREDICTIONS_DIR / season / "scorecard.json"),
             "rotation": rotation.get(model)}
 
@@ -303,27 +283,30 @@ def export(model: str = config.MODEL, out: Path = config.SITE_DATA_DIR) -> list[
     rows, people = archive.season_tables(season) if archive.has_season(season) else (pd.DataFrame(columns=["round"]), None)
     played = sorted(int(g) for g in rows["round"].unique())
 
-    forecasts = _saved_forecasts(season, model)
+    from xpfpl import review
+    forecasts = review.saved_forecasts(season, model)
     missing = [g for g in played if g not in forecasts]
     if missing:
         print(f"Rebuilding xP for GW{', GW'.join(map(str, missing))} (no forecast was saved before those deadlines)...")
-    rebuilt = _in_sample(matches, season, missing, model)
+    rebuilt = review.rebuilt_forecasts(matches, season, missing, model)
     snapshots = archive.deadline_snapshots(season)
 
     written = [_write(_meta(bs, fx, season, model, matches, played), out / "meta.json")]
     upcoming = next((ev["id"] for ev in bs["events"] if ev["is_next"]), None)
     written.append(_write(_players(bs, forecasts.get(upcoming)), out / "players.json"))
+    xp_by_gw = {}
     for gw in played:
         if gw in forecasts:
             xp, source = forecasts[gw], f"forecast ({forecasts[gw].name}, saved before the deadline)"
         else:
             xp = rebuilt[rebuilt["gw"] == gw].set_index("element")["xp"]
             source = f"rebuilt ({model}, in-sample: no forecast was saved before this deadline)"
+        xp_by_gw[gw] = xp
         written.append(_write(_gameweek(gw, rows[rows["round"] == gw], fx, xp, source, snapshots.get(gw),
                                         _midweek_minutes(season, gw, people)),
                               out / "gws" / f"gw{gw:02d}.json"))
     from xpfpl import modelteam
-    written.append(_write(modelteam.season_record(season, rows, bs), out / "modelteam.json"))
+    written.append(_write(modelteam.season_record(season, rows, bs, xp_by_gw), out / "modelteam.json"))
     ahead = _next_gameweek(bs, season, model)
     if ahead:
         written.append(_write(ahead, out / "next.json"))

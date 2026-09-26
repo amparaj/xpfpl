@@ -73,6 +73,9 @@ export interface ModelWeek {
   free_transfers: number; bank: number; hits: number;
   transfers: { out: number; in: number; sold: number; bought: number }[];
   squad: number[]; lineup: number[]; bench: number[]; captain: number; vice: number; xp: number | null;
+  /** The team's forecast counted the way the week is scored (captain doubled, bench with Bench Boost,
+   * before hits): from the decision's own xP, or summed from the week's player xP for a carried-over week. */
+  forecast?: number | null; forecast_source?: "decision" | "gameweek xP" | null; bench_xp?: number;
   points?: number; gross?: number; captain_played?: number | null; autosubs?: [number, number][];
   best?: number; best_xi?: number[]; best_captain?: number;
 }
@@ -88,7 +91,11 @@ export interface RotationFit {
   seasons: string[];
   groups: Record<string, { rows: number; points: number; xp: number; ratio: number | null; factor: number }>;
 }
-export interface Accuracy { validation: any; comparison: any; tuning: any; scorecard: any; rotation?: RotationFit | null }
+export interface Accuracy {
+  validation: any; comparison: any; tuning: any; scorecard: any; rotation?: RotationFit | null;
+  /** `xpfpl robustness`: six seasons, each forecast and replayed by a model trained only on earlier ones. */
+  robustness?: any;
+}
 
 const cache = new Map<string, Promise<any>>();
 
