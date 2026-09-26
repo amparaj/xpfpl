@@ -250,8 +250,8 @@ export default function MarketsPage() {
     <>
       <h2>Markets</h2>
       <p className="lede">
-        What the betting markets (Polymarket) thought, next to the model's own club ratings. For played gameweeks the odds
-        are as they stood at the FPL deadline, beside what happened. Upcoming matches' odds are refreshed regularly.
+        What the betting markets thought, next to the model's own club ratings. For completed gameweeks the odds are as they
+        were at the deadline, compared to what actually happened. Upcoming matches' odds are refreshed regularly.
       </p>
       <div className="toolbar">
         <label>

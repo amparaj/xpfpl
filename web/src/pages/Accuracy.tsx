@@ -1,5 +1,5 @@
 import * as Plot from "@observablehq/plot";
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { color } from "../colors";
 import { Chart, Legend, Loading, Note, Table, plotDefaults, type Column } from "../components/ui";
 import type { Accuracy as AccuracyFile, Row } from "../data";
@@ -25,7 +25,7 @@ export default function Accuracy() {
       <LiveRecord scorecard={s} />
 
       {c && <Comparison comparison={c} />}
-      {v && <ByGameweek validation={v} />}
+      {v && <ByGameweek validation={v} comparison={c} preferred={site.meta.model} />}
       {v && <Calibration validation={v} />}
       {t && <Tuning tuning={t} />}
       <Note>
@@ -37,9 +37,19 @@ export default function Accuracy() {
 }
 
 function LiveRecord({ scorecard }: { scorecard: any }) {
+  const site = useSite();
   const gws: Row[] = scorecard?.gameweeks ?? [];
   if (!gws.length) {
-    return <p className="muted">No forecast has been scored yet: forecasts are saved before each deadline and scored once that gameweek is played.</p>;
+    const next = site.meta.next_gw;
+    return (
+      <p className="note" style={{ marginTop: 0 }}>
+        Nothing to score yet. The model has been trained, but this table only counts forecasts that were saved{" "}
+        <em>before</em> a deadline and then checked against the real points, so nothing can be adjusted after the
+        fact. Saving started partway through the season, so the earlier gameweeks aren't here
+        {next ? <>; the GW{next} forecast is saved and will be scored once GW{next} has been played</> : null}. Until
+        then, the full-season test below is the best guide.
+      </p>
+    );
   }
   const columns: Column<Row>[] = [
     { key: "gw", label: "GW", numeric: true, value: (r) => r.gw },
@@ -58,7 +68,7 @@ function Comparison({ comparison }: { comparison: any }) {
   const ceiling = comparison.ceiling;
   const columns: Column<Row>[] = [
     { key: "model", label: "Model", value: (r) => r.model },
-    { key: "description", label: "What it is", value: (r) => r.description },
+    { key: "description", label: "What it is", value: (r) => r.description, wrap: true },
     { key: "rmse", label: "RMSE", numeric: true, value: (r) => r.rmse, render: (r) => dec(r.rmse, 3), title: "Root mean squared error, points (lower is better)" },
     { key: "mae", label: "MAE", numeric: true, value: (r) => r.mae, render: (r) => dec(r.mae, 3) },
     { key: "r2", label: "R²", numeric: true, value: (r) => r.r2, render: (r) => dec(r.r2, 3) },
@@ -78,9 +88,18 @@ function Comparison({ comparison }: { comparison: any }) {
   );
 }
 
-function ByGameweek({ validation }: { validation: any }) {
-  const data: Row[] = (validation.by_gameweek ?? []).filter((r: Row) => r.model === validation.primary || r.model === validation.reference);
-  const models = [validation.primary, validation.reference];
+function ByGameweek({ validation, comparison, preferred }: { validation: any; comparison: any; preferred: string }) {
+  // `xpfpl compare` scores every model week by week; older exports only have the default model's
+  // validation run, so fall back to that.
+  const all = comparison?.by_gameweek?.length && comparison.season === validation.season;
+  const rows: Row[] = all ? comparison.by_gameweek : validation.by_gameweek ?? [];
+  const reference: string = all ? "baseline" : validation.reference;
+  const choices: string[] = [...new Set(rows.map((r) => r.model as string))].filter((m) => m !== reference);
+  const [picked, setPicked] = useState<string>(() =>
+    choices.includes(preferred) ? preferred : choices.includes(validation.primary) ? validation.primary : choices[0]);
+  const model = choices.includes(picked) ? picked : choices[0];
+  const data = rows.filter((r) => r.model === model || r.model === reference);
+  const models = [model, reference];
   const make = useCallback((width: number) => Plot.plot({
     ...plotDefaults(width),
     height: 240,
@@ -90,14 +109,26 @@ function ByGameweek({ validation }: { validation: any }) {
     marks: [
       Plot.line(data, { x: "gw", y: "rmse", stroke: "model", strokeWidth: 2 }),
       Plot.ruleX(data, Plot.pointerX({ x: "gw", stroke: color.muted })),
-      Plot.tip(data, Plot.pointerX({ x: "gw", y: "rmse", title: (r: Row) => `GW${r.gw} · ${r.model}\nRMSE ${pts(r.rmse)} · MAE ${pts(r.mae)}` })),
+      Plot.tip(data, Plot.pointerX({ x: "gw", y: "rmse", title: (r: Row) => `GW${r.gw} · ${r.model}
+RMSE ${pts(r.rmse)} · MAE ${pts(r.mae)}` })),
     ],
   }), [data]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <div className="card">
       <h3 style={{ marginTop: 0 }}>Error week by week, {validation.season}</h3>
-      <Legend items={[{ label: validation.primary, color: color.s1, kind: "line" }, { label: `${validation.reference} (5-match average)`, color: color.neutral, kind: "line" }]} />
-      <Chart make={make} height={240} ariaLabel="RMSE by gameweek for the model and the baseline" />
+      {choices.length > 1 && (
+        <div className="toolbar">
+          <label>
+            Model
+            <select value={model} onChange={(e) => setPicked(e.target.value)}>
+              {choices.map((m) => <option key={m} value={m}>{m === preferred ? `${m} (default)` : m}</option>)}
+            </select>
+          </label>
+          <span className="muted" style={{ fontSize: 13 }}>against the baseline</span>
+        </div>
+      )}
+      <Legend items={[{ label: model, color: color.s1, kind: "line" }, { label: `${reference} (5-match average)`, color: color.neutral, kind: "line" }]} />
+      <Chart make={make} height={240} ariaLabel={`RMSE by gameweek for ${model} and the baseline`} />
       <p className="note">Lower is better. The baseline just averages each player's last five matches.</p>
     </div>
   );
@@ -123,7 +154,7 @@ function Calibration({ validation }: { validation: any }) {
     <div className="card">
       <h3 style={{ marginTop: 0 }}>Does xP mean what it says?</h3>
       <Chart make={make} height={260} ariaLabel="Calibration: predicted xP against actual points" />
-      <p className="note">Players grouped by their xP. On the dashed line, a player given 4 xP scored 4 on average. The whiskers are ±2 standard errors.</p>
+      <p className="note">Players grouped by their xP. On the dashed line, a player given 4 xP scored 4 on average. The line through each dot shows how far that average could move by chance: the more players in a group, the shorter it is.</p>
     </div>
   );
 }
@@ -133,7 +164,7 @@ function Tuning({ tuning }: { tuning: any }) {
   if (!chosen.length) return null;
   return (
     <>
-      <h3>How the team-picking settings were chosen</h3>
+      <h3>How the team selection settings were chosen</h3>
       <p className="note" style={{ marginTop: 0 }}>
         Each setting was picked by replaying whole seasons ({(tuning.seasons ?? []).join(", ")}) week by week and keeping whichever
         scored the most points: {chosen.map(([k, val]) => `${k.replace(/_/g, " ")} ${String(val)}`).join(", ")}.

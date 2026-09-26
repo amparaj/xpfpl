@@ -232,7 +232,7 @@ def cmd_compare(args) -> None:
         {"generated": datetime.now().isoformat(timespec="seconds"), "season": args.val_season,
          "rows": int(active.sum()), "models": table.to_dict("records"), "ceiling": ceiling,
          "headline": report["headline"], "horizons": report["horizons"],
-         "return_groups": report["return_groups"]}, indent=1),
+         "return_groups": report["return_groups"], "by_gameweek": report["by_gameweek"]}, indent=1),
         encoding="utf-8")
     print(f"\nSaved to {config.COMPARISON_PATH}")
 

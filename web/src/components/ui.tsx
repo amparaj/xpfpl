@@ -126,6 +126,8 @@ export interface Column<T> {
   title?: string;
   /** A heading over this column and its neighbours with the same group (e.g. "Market" over Home/Draw/Away). */
   group?: string;
+  /** Long text: wrap it onto a few lines rather than widening the table. */
+  wrap?: boolean;
 }
 
 /** The group heading row: one cell per run of neighbouring columns with the same group. */
@@ -168,7 +170,7 @@ export function Table<T>({ columns, data, sort: initialSort, desc: initialDesc =
   const runs = columns.some((c) => c.group) ? groupRuns(columns) : null;
   // The first column of each group gets a rule down its left edge, in every row.
   const starts = new Set(runs?.filter((r) => r.group).map((r) => r.start));
-  const cls = (c: Column<T>, i: number) => [c.numeric && "num", starts.has(i) && "group-start"].filter(Boolean).join(" ") || undefined;
+  const cls = (c: Column<T>, i: number) => [c.numeric && "num", c.wrap && "wrap", starts.has(i) && "group-start"].filter(Boolean).join(" ") || undefined;
   return (
     <div className="table-wrap">
       <table>
