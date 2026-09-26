@@ -99,7 +99,7 @@ GLOSSARY = [
      "or away, price, position and experience."),
     ("Training / validation",
      "Training is when the model adjusts its weights to fit past matches. Validation checks it on a "
-     "season it never saw (2025-26), which is the honest test of how it will do on new games. Once "
+     "season it never saw (2025-26), which is the best test of how it will do on new games. Once "
      "that's checked, the saved model is refitted on all seasons so it knows the latest form."),
     ("Epoch / early stopping",
      "One epoch is one pass through all the training data. Early stopping ends training when the "

@@ -452,7 +452,7 @@ Before each deadline, `predict` and `recommend` save their forecasts to
 `data/predictions/<season>/`. After the gameweek, `xpfpl fetch` then `xpfpl scorecard` scores
 them against what happened - MAE, RMSE, R², rank correlation and bias per gameweek, plus bias by
 position, the early warning for a rule change the history can't teach (like 2026-27's new bonus
-points system). Forecasts made in advance can't be quietly revised, so this is the honest
+points system). Forecasts made in advance can't be quietly revised, so this is the most reliable
 number to watch.
 
 Results land in `data/backtests/` as CSV and JSON. This is what the tunable parameters should be set
