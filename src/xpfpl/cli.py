@@ -237,6 +237,60 @@ def cmd_compare(args) -> None:
     print(f"\nSaved to {config.COMPARISON_PATH}")
 
 
+def cmd_robustness(args) -> None:
+    """Out-of-sample checks of the forecasts and the backtest over several seasons."""
+    import json
+
+    from xpfpl import robustness
+    from xpfpl.data.history import load_matches
+    from xpfpl.features import build_training_frame
+
+    args.seasons = args.seasons or robustness.SEASONS
+    args.seed_seasons = robustness.SEED_SEASONS if args.seed_seasons is None else args.seed_seasons
+    args.leaky_seasons = robustness.LEAKY_SEASONS if args.leaky_seasons is None else args.leaky_seasons
+    args.leak_probe = args.leak_probe or robustness.LEAK_PROBES
+    stages = {"forecasts", "backtest", "report"} if args.stage == "all" else {args.stage}
+    matches = frame = None
+    if stages & {"forecasts", "backtest"}:
+        print("Building features...")
+        matches = load_matches()
+        frame = build_training_frame(matches)
+    if "forecasts" in stages:
+        stale = {}
+        for k in range(2, args.horizons + 1):
+            print(f"Building features as known {k} gameweeks ahead...")
+            stale[k] = build_training_frame(matches, stale=k)
+        for season in args.seasons:
+            print(f"\n--- {season}: training on the seasons before it and predicting it ---", flush=True)
+            seeds = robustness.SEEDS if season in args.seed_seasons else robustness.SEEDS[:1]
+            out = robustness.forecasts(frame, season, seeds=seeds, stale=stale,
+                                       leaky=season in args.leaky_seasons)
+            robustness.DIR.mkdir(parents=True, exist_ok=True)
+            out.to_parquet(robustness.forecast_path(season), index=False)
+    if "backtest" in stages:
+        for season in args.seasons:
+            print(f"\n--- {season}: backtest variants ---", flush=True)
+            earlier = robustness.load_forecasts()
+            earlier = earlier[earlier["season"] < season] if len(earlier) else None
+            seeds = robustness.SEEDS if season in args.seed_seasons else robustness.SEEDS[:1]
+            rows = robustness.backtests(frame, season, earlier, seeds=seeds)
+            robustness.backtest_path(season).write_text(json.dumps(rows, indent=1), encoding="utf-8")
+    if "report" in stages:
+        df = robustness.load_forecasts()
+        if df.empty:
+            raise SystemExit("No forecasts yet: run `xpfpl robustness --stage forecasts` first.")
+        probes = []
+        if not args.no_leak_probe:
+            matches = load_matches() if matches is None else matches
+            for season, gw in args.leak_probe:
+                print(f"Leak probe: rebuilding features from matches up to {season} GW{gw}...", flush=True)
+                probes.append(robustness.leak_probe(matches, season, int(gw)))
+        report = robustness.build_report(df, robustness.load_backtests(), probes)
+        robustness.save_report(report)
+        print("\n" + robustness.summarise(report))
+        print(f"\nSaved to {robustness.REPORT_PATH}")
+
+
 def cmd_tune(args) -> None:
     """Search the optimiser tuning parameters with the backtest and print the config.py block to paste."""
     from xpfpl import tune
@@ -658,6 +712,20 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--horizons", type=int, default=3,
                    help="also score forecasts made up to this many gameweeks ahead")
     p.set_defaults(func=cmd_compare)
+
+    p = sub.add_parser("robustness", help="out-of-sample checks of the forecasts and backtest over several seasons")
+    p.add_argument("--stage", choices=["forecasts", "backtest", "report", "all"], default="all",
+                   help="forecasts and backtest cache per season (run seasons in parallel), report combines")
+    p.add_argument("--seasons", nargs="+", default=None, help="test seasons (default 2020-21 to 2025-26)")
+    p.add_argument("--seed-seasons", nargs="*", default=None,
+                   help="seasons also refit with other seeds (each costs two more fits)")
+    p.add_argument("--leaky-seasons", nargs="*", default=None,
+                   help="seasons also fitted the way `validate` does (early-stopped on the test season)")
+    p.add_argument("--horizons", type=int, default=3, help="also score forecasts made up to N gameweeks ahead")
+    p.add_argument("--leak-probe", nargs=2, action="append", metavar=("SEASON", "GW"),
+                   default=None, help="cut-off points for the feature leak probe (repeatable)")
+    p.add_argument("--no-leak-probe", action="store_true")
+    p.set_defaults(func=cmd_robustness)
 
     p = sub.add_parser("tune", help="search the config.py tuning parameters by replaying whole seasons")
     p.add_argument("--seasons", default=",".join(config.HISTORY_SEASONS[-4:-1]),
