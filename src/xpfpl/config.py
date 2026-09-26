@@ -57,6 +57,10 @@ POOL_SIZE = 50             # candidates per position handed to the optimiser
 # (6%) at prediction time has almost certainly been ruled out. On 2025-26 those players scored
 # 0.06 points against the model's 0.61, so the next gameweek's xP is multiplied by this.
 MARKET_OUT_XP_FACTOR = 0.1
+# Monte Carlo (simulate.py): how many times `predict` plays each upcoming gameweek to give every
+# xP a range and the chances behind it. It only describes risk: the optimiser still maximises xP.
+# 0 switches it off.
+SIM_RUNS = 5000
 
 # Chip thresholds (xP gained vs. not playing the chip). These four are still the original
 # guesses: the chip stages of `xpfpl tune` have not been run to completion yet, so treat the

@@ -33,6 +33,11 @@ Each gameweek it tells you:
    transfers banked up to 5, -4 hits). Chips are simple rules: the xP gained by playing a chip
   must pass a threshold. The tuning parameters in `config.py` were tried out with `xpfpl tune` and checked
   on seasons the search never saw (see [Tuning](#tuning)).
+5. **Risk** (`xpfpl/simulate.py`): a Monte Carlo simulation plays the coming gameweeks thousands of
+   times in PyTorch, so every xP comes with a range and the chances of 10+ and of 2 or fewer, and a
+   team with its likely score, captain odds, chip odds and how often its move beats the
+   alternatives (see [What could happen?](#what-could-happen-monte-carlo)). It shows the risk; the
+   optimiser still maximises xP.
 
 ## Setup
 
@@ -56,12 +61,13 @@ Everything in one place, no command line needed. The tabs follow the Guide's wee
 (look back at the week, research, plan), then the season as a whole:
 
 - **Guide**: how it works, the weekly routine, how accurate each model is, what the season replays
-  scored, how the tuning parameters were chosen, and a glossary.
+  scored, whether the simulated ranges came true ("What could happen?"), how the tuning parameters
+  were chosen, and a glossary.
 - **Gameweek Review**: any finished GW. Your points against the average, what the model expected
   per player (and his minutes in any cup or European match that week), the best XI you could have
   picked from the same squad, that week's top scorers, and the midweek results before it.
 - **Players & Fixtures**: xP for every player with filters (and the midweek factor on next week's
-  xP, when there is one), and a fixture difficulty ticker that marks each club's cup and European
+  xP, when there is one, and his simulated range and chances of 10+ and of 2 or fewer), and a fixture difficulty ticker that marks each club's cup and European
   matches ("[UCL Tue]").
 - **Markets**: what the betting markets think ("Market Odds") next to the model's own team
   ratings ("Our Odds"). For the next gameweek: win/draw/loss odds, each side's expected goals and
@@ -73,7 +79,9 @@ Everything in one place, no command line needed. The tabs follow the Guide's wee
 - **Plan Ahead**: transfers, XI, bench, captain and chip advice for the next gameweek, and the team
   for each later GW in the horizon. Set an active chip (Wildcard, Free Hit, Triple Captain, Bench
   Boost), override free transfers, bank and hits, and force or ban players. The pitch marks a
-  player whose club plays midweek that week.
+  player whose club plays midweek that week. Under the pitch, the Monte Carlo: the team's likely
+  score, each captain option's odds, how often the move beats rolling the transfer or the next-best
+  move, and each chip's chance of clearing its threshold.
 - **My Season**: points and rank by gameweek, chips used and left, transfer history.
 
 The top of the sidebar counts down to the next deadline and shows where the current gameweek is:
@@ -131,6 +139,10 @@ Useful options for `recommend`:
 | `--model gbm` | use another model (see [Models](#models)) |
 | `--plan` / `--no-plan` | also plan the following weeks' transfers, or just this week's. The default follows `PLAN_TRANSFERS` in `config.py` (off: the tuning found planning doesn't pay) |
 | `--sensitivity 20` | re-solve 20 times with every player's xP randomly off by ~25%, and report how often each transfer and captain wins: is the advice robust or a coin-flip? |
+
+`recommend` also prints the Monte Carlo for your team (see [What could happen?](#what-could-happen-monte-carlo)):
+the likely score, the captain options' odds, how often the move beats rolling the transfer and the
+next-best move in the same simulated weeks, and each chip's chance of clearing its threshold.
 
 Without `--team-id`, `recommend` builds the best squad from scratch within `--budget` (default £100m).
 
@@ -260,6 +272,58 @@ refitted for the model by `xpfpl train` and `xpfpl cups`
 each player's club plays in the week before (`cup_<gw>`: 3 Champions League, 2 Europa League, 1
 another, 0 none), for planning by hand. There is one season and a bit of data, so treat the
 factors as a first estimate.
+
+## What could happen? (Monte Carlo)
+
+An xP is an average. "Salah 7.1 xP" could be a steady 6-8 or a coin flip between 2 and 15, and a
+captain pick, a Triple Captain or a close transfer turns on the difference. So `predict` also plays
+the coming gameweeks `SIM_RUNS` times (5,000, `config.py`; 0 turns it off) in `xpfpl/simulate.py`,
+batched in PyTorch:
+
+1. each side's goals ~ Poisson(the fixture's expected goals: the betting odds where there are
+   some, else the club ratings in `teams.py`);
+2. each player: no minutes, a cameo or 60+, from the minutes model (`xmins`, in the ensemble) and
+   scaled by the injury flag, midweek rotation and the market's "ruled out";
+3. each of his side's goals is his with probability (his per-90 rate x time on the pitch / the
+   side's expected goals), and the same for assists, so teammates rise and fall together;
+4. clean sheets and goals conceded from the opponents' draw, saves, defensive contributions, and
+   bonus and cards drawn from recent seasons' history given his goals, assists and clean sheet;
+5. each player's simulated average is matched to his xP (the attacking rates, then the chance of
+   playing, are scaled): the model says how many points to expect, the simulation how they spread.
+
+Every player gets `pts_p10`/`pts_p50`/`pts_p90` and the chances of 10+ (`p_haul`) and of 2 or fewer
+(`p_blank`) in the saved forecast. Every simulated score goes to
+`data/predictions/<season>/gwNN_<model>_sims.npz`, so a team can be scored in the same simulated
+weeks, with the auto-subs, the vice-captain and chips played as FPL plays them:
+
+- the team's likely score (the middle 80%) and its chance of beating a target;
+- each captain option's range, chances, and how often he's the best pick in the same week;
+- the recommended move against keeping the squad and against the next-best move (the best plan
+  without its signings), in the same simulated weeks (same injuries, goals and clean sheets),
+  discounted and after hits: near 50% is a coin flip;
+- Triple Captain and Bench Boost: what the chip would add, the chance it clears its threshold, and
+  the chance this week beats a later week of the plan.
+
+`xpfpl train`/`validate` check the ranges on the held-out season (`simulation` in
+`models/validation.json`) and `xpfpl scorecard` on this season's saved forecasts. On 2025-26, with a
+model that never saw it:
+
+| Check | Result | Right if |
+| --- | --- | --- |
+| real scores inside the simulated 10th-90th percentile | 79.3% | 80% |
+| club totals per match inside their range | 83.4% | 80% (a little wide: minutes are drawn per player, a club always fields 11) |
+| chance of 2 or fewer, by group | within ~3 points | on the diagonal |
+| chance of 10+, players given 10-20% | 9-13% came true | on the diagonal |
+
+The last row is the model's xP, not the simulation: that season it over-forecast its top players
+(4.6 xP, 4.1 scored), and the simulation is only as right as the xP it's built around.
+
+The simulation does **not** change what the optimiser maximises. With FPL's linear scoring, the team
+with the most expected points is the same whether you average simulations or not, and a study of
+FPL team selection found simulated forecasts no better than the plain average they reduce to
+([Ramezani & Dinh, 2026, *A data-driven framework for team selection in Fantasy Premier
+League*](https://arxiv.org/abs/2505.02170)). Rank- or ownership-aware risk (picking differentials)
+was left out on purpose: it can't be shown to score more points.
 
 ## Tuning
 
@@ -512,12 +576,12 @@ drops the old season's match-by-match history.
 A public, read-only look back at the season, served by GitHub Pages from the `gh-pages` branch
 (https://amparaj.github.io/xpfpl/). Its pages, in order: **About** (where it opens: the project and
 how the model forecasts, picks a team and is tested, in plain language, with the latest accuracy
-figures and the midweek factors), **Model Accuracy**, **Past Gameweeks** (every result, the cup and
+figures, the midweek factors and the Monte Carlo), **Model Accuracy** (including whether the simulated ranges came true), **Past Gameweeks** (every result, the cup and
 European results before it, each player's points against the xP forecast and his midweek minutes),
-**Next Gameweek** (the forecast saved for the coming gameweek: captain picks, the top players over
+**Next Gameweek** (the forecast saved for the coming gameweek: captain picks with each one's simulated range and chance of 10+, the top players over
 the horizon with any midweek factor on their xP, each club's fixtures with our win chances and a
 badge for its cup or European matches, and anyone the betting markets have ruled out), **Players**, **Markets** (the betting odds at each deadline against what happened),
-**The Model's Team** (its pitch marks a club's midweek match) and **Data** (the archive). It
+**The Model's Team** (its pitch marks a club's midweek match; each live week shows its simulated score, captain odds and chip odds, and whether the score landed in its likely range) and **Data** (the archive). It
 doesn't train or plan.
 
 **The Model's Team** is a paper FPL team that does exactly what the model says. Before each
@@ -593,6 +657,7 @@ src/xpfpl/
   predict.py         xP per player per upcoming gameweek
   prices.py          expected price changes (form table + live transfer momentum)
   optimise.py        squad / transfer / lineup optimiser (PuLP), week by week
+  simulate.py        Monte Carlo: thousands of simulated gameweeks per forecast (ranges, team/captain/chip odds)
   myteam.py          your squad, selling prices, bank, free transfers, chips used
   chips.py           chip rules
   validate.py        held-out-season accuracy report (models/validation.json)
@@ -604,7 +669,7 @@ src/xpfpl/
 web/                 the public website (React + TypeScript, Vite)
 archive/             every source, compressed (see archive/README.md)
 tests/               scoring rules, features, every model, optimiser rules, prices, backtest,
-                     tuning, validation, the live scorecard, market odds, archive, export
+                     tuning, validation, the live scorecard, market odds, archive, export, simulation
 ```
 
 ## Caveats
@@ -625,3 +690,8 @@ tests/               scoring rules, features, every model, optimiser rules, pric
 - [vaastav/Fantasy-Premier-League](https://github.com/vaastav/Fantasy-Premier-League): historical gameweek data
 - [Polymarket](https://polymarket.com) (Gamma and CLOB APIs): betting odds
 - [fantasynutmeg.com/history](https://www.fantasynutmeg.com/history): handy for sanity-checking past seasons
+
+Reading: Ramezani & Dinh (2026), [A data-driven framework for team selection in Fantasy Premier
+League](https://arxiv.org/abs/2505.02170): an integer program over forecast points, with simulated
+and robust variants that didn't beat plain averages, which is why this project's Monte Carlo
+describes risk rather than changing the picks.

@@ -65,6 +65,21 @@ export interface Gameweek {
   gw: number; xp_source: string; players: Columns;
   fixtures: { id: number; kickoff: string; home: number; away: number; home_score: number | null; away_score: number | null }[];
 }
+/** Simulated scores (simulate.spread): mean, percentiles and a histogram in `width`-point buckets. */
+export interface Spread {
+  mean: number; p5: number; p10: number; p25: number; p50: number; p75: number; p90: number; p95: number;
+  histogram?: { start: number; width: number; shares: number[] };
+}
+/** A captain option's simulated points (his own, before the armband) and how often he's the best pick. */
+export interface CaptainOdds {
+  element: number; mean: number; pts_p10: number; pts_p50: number; pts_p90: number;
+  p_haul: number; p_blank: number; p_best: number; armband_mean: number;
+}
+/** What Triple Captain / Bench Boost would add this week in simulation, and the chance it clears the threshold. */
+export interface ChipOdds extends Omit<Spread, "histogram"> { threshold: number; p_clear: number; p_beats_later: number | null }
+/** The Monte Carlo saved with a Model's Team decision (modelteam.simulation). */
+export interface Simulation { sims: number; points: Spread; captains: CaptainOdds[]; chips: Record<string, ChipOdds> }
+
 /** One gameweek of the Model's Team: the decision saved before the deadline and, once played,
  * what it scored. `source`: "live" (decided before the deadline), "replay" (filled in by the
  * backtest for weeks before the live record began) or "carried" (no decision saved: last week's team). */
@@ -78,6 +93,8 @@ export interface ModelWeek {
   forecast?: number | null; forecast_source?: "decision" | "gameweek xP" | null; bench_xp?: number;
   points?: number; gross?: number; captain_played?: number | null; autosubs?: [number, number][];
   best?: number; best_xi?: number[]; best_captain?: number;
+  /** The Monte Carlo made with the decision: the team's simulated score, captain odds, chip odds. */
+  simulation?: Simulation | null;
 }
 export interface ModelTeam { model: string; gameweeks: ModelWeek[]; next: ModelWeek | null }
 /** The forecast saved for the next gameweek: xP per player for each gameweek of its horizon. */

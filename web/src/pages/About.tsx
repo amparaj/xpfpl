@@ -1,5 +1,6 @@
+import { PAPER } from "../components/Simulation";
 import type { Accuracy } from "../data";
-import { dec, int } from "../format";
+import { dec, int, pct } from "../format";
 import { ROTATION } from "../midweek";
 import { useData, useSite } from "../site";
 
@@ -37,6 +38,7 @@ export default function About() {
   const trainedOn = report?.validation?.trained_on as string | undefined;
   const rotation = report?.rotation;
   const groups = rotation ? Object.entries(rotation.groups).filter(([, g]) => g.rows > 0) : [];
+  const simulation = report?.validation?.simulation;
 
   return (
     <article className="about">
@@ -139,6 +141,33 @@ export default function About() {
       </ul>
       <p>
         Weeks further ahead count for a little less, because forecasts get less reliable the further out they go.
+      </p>
+
+      <h3>What could happen: simulating each gameweek</h3>
+      <p>
+        An xP is an average, and averages hide risk. Two players on 6 xP can be very different picks: one reliably
+        gets 5 to 7, the other blanks half the time and hauls now and then. So after each forecast the computer plays the
+        coming gameweeks <strong>thousands of times</strong> (a <em>Monte Carlo</em> simulation). In every simulated week it
+        draws how many goals each side scores, from the betting odds or the model's club ratings. Then, for each player, it
+        draws whether he plays and for how long, his share of his side's goals and assists, clean sheets, saves, defensive
+        actions, and bonus points and cards the way they have fallen in the past. Teammates rise and fall together, as they do
+        on the day. Each player's simulated average is kept equal to his xP, so the simulation changes how the points are
+        spread, not how many are expected.
+      </p>
+      <p>
+        That gives every player a likely <strong>range</strong> (the middle 80% of his simulated scores) and his chances of
+        <strong> 10 or more</strong> and of <strong>2 or fewer</strong>, shown on <a href="#next">Next Gameweek</a>. For{" "}
+        <a href="#model-team">The Model's Team</a> it plays the auto-subs and the vice-captain too, giving the team a likely
+        score, the odds of each captain option, and the chance a Triple Captain or Bench Boost would pay off.
+        {simulation && <> Tested on {report?.validation?.season}, {pct(simulation.coverage_80)} of real scores landed inside
+          their simulated range, where 80% means the ranges are the right width.</>}
+      </p>
+      <p>
+        The simulations don't change the picks. With FPL's scoring, the team with the most expected points is the same whether
+        you average thousands of simulated weeks or not. A study of FPL team selection found the same thing: simulating a
+        player's points and averaging them did no better than the plain average (<a href={PAPER}>Ramezani &amp; Dinh,
+        2026</a>). What the simulations add is how sure a pick is: whether a captain call or a transfer is clear-cut or a
+        coin flip.
       </p>
 
       <h3>4. Checking it</h3>
