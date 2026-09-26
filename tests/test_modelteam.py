@@ -55,3 +55,16 @@ def test_season_record_scores_autosubs_and_carries_a_missed_week(tmp_path, monke
     assert week1["points"] == 11 * 2 + 2                    # eleven players on 2, the captain's 2 doubled
     assert week2["source"] == "carried" and week2["points"] == 24
     assert record["next"] is None
+
+
+def test_team_forecast_counts_what_the_week_scores():
+    base = {"lineup": [1, 2, 3], "bench": [4, 5], "captain": 2, "chip": None}
+    xp = pd.Series({1: 2.0, 2: 5.0, 3: 1.0, 4: 3.0, 5: 0.5})
+    assert modelteam.team_forecast({**base, "xp": 13.0}) == (13.0, "decision")
+    assert modelteam.team_forecast({**base, "xp": 13.0, "chip": "bboost", "bench_xp": 3.5}) == (16.5, "decision")
+    # an older decision without bench_xp takes its Bench Boost bench from the week's xP
+    assert modelteam.team_forecast({**base, "xp": 13.0, "chip": "bboost"}, xp) == (16.5, "decision")
+    # a carried-over week: summed from the per-player xP, captain doubled (tripled with Triple Captain)
+    assert modelteam.team_forecast({**base, "xp": None}, xp) == (13.0, "gameweek xP")
+    assert modelteam.team_forecast({**base, "xp": None, "chip": "3xc"}, xp) == (18.0, "gameweek xP")
+    assert modelteam.team_forecast({**base, "xp": None}) == (None, None)

@@ -1,9 +1,9 @@
 import * as Plot from "@observablehq/plot";
 import { useCallback, useState } from "react";
 import { color } from "../colors";
-import { Chart, Legend, Loading, Note, Table, plotDefaults, type Column } from "../components/ui";
+import { Chart, Legend, Loading, Note, Table, Tiles, plotDefaults, type Column } from "../components/ui";
 import type { Accuracy as AccuracyFile, Row } from "../data";
-import { dec, pts, signed } from "../format";
+import { dec, int, pct, pts, signed } from "../format";
 import { useData, useSite } from "../site";
 
 export default function Accuracy() {
@@ -11,7 +11,7 @@ export default function Accuracy() {
   const data = useData<AccuracyFile>("accuracy.json");
   if (data === undefined) return <Loading />;
   if (!data) return <p>No accuracy reports exported yet.</p>;
-  const { validation: v, comparison: c, scorecard: s, tuning: t } = data;
+  const { validation: v, comparison: c, scorecard: s, tuning: t, robustness: r } = data;
 
   return (
     <>
@@ -27,7 +27,8 @@ export default function Accuracy() {
       {c && <Comparison comparison={c} />}
       {v && <ByGameweek validation={v} comparison={c} preferred={site.meta.model} />}
       {v && <Calibration validation={v} />}
-      {t && <Tuning tuning={t} />}
+      {r && <Robustness report={r} />}
+      {t && <Tuning tuning={t} retune={r?.retune} />}
       <Note>
         The default model is <strong>{site.meta.model}</strong> ({site.meta.model_description}). The ceiling is what a model
         that knew every player's true chances would score, simulated: some of each week's points are luck no model can predict.
@@ -159,15 +160,101 @@ function Calibration({ validation }: { validation: any }) {
   );
 }
 
-function Tuning({ tuning }: { tuning: any }) {
+const REPLAY_LABELS: Record<string, string> = {
+  ensemble: "The model", baseline: "5-match average", oracle: "Perfect foresight",
+};
+const ACCURACY_LABELS: Record<string, string> = { ensemble: "The model", baseline: "5-match average", fpl_xp: "FPL's own xP" };
+
+/** `xpfpl robustness`: six seasons, each forecast and replayed by a model trained only on the seasons before it. */
+function Robustness({ report }: { report: any }) {
+  const seasons: string[] = report.seasons ?? [];
+  const accuracy = (report.accuracy ?? []).filter((a: any) => a.model in ACCURACY_LABELS)
+    .map((a: any) => ({ ...a, label: ACCURACY_LABELS[a.model] }));
+  const chart = useCallback((width: number) => Plot.plot({
+    ...plotDefaults(width),
+    height: 240,
+    x: { label: null, type: "point", padding: 0.3 },
+    y: { label: "RMSE (lower is better)", grid: true, nice: true },
+    color: { domain: Object.values(ACCURACY_LABELS), range: [color.s1, color.s2, color.s3] },
+    marks: [
+      Plot.line(accuracy, { x: "season", y: "rmse", stroke: "label", strokeWidth: 2 }),
+      Plot.dot(accuracy, { x: "season", y: "rmse", fill: "label", r: 4, stroke: color.surface, strokeWidth: 2 }),
+      Plot.tip(accuracy, Plot.pointer({ x: "season", y: "rmse", title: (a: any) => `${a.label}, ${a.season}\nRMSE ${dec(a.rmse, 3)} · rank corr. ${dec(a.spearman)}` })),
+    ],
+  }), [accuracy]);
+
+  const spread = (report.spread ?? []).find((x: any) => x.model === "ensemble");
+  const cal = report.calibration;
+  const bt = report.backtest ?? {};
+  const baselineGap = (bt.gaps ?? []).find((g: any) => g.variant === "baseline");
+  const points: Record<string, Record<string, number>> = bt.points ?? {};
+  const replayRows = Object.keys(REPLAY_LABELS).filter((v) => points[v]).map((v) => {
+    const values = seasons.map((s) => points[v][s]).filter((x) => x !== undefined);
+    return { variant: REPLAY_LABELS[v], ...points[v], mean: values.reduce((a, b) => a + b, 0) / Math.max(values.length, 1) };
+  });
+  const replayColumns: Column<any>[] = [
+    { key: "variant", label: "", value: (x) => x.variant },
+    ...seasons.map((s): Column<any> => ({ key: s, label: s, numeric: true, value: (x) => x[s], render: (x) => int(x[s]) })),
+    { key: "mean", label: "Average", numeric: true, value: (x) => x.mean, render: (x) => <strong>{int(x.mean)}</strong> },
+  ];
+  const seeds = report.seeds ?? [];
+  const sameCaptain = seeds.length ? seeds.reduce((a: number, x: any) => a + x.captain_same, 0) / seeds.length : undefined;
+
+  return (
+    <>
+      <h3>Does it hold up across seasons?</h3>
+      <p className="note" style={{ marginTop: 0 }}>
+        The test above is one season. Here it's repeated on {seasons.length} ({seasons[0]} to {seasons[seasons.length - 1]}):
+        each season is forecast, and then played week by week, by a model trained only on the seasons before it.
+      </p>
+      <Tiles tiles={[
+        ...(spread ? [{ label: "Error, season to season", value: `${dec(spread.rmse_mean, 2)} ± ${dec(spread.rmse_sd, 2)}`,
+          note: `RMSE for players getting minutes, from ${dec(spread.rmse_min, 2)} to ${dec(spread.rmse_max, 2)}` }] : []),
+        ...(cal ? [{ label: "Does xP mean what it says?", value: `× ${dec(cal.slope, 2)}`,
+          note: `points ≈ ${signed(cal.intercept)} + ${dec(cal.slope, 2)} × xP over every season (1.00 is perfect)` }] : []),
+        ...(baselineGap ? [{ label: "Beats the 5-match average", value: `+${int(-baselineGap.gap_mean)} pts`,
+          note: `a season, in ${baselineGap.seasons_worse} of ${baselineGap.seasons} replayed seasons` }] : []),
+        ...(bt.noise_sd ? [{ label: "Luck in one season", value: `± ${int(bt.noise_sd)} pts`,
+          note: "how much a replayed season moves when the forecasts change by only 10%" }] : []),
+      ]} />
+      <div className="card">
+        <h3 style={{ marginTop: 0 }}>Forecast error each season</h3>
+        <Legend items={Object.values(ACCURACY_LABELS).map((label, i) => ({ label, color: [color.s1, color.s2, color.s3][i], kind: "line" as const }))} />
+        <Chart make={chart} height={240} ariaLabel="Forecast error (RMSE) each season for the model, the 5-match average and FPL's own xP" />
+      </div>
+      {replayRows.length > 0 && (
+        <>
+          <h3>Points replaying each season</h3>
+          <Table columns={replayColumns} data={replayRows} rowKey={(x) => x.variant} />
+        </>
+      )}
+      <Note>
+        A replayed season swings by around {int(bt.noise_sd)} points on luck alone, so a gap smaller than that (between two
+        models, or two settings) can't be told apart from chance. Perfect foresight knows every result in advance: it's the ceiling.
+        {sameCaptain !== undefined && <> The captain pick is often close: retrained from a different random start, the
+          model's top captain stayed the same in {pct(sameCaptain)} of weeks.</>}
+        {" "}Rebuilding every input from only the matches before a deadline gives the same numbers, so nothing from the future leaks in.
+      </Note>
+    </>
+  );
+}
+
+function Tuning({ tuning, retune }: { tuning: any; retune?: any }) {
   const chosen = Object.entries(tuning.chosen ?? {});
   if (!chosen.length) return null;
+  const confirmation: any[] = retune?.confirmation ?? [];
+  const current = confirmation.find((c) => c.label === "current config");
+  const tuned = confirmation.find((c) => c.label === "tuned");
   return (
     <>
       <h3>How the team selection settings were chosen</h3>
       <p className="note" style={{ marginTop: 0 }}>
-        Each setting was picked by replaying whole seasons ({(tuning.seasons ?? []).join(", ")}) week by week and keeping whichever
-        scored the most points: {chosen.map(([k, val]) => `${k.replace(/_/g, " ")} ${String(val)}`).join(", ")}.
+        Each setting was tried out by replaying whole seasons ({(tuning.seasons ?? []).join(", ")}) week by week, and the best
+        kept: {chosen.map(([k, val]) => `${k.replace(/_/g, " ")} ${String(val)}`).join(", ")}.
+        {current && tuned && <> A later, more careful search was checked on seasons it never saw
+          ({(retune.confirm_seasons ?? []).join(" and ")}): its choices scored {int(tuned.mean_points)} a season against{" "}
+          {int(current.mean_points)} for these, within luck of each other. So these settings stayed: they matter far less
+          than the forecasts.</>}
       </p>
     </>
   );

@@ -25,6 +25,7 @@ from xpfpl.style import CLUB_COLOURS, CLUB_TEXT, DECIMAL, POINTS
 SETTINGS_PATH = config.DATA_DIR / "app_settings.json"  # data/ is gitignored, so your team id stays local
 SERIES = "#2a78d6"   # one hue for single-series charts
 MUTED = "#8a8984"    # reference lines (GW average)
+FORECAST = "#d9822b"  # the model's forecast, next to the points actually scored
 FDR_BG = {1: "#cde2fb", 2: "#9ec5f4", 3: "#6da7ec", 4: "#256abf", 5: "#104281"}  # sequential blue
 FDR_FG = {1: "#0b0b0b", 2: "#0b0b0b", 3: "#0b0b0b", 4: "#ffffff", 5: "#ffffff"}
 PHOTO_URL = "https://resources.premierleague.com/premierleague25/photos/players/110x140/{code}.png"
@@ -102,7 +103,7 @@ def live_data() -> tuple[dict, list[dict]]:
 
 
 @st.cache_data(show_spinner="Predicting xP...")
-def predictions(horizon: int, model: str, _stamp) -> tuple[pd.DataFrame, list[int]]:
+def predictions(horizon: int, model: str, data_stamp) -> tuple[pd.DataFrame, list[int]]:
     bs, fx = live_data()
     return predict_upcoming(horizon, model, bs, fx)
 
@@ -119,14 +120,14 @@ def manager(team_id: int) -> tuple[dict, dict, list[dict]]:
 
 
 @st.cache_data(show_spinner="Optimising...")
-def run_solve(horizon: int, model: str, gameweeks: tuple[int, ...], _stamp, **kwargs):
-    players, _ = predictions(horizon, model, _stamp)
+def run_solve(horizon: int, model: str, gameweeks: tuple[int, ...], data_stamp, **kwargs):
+    players, _ = predictions(horizon, model, data_stamp)
     return solve(players, list(gameweeks), **kwargs)
 
 
 @st.cache_data(show_spinner="Checking chips...")
-def run_chip_advice(horizon: int, model: str, _stamp, team_id: int, available: tuple[str, ...], **kwargs):
-    players, gameweeks = predictions(horizon, model, _stamp)
+def run_chip_advice(horizon: int, model: str, data_stamp, team_id: int, available: tuple[str, ...], **kwargs):
+    players, gameweeks = predictions(horizon, model, data_stamp)
     bs, _ = live_data()
     # The chips are judged against the same plan the page is showing, week-by-week planning included.
     plan = solve(players, gameweeks, **kwargs)
@@ -144,9 +145,45 @@ def gw_review(team_id: int, gw: int):
     return points, r, best, plan
 
 
-@st.cache_data(show_spinner="Rebuilding pre-match predictions...")
-def past_xp(season: str, gw: int, model: str, _stamp) -> pd.Series:
-    return review.past_predictions(load_matches(), season, gw, model)
+@st.cache_data(show_spinner="Loading the model's forecasts for the season...")
+def season_xp(season: str, model: str, data_stamp) -> pd.DataFrame:
+    """gw, element, xp, source for every played gameweek: the forecast saved before each deadline,
+    else an in-sample rebuild (review.season_forecasts)."""
+    return review.season_forecasts(load_matches(), season, model)
+
+
+def gw_xp(season: str, gw: int, model: str) -> tuple[pd.Series, str | None]:
+    """One gameweek's xP per player, and where it came from (review.SAVED / review.REBUILT)."""
+    week = season_xp(season, model, stamp())
+    week = week[week["gw"] == gw]
+    return week.set_index("element")["xp"], (week["source"].iloc[0] if len(week) else None)
+
+
+@st.cache_data(show_spinner="Loading your season's picks...")
+def team_forecasts(team_id: int, gws: tuple[int, ...], season: str, model: str, data_stamp) -> pd.DataFrame:
+    """event, forecast, source: what the model expected your team to score each gameweek, as picked."""
+    xp = season_xp(season, model, data_stamp)
+    rows = []
+    for gw in gws:
+        week = xp[xp["gw"] == gw]
+        if week.empty:
+            continue
+        picks = pd.DataFrame(api.entry_picks(team_id, gw)["picks"]).set_index("element")
+        rows.append({"event": gw, "forecast": review.team_forecast(picks, week.set_index("element")["xp"]),
+                     "source": week["source"].iloc[0]})
+    return pd.DataFrame(rows, columns=["event", "forecast", "source"])
+
+
+def xp_source_note(sources) -> str:
+    """How to read past xP, given which sources were used."""
+    sources = set(sources)
+    if sources <= {review.SAVED}:
+        return "xP is the forecast saved before each deadline, so it's exactly what the model said at the time."
+    if review.SAVED in sources:
+        return ("xP is the forecast saved before each deadline where there is one; the other weeks are rebuilt "
+                "by today's model, which was also trained on them, so those are a little optimistic.")
+    return ("No forecast was saved before this deadline, so xP is rebuilt by today's model, which was also "
+            "trained on this season: a little optimistic.")
 
 
 @st.cache_data(ttl=600)
@@ -596,6 +633,15 @@ with tab_review:
         m[5].metric("Chip", chips.CHIP_NAMES.get(r["chip"], "-"))
 
         net = h["points"] + h["event_transfers_cost"]  # points before transfer penalties
+        xp, xp_source = gw_xp(season, rgw, model)
+        if len(xp):
+            forecast = review.team_forecast(picks, xp)
+            f = st.columns(3)
+            f[0].metric("Forecast for your team", f"{forecast:.1f}",
+                        help="The model's xP for your XI as picked: captain doubled (tripled with Triple Captain), "
+                             "bench counted only with Bench Boost")
+            f[1].metric("Scored", net, help="Points before transfer penalties, auto-subs included")
+            f[2].metric("Scored − forecast", f"{net - forecast:+.1f}")
         st.markdown(f"**Hindsight:** the best XI and captain from the same 15 players would have scored "
                     f"**{best:.0f}**, against your {net} before transfer penalties (**{best - net:.0f}** left on the table).")
         best_xi, best_cap = set(best_plan.lineups[rgw]), best_plan.captains[rgw]
@@ -618,7 +664,6 @@ with tab_review:
                 f"{player_label[s['element_in']].split(' (')[0]} on for {player_label[s['element_out']].split(' (')[0]}"
                 for s in r["auto_subs"]))
 
-        xp = past_xp(season, rgw, model, stamp())
         midweek_mins = cups.player_minutes_before(season, rgw, elements.reset_index()[["id", "code", "team_code"]])
         table = picks.assign(
             Role=["C" if c else "VC" if v else "" for c, v in zip(picks["is_captain"], picks["is_vice_captain"])],
@@ -639,10 +684,8 @@ with tab_review:
                                     "Points - xP": st.column_config.NumberColumn(format="%+.2f"),
                                     **{c: st.column_config.NumberColumn(format="%d")
                                        for c in ("Mins", "Midweek", "Points", "Counted")}})
-        st.caption(f"xP is the {model} model's pre-match prediction. The saved model was refitted on all "
-                   "seasons including this one, so past-GW xP is slightly optimistic. Injury flags at the "
-                   "time aren't known, so they aren't applied. Midweek: minutes in the club's cup or European "
-                   "match before this gameweek (empty if the club had none).")
+        st.caption(f"{xp_source_note([xp_source] if xp_source else [])} Model: {model}. Midweek: minutes "
+                   "in the club's cup or European match before this gameweek (empty if the club had none).")
 
         results = midweek_results(season, rgw)
         if len(results):
@@ -719,13 +762,45 @@ with tab_season:
                 tooltip=[alt.Tooltip("event:O", title="GW"), alt.Tooltip("overall_rank:Q", title="Rank", format=",")])
             st.altair_chart(rank, width="stretch")
 
-        st.dataframe(hist[["event", "points", "average", "rank", "overall_rank", "event_transfers",
-                           "event_transfers_cost", "points_on_bench", "bank", "value"]].assign(
+        forecasts = team_forecasts(int(team_id), tuple(int(g) for g in hist["event"]), season, model, stamp())
+        hist = hist.merge(forecasts, on="event", how="left")
+        hist["scored"] = hist["points"] + hist["event_transfers_cost"]      # before transfer penalties
+        hist["vs_forecast"] = hist["scored"] - hist["forecast"]
+        compared = hist[hist["forecast"].notna()]
+        if len(compared):
+            st.markdown("**Forecast against points scored**")
+            f = st.columns(3)
+            f[0].metric("Forecast, all season", f"{compared['forecast'].sum():.0f}",
+                        help=f"{len(compared)} gameweeks: the model's xP for your team as picked each week")
+            f[1].metric("Scored", f"{compared['scored'].sum():.0f}", help="Before transfer penalties")
+            f[2].metric("Scored − forecast", f"{compared['vs_forecast'].sum():+.0f}",
+                        f"{compared['vs_forecast'].mean():+.1f} a gameweek", delta_color="off")
+            long = pd.concat([compared.assign(series="Scored", value=compared["scored"]),
+                              compared.assign(series="Forecast", value=compared["forecast"])])
+            chart = alt.Chart(long).mark_bar(cornerRadiusTopLeft=3, cornerRadiusTopRight=3).encode(
+                x=alt.X("event:O", title="Gameweek"), xOffset=alt.XOffset("series:N", sort=["Forecast", "Scored"]),
+                y=alt.Y("value:Q", title="Points"),
+                color=alt.Color("series:N", sort=["Forecast", "Scored"], title=None, legend=alt.Legend(orient="top"),
+                                scale=alt.Scale(domain=["Forecast", "Scored"], range=[FORECAST, SERIES])),
+                tooltip=[alt.Tooltip("event:O", title="GW"), alt.Tooltip("forecast:Q", title="Forecast", format=".1f"),
+                         alt.Tooltip("scored:Q", title="Scored"), alt.Tooltip("vs_forecast:Q", title="Scored − forecast",
+                                                                              format="+.1f")])
+            st.altair_chart(chart, width="stretch")
+            st.caption("Forecast: the model's xP for your XI as you picked it, captain doubled (tripled with Triple "
+                       "Captain), bench only with Bench Boost. Scored: your points before transfer penalties. "
+                       + xp_source_note(compared["source"]))
+
+        st.dataframe(hist[["event", "points", "forecast", "vs_forecast", "average", "rank", "overall_rank",
+                           "event_transfers", "event_transfers_cost", "points_on_bench", "bank", "value"]].assign(
             bank=hist["bank"] / 10, value=hist["value"] / 10).rename(columns={
-                "event": "GW", "points": "Points", "average": "GW avg", "rank": "GW rank",
+                "event": "GW", "points": "Points", "forecast": "Forecast", "vs_forecast": "vs forecast",
+                "average": "GW avg", "rank": "GW rank",
                 "overall_rank": "Overall rank", "event_transfers": "Transfers", "event_transfers_cost": "Penalty",
                 "points_on_bench": "Bench pts", "bank": "Bank £m", "value": "Value £m"}),
-            hide_index=True, width="stretch")
+            hide_index=True, width="stretch",
+            column_config={"Forecast": st.column_config.NumberColumn(format="%.1f"),
+                           "vs forecast": st.column_config.NumberColumn(format="%+.1f",
+                                                                        help="Points before penalties minus the forecast")})
 
         c1, c2 = st.columns(2)
         with c1:
@@ -813,6 +888,44 @@ with tab_players:
                "he's been ruled out; that week's xP is cut to 10%. 'Midweek': his club played a cup or European "
                "match before the next gameweek, and his xP was multiplied by what his own minutes in it have meant "
                "(see the Guide's glossary).")
+
+    st.markdown("**A player's season: forecast against points**")
+    season_rows = load_matches()
+    season_rows = season_rows[season_rows["season"] == season]
+    if season_rows.empty:
+        st.caption("No gameweek of this season has been played yet.")
+    else:
+        default = int(players["xp_total"].idxmax()) if len(players) else None
+        options = sorted(player_label, key=lambda p: player_label[p])
+        chosen = st.selectbox("Player", options, index=options.index(default) if default in options else 0,
+                              format_func=lambda p: player_label[p], key="player_season")
+        actual = (season_rows[season_rows["element"] == chosen].groupby("gw")[["total_points", "minutes"]].sum())
+        xp_all = season_xp(season, model, stamp())
+        mine = xp_all[xp_all["element"] == chosen].set_index("gw")["xp"]
+        gws_played = sorted(int(g) for g in season_rows["gw"].unique())
+        detail = pd.DataFrame({"gw": gws_played}).assign(
+            points=lambda d: d["gw"].map(actual["total_points"]).fillna(0),
+            minutes=lambda d: d["gw"].map(actual["minutes"]).fillna(0),
+            xp=lambda d: d["gw"].map(mine))
+        detail["diff"] = detail["points"] - detail["xp"]
+        known = detail[detail["xp"].notna()]
+        f = st.columns(4)
+        f[0].metric("Points", f"{detail['points'].sum():.0f}", help=f"{len(detail)} gameweeks")
+        f[1].metric("Forecast (xP)", f"{known['xp'].sum():.1f}" if len(known) else "-")
+        f[2].metric("Points − xP", f"{known['diff'].sum():+.1f}" if len(known) else "-")
+        f[3].metric(f"Forecast for GW{gameweeks[0]}", f"{players.at[chosen, f'xp_{gameweeks[0]}']:.2f}"
+                    if chosen in players.index else "-")
+        base = alt.Chart(detail).encode(x=alt.X("gw:O", title="Gameweek"))
+        bars = base.mark_bar(color=SERIES, cornerRadiusTopLeft=3, cornerRadiusTopRight=3, size=22).encode(
+            y=alt.Y("points:Q", title="Points"),
+            tooltip=[alt.Tooltip("gw:O", title="GW"), alt.Tooltip("points:Q", title="Points"),
+                     alt.Tooltip("xp:Q", title="xP", format=".2f"), alt.Tooltip("minutes:Q", title="Minutes")])
+        line = base.mark_line(color=FORECAST, strokeWidth=2, point=alt.OverlayMarkDef(color=FORECAST, size=50,
+                                                                                      filled=True)).encode(
+            y="xp:Q", tooltip=[alt.Tooltip("gw:O", title="GW"), alt.Tooltip("xp:Q", title="xP", format=".2f")])
+        st.altair_chart(bars + line, width="stretch")
+        st.caption("Bars: points scored. Orange: the model's xP for that gameweek. "
+                   + xp_source_note(xp_all.loc[xp_all["gw"].isin(known["gw"]), "source"].unique()))
 
     st.markdown("**Fixtures ahead**")
     rows = {}

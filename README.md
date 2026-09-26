@@ -31,7 +31,8 @@ Each gameweek it tells you:
    squad, XI and captain for *every* gameweek in the horizon, linked by transfers, to maximise
    discounted xP under FPL's rules (budget, 2/5/5/3, max 3 per club, valid formations, free
    transfers banked up to 5, -4 hits). Chips are simple rules: the xP gained by playing a chip
-  must pass a threshold. Every tuning parameter in `config.py` is set by `xpfpl tune` (see [Tuning](#tuning)).
+  must pass a threshold. The tuning parameters in `config.py` were tried out with `xpfpl tune` and checked
+  on seasons the search never saw (see [Tuning](#tuning)).
 
 ## Setup
 
@@ -109,6 +110,7 @@ xpfpl validate                     # score the model on a season it has never se
 xpfpl compare                      # train every model on the same season and rank them
 xpfpl backtest --season 2024-25    # replay a whole season and count the points
 xpfpl tune                         # set the config.py tuning parameters from replayed seasons (hours)
+xpfpl robustness                   # six seasons out of sample: accuracy, calibration, replays, leak probe (~1.5 h)
 xpfpl scorecard                    # score this season's saved forecasts against the results so far
 xpfpl export                       # write the website's data (web/public/data/)
 xpfpl publish                      # export, build the website and push it to GitHub Pages
@@ -265,7 +267,7 @@ The horizon, discount, bench weight, free-transfer value, hit allowance, price w
 thresholds all change the season total, so they are set by measurement rather than by taste:
 
 ```bash
-xpfpl tune --seasons 2023-24,2024-25     # a few hours; writes data/backtests/tuning.json
+xpfpl tune --seasons 2020-21,2021-22,2022-23,2023-24 --confirm-seasons 2024-25,2025-26 --replays 4 --workers 8
 ```
 
 `tune` walks one small group of related tuning parameters at a time (coordinate descent), replays every
@@ -273,8 +275,15 @@ season in the list with each candidate value, keeps whatever scores most points,
 It prints the `config.py` block to paste in - deliberately not writing it for you, so the numbers
 get a human glance first. The dashboard's Guide tab charts what each tuning parameter turned out to be worth.
 
-The values in `config.py` come from a run over 2023-24 and 2024-25 with the MLP. What each stage
-chose, and what it was worth (the gap between the best and worst value tried, in points a season):
+**One replay is not enough.** A replayed season is chaotic: nudging every forecast by ~10% moves
+the season total by about 84 points (`xpfpl robustness`), more than most settings are worth. So
+`--replays N` scores each candidate on the clean replay plus N-1 with small keyed noise on xP (the
+same noise for every candidate, so the comparison is paired), and reports a standard error;
+`--workers` runs the replays in parallel; `--confirm-seasons` replays the winner, today's config
+and the original guesses on seasons the search never saw.
+
+The values in `config.py` come from a first run over 2023-24 and 2024-25 with the MLP (one replay
+per candidate):
 
 | Stage | Chose | Was | Points a season | Worth |
 | --- | --- | --- | --- | --- |
@@ -284,23 +293,27 @@ chose, and what it was worth (the gap between the best and worst value tried, in
 | bench weight | `BENCH_WEIGHT = 0.05` | 0.1 | 2234 | 43 |
 | price changes | `PRICE_WEIGHT = 1.0` | 0.0 | 2258 | 68 |
 
-Reading that as a whole: **every original guess was beaten**, and the tuning parameters are worth roughly as
-much as the choice of model. Three results are worth calling out.
+A second, more careful run (the ensemble, 4 replays per candidate, 2020-21 to 2023-24, chip thresholds
+included) preferred a longer horizon (8, discount 0.9) and different chip thresholds. On the two seasons
+it never saw it didn't hold up:
 
-- A **3-gameweek horizon beats 5 and 8**. Predictions five weeks out are too vague to plan
-  around, and the longer horizons also make the optimiser far slower.
-- **Planning transfers week by week doesn't pay** - it is implemented and available
-  (`--plan`, or `PLAN_TRANSFERS = True`), and the replay prefers the simpler
-  mode by a small margin. Worse, the more hits the planner is allowed, the *worse* it does
-  (2172 at zero hits, 2145 at two), because it schedules hits on predictions that don't survive
-  contact with the next gameweek. With planning off, the optimiser never takes a hit at all.
-- **Valuing price rises is worth ~68 points a season**, the second biggest effect found - but
-  only at a small weight. `PRICE_WEIGHT = 1.0` treats £1m of expected value as one point, which
-  breaks ties towards a player about to rise; at 3.0 it starts distorting the squad and loses
-  38 of those points again.
+| Settings | 2024-25 | 2025-26 | Points a season |
+| --- | --- | --- | --- |
+| what the second search picked | 2352 | 2095 | 2223 ± 17 |
+| **`config.py` today** | 2386 | 2104 | **2245 ± 22** |
+| the original guesses | 2348 | 2110 | 2229 ± 31 |
 
-The four chip thresholds are still the original guesses: those stages of the search haven't been
-run to completion. `xpfpl tune --stages wildcard` does one of them.
+All three are within luck of each other, so `config.py` stayed as it is: these settings matter much less
+than the forecasts. The findings that held up in both searches:
+
+- **Planning transfers week by week doesn't pay** - it is implemented and available (`--plan`, or
+  `PLAN_TRANSFERS = True`), but it never beat holding one squad over the horizon, and with planning
+  off the optimiser never takes a hit.
+- **Valuing expected price rises is worth ~40-70 points a season**, but only at a small weight
+  (`PRICE_WEIGHT = 1.0` treats £1m of expected value as one point, which breaks ties towards a player
+  about to rise).
+- **A near-zero bench weight** beats heavier ones by ~20 points a season.
+- **Playing the chips** is worth ~55 points a season; using the Free Hit on a small gain costs ~30.
 
 ## How good is it?
 
@@ -317,30 +330,34 @@ lower is better:
 
 | Model | RMSE | MAE | R² | Rank corr | Captain test | Train |
 | --- | --- | --- | --- | --- | --- | --- |
-| sequence (GRU) | **2.600** | 1.731 | **0.183** | **0.561** | 6.4 | 54s |
-| ensemble (mlp+gbm+xmins) | 2.601 | 1.731 | 0.182 | 0.558 | 5.7 | 81s |
-| xmins | 2.608 | 1.748 | 0.178 | 0.555 | 6.0 | 44s |
-| mlp | 2.612 | 1.746 | 0.175 | 0.546 | 6.5 | 36s |
-| gbm | 2.615 | 1.721 | 0.174 | 0.553 | 5.0 | 3s |
-| embed | 2.637 | 1.780 | 0.160 | 0.523 | 6.3 | 23s |
-| components | 2.638 | **1.718** | 0.159 | 0.543 | 4.5 | 51s |
+| ensemble (mlp+gbm+xmins) | **2.607** | 1.739 | **0.179** | **0.553** | 6.0 | 94s |
+| sequence (GRU) | 2.610 | 1.781 | 0.177 | 0.549 | 5.8 | 50s |
+| gbm | 2.613 | 1.720 | 0.175 | 0.551 | 5.9 | 6s |
+| xmins | 2.619 | 1.739 | 0.171 | 0.546 | 5.9 | 59s |
+| mlp | 2.620 | 1.781 | 0.171 | 0.539 | 6.5 | 34s |
+| components | 2.648 | 1.747 | 0.153 | 0.538 | 4.5 | 118s |
+| embed | 2.648 | **1.714** | 0.153 | 0.525 | 5.5 | 29s |
 | baseline (5-match average) | 2.882 | 1.965 | -0.004 | 0.408 | 4.1 | - |
 | FPL's own xP | 3.433 | 2.119 | -0.424 | 0.350 | 2.4 | - |
-| *perfect-model ceiling* | *2.42 (2.37-2.47)* | *1.60* | *0.21* | | | |
+| *perfect-model ceiling* | *2.54 (2.50-2.58)* | *1.68* | *0.22* | | | |
+
+Every model is early-stopped on 2024-25 and then refitted up to it, so nothing about 2025-26 - not
+even how many epochs to train for - is chosen by looking at it (`models.fit_holdout`). Early-stopping
+on the season being scored, as this used to, flattered the numbers by about 0.005 RMSE.
 
 *FPL's own xP* is the expected-points figure the official game shows for each player, taken as
 it stood before each match. It is essentially recent form, so it's a yardstick rather than a rival.
 
 The *perfect-model ceiling* takes the component model's probabilities as the truth, simulates every
 match 200 times, and scores the true expectation against each simulated week. Even that scores
-RMSE ~2.4 and R² ~0.2, because most of a week's points are luck. The gap between it and the real
+RMSE ~2.5 and R² ~0.2, because most of a week's points are luck. The gap between it and the real
 models is the room left to improve.
 
 - **MAE** is the typical miss; **RMSE** punishes the big ones, so the gap between them is a
   measure of hauls and blanks.
 - Judge a model on **players getting minutes** (played at least once in their previous five
   matches), because that's the pool you pick from. On *all* rows every model looks better (the
-  MLP scores 1.953 RMSE / 0.994 MAE against the baseline's 2.111 / 1.052), but over half of
+  ensemble scores 1.910 RMSE / 0.972 MAE against the baseline's 2.111 / 1.052), but over half of
   those rows are players who never came on and scored 0 or 1: easy marks.
 - The **captain test** is the football-shaped version: captain whoever the model rates highest
   in the league each week and count what they scored. Perfect hindsight would be 17.2 a week and
@@ -353,8 +370,9 @@ models is the room left to improve.
   architecture: the September 2026 feature work moved *every* model by ~0.05 RMSE, more than any
   change of model ever did, and almost all of it came from one signal - the crowd's net transfers
   before the deadline (plus ownership), which carries the team news the stats can't.
-- Forecasts fade quickly: RMSE 2.61, 2.70 and 2.77 for forecasts made 1, 2 and 3 gameweeks ahead
-  (`xpfpl validate --horizons 3`), which is why a 3-gameweek horizon with a 0.8 discount works.
+- Forecasts fade quickly: averaged over six seasons, RMSE 2.54, 2.63 and 2.68 for forecasts made 1, 2
+  and 3 gameweeks ahead (`xpfpl robustness`; one season: `xpfpl validate --horizons 3`), which is why
+  later weeks are discounted.
 - The captain test moves by more than a point a gameweek between models that are otherwise
   indistinguishable, because it is one pick over 38 weeks. Don't read much into it.
 - The component model is the one worth keeping for a different reason: its xP comes apart into
@@ -398,6 +416,35 @@ end up in the squad is not; and the way to choose between models here is to play
 not to rank error metrics. A club rotation feature (starters changed per match) is a case in
 point: it improved every model's RMSE (the ensemble's 2.601 -> 2.597) and cost 54 points a
 season in the replay, so it was left out.
+
+### Does it hold up? Six seasons out of sample
+
+One held-out season, and one replay of it, can flatter or hide almost anything. `xpfpl robustness`
+predicts 2020-21 to 2025-26, each season with an ensemble trained only on the seasons before it,
+then replays each season many ways (writes `data/robustness/report.json`; the Guide tab and the
+website's Model Accuracy page show it):
+
+```bash
+xpfpl robustness --stage forecasts --seasons 2024-25   # per season, so seasons can run in parallel
+xpfpl robustness --stage backtest --seasons 2024-25
+xpfpl robustness --stage report                        # combines them, plus a feature leak probe
+```
+
+- **Steady:** RMSE 2.543 ± 0.065 across the six seasons, the best of the models in five of them; a
+  paired bootstrap over gameweeks confirms it beats each ensemble member and, by far, the baseline.
+- **Calibrated:** pooled over every season, points = -0.01 + 1.03 × xP. Recalibrating on earlier
+  seasons gains nothing, and the weekly top five per position score what they were forecast.
+- **The chance of playing** (the xmins member) is well calibrated and beats "share of the last five
+  matches played" in every season.
+- **One real bias:** defenders were under-forecast by 0.30 points in 2025-26, the first season with
+  defensive contribution points, which training had never seen. The live scorecard is where to watch it.
+- **No leaks:** rebuilding every feature from only the matches before a deadline gives the same
+  numbers as the full build (bar optimiser drift under 0.01 goals in the team ratings).
+- **Worth having:** in the replays the model beats the 5-match average by ~166 points a season, in
+  six seasons of six, and averages 2236 against 3658 for perfect foresight. But one replay moves by
+  ~84 points on luck alone, and retraining from another random start moves it by up to 150, so gaps
+  between models or settings smaller than that are noise. The captain pick is often a coin toss: a
+  retrained model keeps the same top captain in only ~78% of weeks.
 
 ### The live record
 

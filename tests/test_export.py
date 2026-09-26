@@ -26,6 +26,7 @@ def test_saved_forecasts_prefer_the_chosen_model(tmp_path, monkeypatch):
     for model, xp in (("components", 1.0), ("mlp", 2.0)):
         archive.write(pd.DataFrame({"element": [7], "xp_6": [xp], "xp_7": [0.5]}), tmp_path / "2026-27" / f"gw06_{model}.parquet")
     archive.write(pd.DataFrame({"element": [7], "xp_7": [3.0]}), tmp_path / "2026-27" / "gw07_components.parquet")
-    got = export._saved_forecasts("2026-27", "mlp")
+    from xpfpl import review
+    got = review.saved_forecasts("2026-27", "mlp")
     assert got[6].loc[7] == 2.0 and got[6].name == "mlp"
     assert got[7].loc[7] == 3.0            # only another model's forecast was saved: use it

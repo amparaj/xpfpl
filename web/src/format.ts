@@ -7,8 +7,11 @@ const missing = (v: unknown): v is null | undefined => v === null || v === undef
 
 export const pts = (v: number | null | undefined) => (missing(v) ? "–" : v.toFixed(2));
 export const int = (v: number | null | undefined) => (missing(v) ? "–" : Math.round(v).toLocaleString());
-export const signed = (v: number | null | undefined, digits = 2) =>
-  missing(v) ? "–" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v).toFixed(digits)}`;
+export const signed = (v: number | null | undefined, digits = 2) => {
+  if (missing(v)) return "–";
+  const r = Number(v.toFixed(digits));          // so -0.04 at one decimal is "0.0", not "−0.0"
+  return `${r > 0 ? "+" : r < 0 ? "−" : ""}${Math.abs(r).toFixed(digits)}`;
+};
 export const pct = (v: number | null | undefined, digits = 0) => (missing(v) ? "–" : `${(v * 100).toFixed(digits)}%`);
 export const money = (v: number | null | undefined) => (missing(v) ? "–" : `£${v.toFixed(1)}m`);
 export const dec = (v: number | null | undefined, digits = 2) => (missing(v) ? "–" : v.toFixed(digits));

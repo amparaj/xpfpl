@@ -572,7 +572,9 @@ def render_models() -> None:
 
 
 def render_tuning() -> None:
-    """What `xpfpl tune` chose, and how much each tuning parameter was actually worth."""
+    """What `xpfpl tune` chose, how much each setting was worth, and whether it held up on unseen seasons."""
+    from xpfpl import robustness
+
     report = tune.load_report()
     if not report:
         st.info("The tuning parameters in config.py haven't been tuned on this machine. `xpfpl tune` replays "
@@ -581,25 +583,117 @@ def render_tuning() -> None:
     st.subheader("How the tuning parameters were chosen")
     trials = pd.DataFrame(report["trials"])
     st.markdown(
-        f"Each tuning parameter in config.py was set by replaying **{', '.join(report['seasons'])}** with the "
-        f"`{report['model']}` model, a group of related parameters at a time, and keeping whatever scored "
-        f"most points ({len(trials)} candidate seasons in total).")
+        f"The settings in config.py (how many weeks to look ahead, what a banked free transfer is worth, the "
+        f"chip thresholds...) were tried out by replaying **{', '.join(report['seasons'])}** with the "
+        f"`{report['model']}` model, a group of related settings at a time ({len(trials)} candidate seasons).")
 
     rows = []
     for stage, group in trials.groupby("stage", sort=False):
         best = group.loc[group["mean_points"].idxmax()]
         parameters = [c for c in group.columns if c in tune.CONFIG_NAMES and group[c].notna().any()]
         rows.append({"Stage": stage,
-                     "Chosen": ", ".join(f"{k}={best[k]}" for k in parameters),
+                     "Best in that search": ", ".join(f"{k}={best[k]}" for k in parameters),
                      "Points a season": best["mean_points"],
                      "Worth (best - worst)": group["mean_points"].max() - group["mean_points"].min()})
     st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch",
                  column_config={c: st.column_config.NumberColumn(format="%.0f")
                                 for c in ("Points a season", "Worth (best - worst)")})
-    st.caption("The last column is the one to read: it's how many points a season separate the best "
-               "and worst value tried, i.e. how much that tuning parameter is worth caring about. The seasons "
-               "used for tuning are also used in this report, so the absolute totals may be optimistic; "
-               "the differences between candidates are the most useful comparison.")
+    st.caption("Read the last column with care: one replay of a season moves by about 84 points on luck alone "
+               "(see \"Does it hold up?\" below), so a setting worth less than that in a single-replay search "
+               "is a guess, not a finding.")
+
+    retune = robustness.latest_retune()
+    if retune:
+        table = pd.DataFrame([{"Settings": c["label"], "Points a season": c["mean_points"], "±": c["se"],
+                               **{s: p for s, p in (c["points_per_season"] or {}).items()}}
+                              for c in retune["confirmation"]])
+        st.markdown(
+            f"**Checked on seasons the search never saw.** A later, more careful search ({retune['replays']} "
+            f"replays per candidate, `{retune['model']}` model, tuned on {', '.join(retune['seasons'])}) was then "
+            f"replayed on **{', '.join(retune['confirm_seasons'])}** against today's settings:")
+        st.dataframe(table, hide_index=True, width="stretch",
+                     column_config={c: st.column_config.NumberColumn(format="%.0f")
+                                    for c in table.columns if c != "Settings"})
+        st.caption("\"tuned\" is what that search picked, \"current config\" is what the app uses, \"pre-tuning\" "
+                   "the original guesses. They finish within noise of each other, so config.py was left as it is: "
+                   "these settings matter far less than the forecasts. The ones that clearly did matter: valuing "
+                   "expected price rises, a near-zero bench weight, playing the chips, and not using the Free Hit "
+                   "on a small gain.")
+
+
+def render_robustness() -> None:
+    """Six seasons, each predicted by a model trained only on the seasons before it (`xpfpl robustness`)."""
+    from xpfpl import robustness
+
+    s = robustness.site_summary(robustness.load_report())
+    if not s:
+        return
+    st.subheader("Does it hold up?")
+    seasons = s["seasons"]
+    st.markdown(
+        f"The accuracy above is one season. `xpfpl robustness` repeats the test on **{len(seasons)} seasons** "
+        f"({seasons[0]} to {seasons[-1]}): each is forecast by a model trained only on the seasons before it, "
+        "then replayed week by week.")
+
+    acc = pd.DataFrame(s["accuracy"])
+    acc = acc[acc["model"].isin(["ensemble", "gbm", "mlp", "baseline", "fpl_xp"])]
+    acc["model"] = acc["model"].map(lambda m: MODEL_LABELS.get(m, {"fpl_xp": "FPL's own xP"}.get(m, m)))
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("**Forecast error each season** (RMSE, lower is better)")
+        st.altair_chart(alt.Chart(acc).mark_line(point=True, strokeWidth=2).encode(
+            x=alt.X("season:O", title=None), y=alt.Y("rmse:Q", title="RMSE", scale=alt.Scale(zero=False)),
+            color=alt.Color("model:N", title=None, legend=alt.Legend(orient="bottom")),
+            tooltip=["season", "model", alt.Tooltip("rmse:Q", format=".3f"), alt.Tooltip("spearman:Q", format=".3f")]),
+            width="stretch")
+    bt = s["backtest"]
+    points = pd.DataFrame(bt["points"]).T if bt["points"] else pd.DataFrame()
+    with c2:
+        if len(points):
+            st.markdown("**Points replaying each season**")
+            long = points.reset_index(names="variant").melt(id_vars="variant", var_name="season", value_name="points")
+            long = long[long["variant"].isin(["ensemble", "baseline", "oracle"])].replace(
+                {"variant": {"ensemble": "The model", "baseline": "5-match average", "oracle": "Perfect foresight"}})
+            st.altair_chart(alt.Chart(long.dropna()).mark_line(point=True, strokeWidth=2).encode(
+                x=alt.X("season:O", title=None), y=alt.Y("points:Q", title="Points", scale=alt.Scale(zero=False)),
+                color=alt.Color("variant:N", title=None, legend=alt.Legend(orient="bottom")),
+                tooltip=["season", "variant", alt.Tooltip("points:Q", format=".0f")]), width="stretch")
+
+    lines = []
+    ens = next((r for r in s["spread"] if r["model"] == "ensemble"), None)
+    if ens:
+        lines.append(f"**Steady from season to season:** RMSE {ens['rmse_mean']:.3f} ± {ens['rmse_sd']:.3f} "
+                     f"({ens['rmse_min']:.3f} to {ens['rmse_max']:.3f}).")
+    if s["calibration"]:
+        cal = s["calibration"]
+        lines.append(f"**xP means what it says:** over all seasons, points = {cal['intercept']:+.2f} + "
+                     f"{cal['slope']:.2f} × xP (a perfect forecast would be 0 + 1.00 × xP).")
+    if s["p_play"]:
+        lines.append(f"**The chance of playing is well judged:** Brier score {s['p_play']['brier']:.3f}, against "
+                     f"{s['p_play']['brier_naive']:.3f} for \"share of his last five matches played\".")
+    if s["seeds"]:
+        same = pd.DataFrame(s["seeds"])["captain_same"].mean()
+        lines.append(f"**The captain pick is often a coin toss:** retrained from different random starting points, "
+                     f"the model's top captain is the same in {same:.0%} of weeks. The top options are that close.")
+    gaps = {g["variant"]: g for g in bt["gaps"]}
+    if "baseline" in gaps and bt.get("noise_sd"):
+        b = gaps["baseline"]
+        lines.append(f"**Worth having:** the model beat the 5-match average by {-b['gap_mean']:.0f} points a season "
+                     f"in the replays, in {b['seasons_worse']} of {b['seasons']} seasons. But one replay moves by "
+                     f"about {bt['noise_sd']:.0f} points a season on luck alone, so smaller gaps (between models, or "
+                     "between settings) can't be told apart.")
+    if s["leak_probe"] and all(p["leaking"] == 0 for p in s["leak_probe"]):
+        lines.append("**No peeking at the future:** rebuilding every feature from only the matches before a deadline "
+                     "gives the same numbers as the full build.")
+    st.markdown("\n".join(f"- {line}" for line in lines))
+    if len(points):
+        with st.expander("Every replay variant"):
+            table = points.copy()
+            table["Mean"] = table.mean(axis=1)
+            st.dataframe(table.sort_values("Mean", ascending=False), width="stretch",
+                         column_config={c: st.column_config.NumberColumn(format="%.0f") for c in table.columns})
+            st.caption("Each season's points for the same model under different rules: 'oracle' knows every result "
+                       "(the ceiling), 'pre-tuning settings' uses the original guesses, 'chips on' plays chips too.")
 
 
 def render() -> None:
@@ -645,6 +739,7 @@ def render() -> None:
     render_accuracy()
     render_models()
     render_backtest()
+    render_robustness()
     render_tuning()
 
     st.subheader("Glossary")

@@ -74,6 +74,7 @@ def _decision(season: str, gw: int, source: str, model: str, *, plan, chip, pool
         "squad": [int(p) for p in plan.squad], "lineup": [int(p) for p in plan.lineups[gw]],
         "bench": [int(p) for p in plan.bench[gw]], "captain": int(plan.captains[gw]),
         "vice": int(plan.vice_captains[gw]), "xp": round(float(plan.xp[gw]), 2),
+        "bench_xp": round(float(plan.bench_xp[gw]), 2),
         "next": {"squad": {str(p): int(v) for p, v in sorted(after["squad"].items())},
                  "bank": round(float(after["bank"]), 1), "free_transfers": int(after["free_transfers"])},
     }
@@ -151,9 +152,38 @@ def describe(decision: dict, players: pd.DataFrame) -> str:
 
 # ---------------------------------------------------------------- scoring
 
-def season_record(season: str, rows: pd.DataFrame, bs: dict) -> dict:
+def team_forecast(d: dict, xp: pd.Series | None = None) -> tuple[float | None, str | None]:
+    """What the model expected a week's team to score, counted the way the week is scored
+    (before transfer hits): the XI with the captain doubled (tripled with Triple Captain), plus
+    the bench with Bench Boost. Returns (points, source):
+
+    - "decision": the xP the team was picked on, saved with the decision (`xp`, plus `bench_xp`
+      for Bench Boost; older decisions without `bench_xp` take the bench from `xp`);
+    - "gameweek xP": no decision was saved (a carried-over week), so it's summed from that
+      week's per-player xP, as the website shows it (saved forecast, else in-sample rebuild).
+    """
+    def xp_of(players) -> float:
+        return float(sum(xp.get(p, 0.0) for p in players))
+
+    boost = d.get("chip") == "bboost"
+    if d.get("xp") is not None:
+        bench = d.get("bench_xp")
+        if boost and bench is None:
+            if xp is None:
+                return None, None
+            bench = xp_of(d["bench"])
+        return round(float(d["xp"]) + (float(bench) if boost else 0.0), 2), "decision"
+    if xp is None:
+        return None, None
+    multiplier = 3 if d.get("chip") == "3xc" else 2
+    total = xp_of(d["lineup"]) + (multiplier - 1) * xp_of([d["captain"]]) + (xp_of(d["bench"]) if boost else 0.0)
+    return round(total, 2), "gameweek xP"
+
+
+def season_record(season: str, rows: pd.DataFrame, bs: dict, xp: dict[int, pd.Series] | None = None) -> dict:
     """Every played gameweek's decision with what it scored, for the website. `rows` is the
-    season's per-match table (archive.season_tables): round, element, total_points, minutes."""
+    season's per-match table (archive.season_tables): round, element, total_points, minutes.
+    `xp` (GW -> xP per element, as exported) fills in the forecast of weeks without a decision."""
     from xpfpl import review
 
     saved = decisions(season)
@@ -186,10 +216,12 @@ def season_record(season: str, rows: pd.DataFrame, bs: dict) -> dict:
             "captain_played": result["captain"], "autosubs": [[int(o), int(i)] for o, i in subs],
             "best": round(float(best), 1), "best_xi": [int(p) for p in best_plan.lineups[gw]],
             "best_captain": int(best_plan.captains[gw]),
-        })
+        } | dict(zip(("forecast", "forecast_source"), team_forecast(d, (xp or {}).get(gw)))))
         if not carried:
             last = saved[gw]
     upcoming = [d for g, d in saved.items() if g not in played and g > (played[-1] if played else 0)]
     nxt = {k: v for k, v in upcoming[0].items() if k not in ("next", "season")} if upcoming else None
+    if nxt:
+        nxt["forecast"], nxt["forecast_source"] = team_forecast(nxt)
     return {"model": next(iter(saved.values()))["model"] if saved else config.MODEL,
             "gameweeks": weeks, "next": nxt}
