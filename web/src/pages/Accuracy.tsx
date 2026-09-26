@@ -1,6 +1,7 @@
 import * as Plot from "@observablehq/plot";
 import { useCallback, useState } from "react";
 import { color } from "../colors";
+import { PAPER, Reliability } from "../components/Simulation";
 import { Chart, Legend, Loading, Note, Table, Tiles, plotDefaults, type Column } from "../components/ui";
 import type { Accuracy as AccuracyFile, Row } from "../data";
 import { dec, int, pct, pts, signed } from "../format";
@@ -27,6 +28,7 @@ export default function Accuracy() {
       {c && <Comparison comparison={c} />}
       {v && <ByGameweek validation={v} comparison={c} preferred={site.meta.model} />}
       {v && <Calibration validation={v} />}
+      {v?.simulation && <Ranges sim={v.simulation} season={v.season} live={s?.ranges ?? []} />}
       {r && <Robustness report={r} />}
       {t && <Tuning tuning={t} retune={r?.retune} />}
       <Note>
@@ -157,6 +159,48 @@ function Calibration({ validation }: { validation: any }) {
       <Chart make={make} height={260} ariaLabel="Calibration: predicted xP against actual points" />
       <p className="note">Players grouped by their xP. On the dashed line, a player given 4 xP scored 4 on average. The line through each dot shows how far that average could move by chance: the more players in a group, the shorter it is.</p>
     </div>
+  );
+}
+
+/** The Monte Carlo's ranges (simulate.check on the held-out season, and the live scorecard). */
+function Ranges({ sim, season, live }: { sim: any; season: string; live: Row[] }) {
+  const n = live.reduce((a, r) => a + r.n, 0);
+  const avg = (key: string) => live.reduce((a, r) => a + r[key] * r.n, 0) / Math.max(n, 1);
+  return (
+    <>
+      <h3>Are the simulated ranges right?</h3>
+      <p className="note" style={{ marginTop: 0 }}>
+        Every forecast also plays the gameweek thousands of times (Monte Carlo) to give each player a range and his chances
+        of 10+ and of 2 or fewer. On {season}, simulated by the same model that never saw it:
+      </p>
+      <Tiles tiles={[
+        { label: "Scores inside the range", value: pct(sim.coverage_80),
+          note: "real scores inside the simulated middle 80% (80% if the ranges are the right width)" },
+        { label: "Club totals inside", value: pct(sim.club_coverage_80),
+          note: "each club's total in each match: above 80% means a little too wide" },
+        { label: "Spread of points", value: `${dec(sim.spread.simulated, 1)} vs ${dec(sim.spread.actual, 1)}`,
+          note: "variance of points, simulated against real" },
+        ...(live.length ? [{ label: "This season", value: pct(avg("inside")),
+          note: `inside the range, ${live.length} forecast${live.length === 1 ? "" : "s"} scored so far` }] : []),
+      ]} />
+      <div className="grid-2">
+        <div className="card">
+          <h3 style={{ marginTop: 0 }}>Chance of 10+</h3>
+          <Reliability rows={sim.haul} label="10+" />
+        </div>
+        <div className="card">
+          <h3 style={{ marginTop: 0 }}>Chance of 2 or fewer</h3>
+          <Reliability rows={sim.blank} label="2 or fewer" />
+        </div>
+      </div>
+      <Note>
+        Players grouped by their simulated chance; on the dashed line a 20% chance came true 20% of the time. The simulation is
+        only as right as the xP it's built around: where the model over-forecast the top players that season, their chance of 10+
+        runs high too. Club totals come out a little wide because each player's minutes are drawn on their own, while a club
+        always fields eleven. The simulations show risk and leave the picks alone: the team with the most expected points is the
+        same either way, as <a href={PAPER}>Ramezani &amp; Dinh (2026)</a> also found for simulated forecasts.
+      </Note>
+    </>
   );
 }
 

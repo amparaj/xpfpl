@@ -26,6 +26,9 @@ def predict_upcoming(horizon: int = config.HORIZON, model: str = config.MODEL,
     Also carries `price_delta`, the expected price change per gameweek; for the component
     model, one column per scoring component, so the dashboard can show where an xP comes from;
     and for a model with a minutes head (xmins, ensemble), `xmins` and `p_play` for the next GW.
+    With config.SIM_RUNS > 0, the next GW's simulated range (simulate.py): `pts_p10`/`pts_p50`/
+    `pts_p90` and the chances of 10+ (`p_haul`) and of 2 or fewer (`p_blank`); every simulation
+    for every week of the horizon goes to data/predictions/<season>/gwNN_<model>_sims.npz.
 
     Every run is saved to data/predictions/<season>/gwNN_<model>.csv. The next gameweek's
     deadline hasn't passed when this runs, so these are genuine pre-deadline forecasts, and
@@ -42,9 +45,9 @@ def predict_upcoming(horizon: int = config.HORIZON, model: str = config.MODEL,
 
     predictor = models.load(model)
     offset = frame["gw"] - next_gw  # 0 for the next gameweek, 1 for the one after...
-    xp = pd.Series(predictor.predict(frame), index=frame.index).astype(float).clip(lower=0.0)
-    frame = frame.assign(xp=xp * availability(frame["status"],
-                                              frame["chance_of_playing_next_round"], offset))
+    raw = pd.Series(predictor.predict(frame), index=frame.index).astype(float).clip(lower=0.0)
+    frame = frame.assign(xp=raw * availability(frame["status"],
+                                               frame["chance_of_playing_next_round"], offset))
     # Midweek cup/European matches (data/cups.py): next week's xP moves by what the player's own
     # minutes in the midweek match said about his place on 2025-26 onwards. Later weeks only
     # show the club's midweek matches (`cup_<gw>`): no rotation penalty showed up at club level.
@@ -57,6 +60,8 @@ def predict_upcoming(horizon: int = config.HORIZON, model: str = config.MODEL,
     from xpfpl.data import markets
     cut = (frame["gw"] == next_gw) & frame["code"].isin(markets.ruled_out(scorers).index)
     frame.loc[cut, "xp"] = frame.loc[cut, "xp"] * config.MARKET_OUT_XP_FACTOR
+
+    ranges = _simulate(frame, raw, predictor, matches, api.current_season(bs), next_gw, model)
 
     # Sum fixtures within a gameweek (double gameweeks) and pivot to one column per GW.
     xp = frame.pivot_table(index="element", columns="gw", values="xp", aggfunc="sum")
@@ -81,6 +86,7 @@ def predict_upcoming(horizon: int = config.HORIZON, model: str = config.MODEL,
     out = out.join(_minutes(predictor, frame, next_gw))
     out = out.join(_scorer_odds(scorers, players))
     out = out.join(_rotation(frame, next_gw, gameweeks))
+    out = out.join(ranges)
     out.index.name = "element"
 
     folder = config.PREDICTIONS_DIR / api.current_season(bs)
@@ -89,6 +95,26 @@ def predict_upcoming(horizon: int = config.HORIZON, model: str = config.MODEL,
     out.sort_values("xp_total", ascending=False).to_csv(path, encoding="utf-8")
     archive.save_prediction(path, api.current_season(bs))
     return out, gameweeks
+
+
+def _simulate(frame: pd.DataFrame, raw: pd.Series, predictor, matches: pd.DataFrame, season: str,
+              next_gw: int, model: str) -> pd.DataFrame:
+    """Play the horizon config.SIM_RUNS times (simulate.py), each player's average matched to his
+    xP, and save the simulations. Returns next week's range per element (empty if switched off).
+
+    Whatever cut a player's xP (injury flag, midweek rotation, the market's "ruled out") is read
+    as a lower chance of playing, the way it would play out on the day."""
+    from xpfpl import simulate
+    if config.SIM_RUNS <= 0:
+        return pd.DataFrame(index=pd.Index([], name="element"))
+    expectations = getattr(predictor, "expectations", None)
+    minutes = expectations(frame) if expectations else None
+    play = (frame["xp"] / raw.where(raw > 0)).fillna(
+        availability(frame["status"], frame["chance_of_playing_next_round"], frame["gw"] - next_gw))
+    inp = simulate.inputs(frame, frame["xp"], minutes, play_factor=play)
+    draws = simulate.by_gameweek(simulate.run(inp, simulate.history_tables(matches), sims=config.SIM_RUNS), inp)
+    simulate.save(draws, season, next_gw, model)
+    return simulate.summary(draws, next_gw)
 
 
 def _rotation(frame: pd.DataFrame, next_gw: int, gameweeks: list[int]) -> pd.DataFrame:

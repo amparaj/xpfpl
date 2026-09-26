@@ -14,13 +14,13 @@ import pandas as pd
 import requests
 import streamlit as st
 
-from xpfpl import chips, config, guide, market_view, models, review
+from xpfpl import chips, config, guide, market_view, models, review, simulate
 from xpfpl.data import api, cups
 from xpfpl.data.history import load_matches
 from xpfpl.myteam import load_my_team
 from xpfpl.optimise import solve
 from xpfpl.predict import predict_upcoming
-from xpfpl.style import CLUB_COLOURS, CLUB_TEXT, DECIMAL, POINTS
+from xpfpl.style import CLUB_COLOURS, CLUB_TEXT, DECIMAL, PERCENT, POINTS
 
 SETTINGS_PATH = config.DATA_DIR / "app_settings.json"  # data/ is gitignored, so your team id stays local
 SERIES = "#2a78d6"   # one hue for single-series charts
@@ -134,6 +134,86 @@ def run_chip_advice(horizon: int, model: str, data_stamp, team_id: int, availabl
     windows = {c["name"]: c for c in bs["chips"] if c["name"] in available}
     base = {k: kwargs[k] for k in ("current_squad", "bank", "must_have", "banned")}
     return chips.advise(players, gameweeks, plan, windows, base)
+
+
+@st.cache_data(show_spinner="Loading the simulations...")
+def sim_draws(horizon: int, model: str, data_stamp) -> simulate.Draws | None:
+    """The Monte Carlo `predict` saved with this forecast (simulate.py), if it covers next week."""
+    players, gameweeks = predictions(horizon, model, data_stamp)
+    bs, _ = live_data()
+    draws = simulate.load(api.current_season(bs), gameweeks[0], model)
+    return draws if draws is not None and gameweeks[0] in draws.gameweeks else None
+
+
+@st.cache_data(show_spinner="Playing the alternatives through the same simulated weeks...")
+def run_transfer_odds(horizon: int, model: str, gameweeks: tuple[int, ...], data_stamp, **kwargs) -> list[dict]:
+    players, _ = predictions(horizon, model, data_stamp)
+    draws = sim_draws(horizon, model, data_stamp)
+    if draws is None:
+        return []
+    plan = run_solve(horizon, model, gameweeks, data_stamp, **kwargs)
+    return simulate.transfer_odds(draws, players, list(gameweeks), plan, **kwargs)
+
+
+def show_monte_carlo(players: pd.DataFrame, plan, gw: int, gameweeks: tuple[int, ...], draws: simulate.Draws,
+                     chip: str | None, odds: list[dict]) -> None:
+    """Plan Ahead's Monte Carlo: the team's simulated score, the captain options' odds and how the
+    recommended move fares against the alternatives in the same simulated weeks."""
+    position = players["position"].to_dict()
+    week = simulate.team_score(draws, gw, plan.lineups[gw], plan.bench[gw], plan.captains[gw],
+                               plan.vice_captains[gw], chip, position)["points"]
+    q = np.percentile(week, [10, 50, 90])
+    target = int(round(plan.xp[gw] / 10) * 10)
+    st.markdown(f"**How GW{gw} could go** ({draws.sims:,} simulated gameweeks)")
+    m = st.columns(4)
+    m[0].metric("Likely range", f"{q[0]:.0f}-{q[2]:.0f}", help="The middle 80% of simulated scores: one week in "
+                "ten below the first number, one in ten above the second.")
+    m[1].metric("Median", f"{q[1]:.0f}")
+    m[2].metric("Average", f"{week.mean():.1f}", help="Usually a little above the XI's xP: the simulation plays "
+                "the auto-subs and the vice-captain, which xP leaves out.")
+    m[3].metric(f"Chance of {target}+", f"{(week >= target).mean():.0%}")
+    hist = pd.DataFrame({"points": week})
+    bars = alt.Chart(hist).mark_bar(color=SERIES, opacity=0.85).encode(
+        x=alt.X("points:Q", bin=alt.Bin(step=5), title=f"Simulated GW{gw} points (captain, auto-subs, chip)"),
+        y=alt.Y("count():Q", title="Simulated weeks"),
+        tooltip=[alt.Tooltip("points:Q", bin=alt.Bin(step=5), title="Points"),
+                 alt.Tooltip("count():Q", title="Weeks")])
+    rule = alt.Chart(pd.DataFrame({"xp": [plan.xp[gw]]})).mark_rule(color=FORECAST, strokeWidth=2).encode(
+        x="xp:Q", tooltip=[alt.Tooltip("xp:Q", title="XI xP", format=".2f")])
+    st.altair_chart((bars + rule).properties(height=220), width="stretch")
+    st.caption("Orange: the XI's xP. Every simulated week draws the goals in each fixture, who plays, goals, "
+               "assists, clean sheets, bonus and cards, with each player's average matched to his xP.")
+
+    c = st.columns(2)
+    xp = players.loc[plan.lineups[gw], f"xp_{gw}"].sort_values(ascending=False)
+    options = list(dict.fromkeys([plan.captains[gw], *xp.index[:5]]))
+    cap = simulate.captain_odds(draws, gw, options, 3 if chip == "3xc" else 2)
+    c[0].markdown("**Captain options**")
+    c[0].dataframe(pd.DataFrame({
+        "Player": [players.at[e, "name"] + (" (C)" if e == plan.captains[gw] else "") for e in cap.index],
+        "xP": [players.at[e, f"xp_{gw}"] for e in cap.index],
+        "Middle 80%": [f"{a:.0f}-{b:.0f}" for a, b in zip(cap["pts_p10"], cap["pts_p90"])],
+        "10+": cap["p_haul"].to_numpy(), "2 or fewer": cap["p_blank"].to_numpy(),
+        "Best pick": cap["p_best"].to_numpy(),
+    }), hide_index=True, width="stretch",
+        column_config={"xP": st.column_config.NumberColumn(format=POINTS),
+                       **{k: st.column_config.NumberColumn(format=PERCENT) for k in ("10+", "2 or fewer", "Best pick")}})
+    c[0].caption("His own points, before the armband. Best pick: how often he outscores every other option "
+                 "in the same simulated week. The captain is still the highest xP; the odds show how close it is.")
+    c[1].markdown("**The move against the alternatives**")
+    if odds:
+        c[1].dataframe(pd.DataFrame({
+            "Against": [o["label"] for o in odds], "Their moves": [o["moves"] for o in odds],
+            "Ahead in": [o["p_better"] for o in odds], "Average margin": [o["mean"] for o in odds],
+            "Middle 80%": [f"{o['p10']:+.0f} to {o['p90']:+.0f}" for o in odds],
+        }), hide_index=True, width="stretch",
+            column_config={"Ahead in": st.column_config.NumberColumn(format=PERCENT),
+                           "Average margin": st.column_config.NumberColumn(format="%+.1f")})
+        c[1].caption(f"This page's plan against each alternative over GW{gameweeks[0]}-{draws.gameweeks[-1]}, "
+                     "in the same simulated weeks (same injuries, goals and clean sheets), discounted like the "
+                     "optimiser and after transfer penalties. Near 50% is a coin flip: either choice is fine.")
+    else:
+        c[1].caption("Nothing to compare: no alternative plan differs from this one.")
 
 
 @st.cache_data(ttl=300, show_spinner="Loading gameweek...")
@@ -571,6 +651,17 @@ with tab_plan:
     show_pitch(players, plan, view_gw, labels, fixture_difficulty(fx, gameweeks),
                midweek_badges(season, tuple(gameweeks)))
 
+    draws = sim_draws(horizon, model, stamp())
+    if draws is None:
+        st.caption("No Monte Carlo for this forecast (config.SIM_RUNS is 0, or the saved simulations come "
+                   "from another run): re-run `xpfpl predict` to see the ranges.")
+    else:
+        chip_gw = {"triple_captain_gw": gw} if active == "3xc" else {"bench_boost_gw": gw} if active == "bboost" else {}
+        odds = [] if active in ("wildcard", "freehit") else run_transfer_odds(
+            horizon, model, plan_gws, stamp(), **kwargs, **planning, free_transfers=ft, max_hits=int(max_hits),
+            **chip_gw)
+        show_monte_carlo(players, plan, gw, plan_gws, draws, active if active in ("3xc", "bboost") else None, odds)
+
     st.markdown("**Squad xP by gameweek**")
     squad_gw = plan.squads.get(view_gw, plan.squad)
     grid = players.loc[squad_gw, ["name", "team_name", "team", "position"]].copy()
@@ -600,16 +691,26 @@ with tab_plan:
         else:
             advice = run_chip_advice(horizon, model, stamp(), int(team_id), tuple(sorted(available)),
                                      **kwargs, **planning, free_transfers=ft, max_hits=int(max_hits))
+            draws = sim_draws(horizon, model, stamp())
+            chance = {} if draws is None else simulate.chip_odds(
+                draws, plan, [g for g in plan_gws if g in draws.gameweeks], available, players["position"].to_dict())
             st.dataframe(pd.DataFrame([{
                 "Chip": chips.CHIP_NAMES[a.chip], "Advice": "PLAY" if a.recommended else "save",
-                "Gain": a.gain, "Threshold": a.threshold, "Why": a.reason,
-                "Expires": f"after GW{available[a.chip]['stop_event']}",
+                "Gain": a.gain, "Threshold": a.threshold,
+                "Clears it (simulated)": chance.get(a.chip, {}).get("p_clear"),
+                "Beats later weeks (simulated)": chance.get(a.chip, {}).get("p_beats_later"),
+                "Why": a.reason, "Expires": f"after GW{available[a.chip]['stop_event']}",
             } for a in advice]), hide_index=True, width="stretch",
                 column_config={"Gain": st.column_config.NumberColumn(format=POINTS),
-                               "Threshold": st.column_config.NumberColumn(format=POINTS)})
+                               "Threshold": st.column_config.NumberColumn(format=POINTS),
+                               "Clears it (simulated)": st.column_config.NumberColumn(format=PERCENT),
+                               "Beats later weeks (simulated)": st.column_config.NumberColumn(format=PERCENT)})
             st.caption("Thresholds come from `xpfpl tune`, which scores candidate values by replaying "
                        "whole seasons (config.py). The Wildcard gain may be overstated because it is compared "
-                       "with holding your squad for the whole horizon.")
+                       "with holding your squad for the whole horizon. Simulated (Triple Captain and Bench "
+                       "Boost only): how often the chip's extra points - the captain's points once more, or the "
+                       "bench's - reach the threshold, and how often this week beats every later week of the "
+                       "plan in the same chip window.")
 
 
 # ---------------------------------------------------------------- gameweek review
@@ -860,9 +961,14 @@ with tab_players:
         table = table.assign(market_says=np.where(table["market_out"].fillna(False).astype(bool), "Likely out", ""),
                              mkt_anytime=table["mkt_anytime"] * 100)
         minutes_cols += ["mkt_anytime", "market_says"]
+    range_cols = []
+    if {"pts_p10", "pts_p90", "p_haul", "p_blank"} <= set(table.columns):     # the Monte Carlo, next GW
+        table = table.assign(sim_range=[f"{a:.0f}-{b:.0f}" if pd.notna(a) else "" for a, b in
+                                        zip(table["pts_p10"], table["pts_p90"])])
+        range_cols = ["sim_range", "p_haul", "p_blank"]
     shown = table.sort_values("xp_total", ascending=False)[
         ["name", "team_name", "team", "Pos", "price", "selected_by", "chance"] + minutes_cols + xp_cols
-        + ["xp_total"]]
+        + ["xp_total"] + range_cols]
     shown["xp_per_m"] = shown["xp_total"] / shown["price"]
     shown_team_ids = shown["team"].copy()
     shown = shown.drop(columns=["team"])
@@ -870,7 +976,8 @@ with tab_players:
         "name": "Player", "team_name": "Team", "team": "Team ID", "price": "£m", "selected_by": "Sel %",
         "chance": "Availability %", "xmins": f"xMins GW{gameweeks[0]}", "p_play": "P(plays)",
         "mkt_anytime": "Scorer odds %", "market_says": "Market says", "midweek": f"Midweek (GW{gameweeks[0]})",
-        "xp_total": "Total xP", "xp_per_m": "xP per £m", **{f"xp_{g}": f"GW{g}" for g in gameweeks}})
+        "xp_total": "Total xP", "xp_per_m": "xP per £m", **{f"xp_{g}": f"GW{g}" for g in gameweeks},
+        "sim_range": f"GW{gameweeks[0]} range", "p_haul": "10+", "p_blank": "2 or fewer"})
     st.dataframe(style_team_column(shown, shown_team_ids),
         hide_index=True, width="stretch", height=420,
         column_config={**{f"GW{g}": st.column_config.NumberColumn(format=POINTS) for g in gameweeks},
@@ -881,13 +988,20 @@ with tab_players:
                        "Sel %": st.column_config.NumberColumn(format=DECIMAL),
                        "Availability %": st.column_config.NumberColumn(format=DECIMAL),
                        "Scorer odds %": st.column_config.NumberColumn(format=DECIMAL),
+                       "10+": st.column_config.NumberColumn(
+                           format=PERCENT, help=f"Chance of 10+ points in GW{gameweeks[0]} (Monte Carlo)"),
+                       "2 or fewer": st.column_config.NumberColumn(
+                           format=PERCENT, help=f"Chance of 2 points or fewer in GW{gameweeks[0]}, not playing included"),
+                       f"GW{gameweeks[0]} range": st.column_config.TextColumn(
+                           help="The middle 80% of his simulated GW points (10th to 90th percentile)"),
                        "£m": st.column_config.NumberColumn(format="%.1f")})
     st.caption(f"{len(shown)} players · xP is per gameweek, scaled by FPL's injury flag "
                "(assumes +25% recovery per week) and summed over double gameweeks. 'Market says: Likely out' means "
                "the betting market prices him at 6% or less to score next gameweek, which almost always means "
                "he's been ruled out; that week's xP is cut to 10%. 'Midweek': his club played a cup or European "
                "match before the next gameweek, and his xP was multiplied by what his own minutes in it have meant "
-               "(see the Guide's glossary).")
+               "(see the Guide's glossary). Range, 10+ and 2 or fewer: from playing the gameweek thousands of "
+               "times (the Guide's 'What could happen?').")
 
     st.markdown("**A player's season: forecast against points**")
     season_rows = load_matches()

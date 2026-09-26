@@ -1,7 +1,8 @@
 import * as Plot from "@observablehq/plot";
 import { useCallback, useMemo, useState } from "react";
 import { color } from "../colors";
-import { Chart, Club, Loading, MidweekBadge, Note, Segmented, Table, Tiles, plotDefaults, type Column, type TileProps } from "../components/ui";
+import { band } from "../components/Simulation";
+import { Chart, Club, Legend, Loading, MidweekBadge, Note, Segmented, Table, Tiles, plotDefaults, type Column, type TileProps } from "../components/ui";
 import { rows, type ModelTeam, type NextGw, type Player } from "../data";
 import { POSITIONS, dec, money, pct, pts, signed, when } from "../format";
 import { ROTATION, clubMidweek, competition } from "../midweek";
@@ -12,6 +13,8 @@ import { useData, useSite, type Site } from "../site";
 interface Forecast {
   element: number; xp_total: number; p_play?: number | null; xmins?: number | null;
   rotation?: string | null; rotation_factor?: number | null;
+  /** The next gameweek's Monte Carlo: 10th/50th/90th percentile of his simulated points, chance of 10+ and of 2 or fewer. */
+  pts_p10?: number | null; pts_p50?: number | null; pts_p90?: number | null; p_haul?: number | null; p_blank?: number | null;
   [xp: `xp_${number}`]: number;
 }
 type Row = Forecast & { player: Player };
@@ -51,8 +54,28 @@ export default function NextGameweek() {
   const first = `xp_${gw}` as const;
   const captains = useMemo(() => [...players].sort((a, b) => b[first] - a[first]).slice(0, 10), [players, first]);
 
+  const ranged = captains.some((r) => r.pts_p90 != null);
   const captainChart = useCallback((width: number) => {
     const label = (r: Row) => `${r.player.web_name} (${site.team.get(r.player.team)?.short})`;
+    if (ranged) {
+      const top = Math.max(...captains.map((r) => r.pts_p90 ?? 0), 1);
+      return Plot.plot({
+        ...plotDefaults(width),
+        marginLeft: 150,
+        marginRight: 56,
+        height: captains.length * 28 + 40,
+        x: { label: `GW${gw} points`, grid: true, domain: [0, top + 1] },
+        y: { label: null, domain: captains.map(label) },
+        marks: [
+          Plot.ruleY(captains, { y: label, x1: "pts_p10", x2: "pts_p90", stroke: color.s1, strokeWidth: 6, strokeOpacity: 0.35, strokeLinecap: "round" }),
+          Plot.dot(captains, { x: first, y: label, r: 5, fill: color.s1, stroke: color.surface, strokeWidth: 2 }),
+          Plot.text(captains, { x: top + 1, y: label, text: (r: Row) => `${Math.round((r.p_haul ?? 0) * 100)}% 10+`, dx: 6, textAnchor: "start", fill: color.ink2 }),
+          Plot.tip(captains, Plot.pointerY({ x: first, y: label, title: (r: Row) =>
+            `${label(r)}: ${pts(r[first])} xP\nmiddle 80% of simulated weeks: ${band(r.pts_p10, r.pts_p90)} points\n` +
+            `10+: ${pct(r.p_haul)} · 2 or fewer: ${pct(r.p_blank)}` })),
+        ],
+      });
+    }
     return Plot.plot({
       ...plotDefaults(width),
       marginLeft: 150,
@@ -65,7 +88,7 @@ export default function NextGameweek() {
         Plot.tip(captains, Plot.pointerY({ x: first, y: label, title: (r: Row) => `${label(r)}: ${pts(r[first])} xP` })),
       ],
     });
-  }, [captains, first, gw, site]);
+  }, [captains, first, gw, site, ranged]);
 
   // Every club's fixtures over the forecast's horizon, with our chance of winning each.
   const clubs = useMemo(() => site.meta.teams.map((t) => {
@@ -96,6 +119,7 @@ export default function NextGameweek() {
     .sort((a, b) => b.xp_total - a.xp_total).slice(0, 30);
   const hasPlay = players.some((r) => r.p_play != null);
   const hasRotation = players.some((r) => r.rotation != null);
+  const hasRanges = players.some((r) => r.pts_p90 != null);
   const midweekAhead = horizon.some((g) => site.midweek.some((m) => m.gw === g));
 
   const playerColumns: Column<Row>[] = [
@@ -118,6 +142,14 @@ export default function NextGameweek() {
                                           value: (r) => r[`xp_${g}`], render: (r) => pts(r[`xp_${g}`]) })),
     { key: "total", label: "Total", group: "xP", numeric: true, value: (r) => r.xp_total, render: (r) => <strong>{pts(r.xp_total)}</strong>,
       title: `Expected points over GW${horizon[0]}–${horizon[horizon.length - 1]}` },
+    ...(hasRanges ? [
+      { key: "range", label: "Range", group: `GW${gw} simulated`, numeric: true, value: (r: Row) => r.pts_p90,
+        render: (r: Row) => band(r.pts_p10, r.pts_p90), title: `The middle 80% of his simulated GW${gw} points` } as Column<Row>,
+      { key: "haul", label: "10+", group: `GW${gw} simulated`, numeric: true, value: (r: Row) => r.p_haul, render: (r: Row) => pct(r.p_haul),
+        title: `His chance of 10+ points in GW${gw}` } as Column<Row>,
+      { key: "blank", label: "≤2", group: `GW${gw} simulated`, numeric: true, value: (r: Row) => r.p_blank, render: (r: Row) => pct(r.p_blank),
+        title: `His chance of 2 points or fewer in GW${gw}, not playing included` } as Column<Row>,
+    ] : []),
   ];
 
   type Club = (typeof clubs)[number];
@@ -144,7 +176,9 @@ export default function NextGameweek() {
   const lastWeek = team?.gameweeks.length ? team.gameweeks[team.gameweeks.length - 1] : null;
   const tiles: TileProps[] = [
     ...(upcoming ? [{ label: "The Model's Team", value: `${pts(upcoming.forecast ?? upcoming.xp)} xP`,
-      note: <>its forecast for GW{gw}, captain doubled; <a href="#model-team">see the team</a></> }] : []),
+      note: <>its forecast for GW{gw}, captain doubled{upcoming.simulation
+        ? <>; {band(upcoming.simulation.points.p10, upcoming.simulation.points.p90)} in 4 simulated weeks out of 5</> : null};{" "}
+        <a href="#model-team">see the team</a></> }] : []),
     ...(captains.length ? [{ label: "Top forecast", value: `${captains[0].player.web_name} ${pts(captains[0][first])}`,
       note: `xP for GW${gw} (${site.team.get(captains[0].player.team)?.short ?? ""})` }] : []),
     ...(lastWeek?.forecast != null ? [{ label: `Last time (GW${lastWeek.gw})`, value: `${pts(lastWeek.forecast)} → ${lastWeek.gross}`,
@@ -162,8 +196,13 @@ export default function NextGameweek() {
 
       <div className="card">
         <h3 style={{ marginTop: 0 }}>Captain picks</h3>
+        {ranged && <Legend items={[{ label: "xP", color: color.s1, kind: "dot" }, { label: "Middle 80% of simulated scores", color: `color-mix(in srgb, ${color.s1} 35%, transparent)` }]} />}
         <Chart make={captainChart} height={captains.length * 28 + 40} ariaLabel={`The ten players with the highest xP in GW${gw}`} />
-        <p className="note">The ten highest xP for GW{gw} alone. A captain scores double.</p>
+        <p className="note">
+          The ten highest xP for GW{gw} alone. A captain scores double.
+          {ranged && <> The bar is each player's middle 80% of scores when the gameweek was simulated thousands of times, and the
+            number is his chance of 10+: two picks with the same xP can carry very different risk (<a href="#about">how it works</a>).</>}
+        </p>
       </div>
 
       <h3>Top players</h3>
@@ -174,6 +213,8 @@ export default function NextGameweek() {
       <Table columns={playerColumns} data={shown} sort="total" rowKey={(r) => r.element} />
       <Note>
         The 30 highest expected points (xP) over GW{horizon[0]}–{horizon[horizon.length - 1]}, already cut for injury flags.
+        {hasRanges && <> Simulated: the middle 80% of his GW{gw} points, and his chances of 10+ and of 2 or fewer, from playing the
+          gameweek thousands of times.</>}
         {hasRotation && <> Midweek: a player whose club played a cup or European match this week has his GW{gw} xP
           multiplied by what his own minutes in it have meant in the past, most of all for squad players (hover for his group;
           see <a href="#about">About</a>).</>}

@@ -2,6 +2,7 @@ import * as Plot from "@observablehq/plot";
 import { useCallback, useMemo, useState } from "react";
 import { color } from "../colors";
 import { Pitch } from "../components/Pitch";
+import { CaptainOddsTable, ChipOddsList, ScoreChart, band } from "../components/Simulation";
 import { Chart, barPadding, Legend, Loading, Note, Table, Tiles, plotDefaults, type Column } from "../components/ui";
 import type { ModelTeam, ModelWeek } from "../data";
 import { int, money, pts, signed, when } from "../format";
@@ -14,6 +15,10 @@ const SOURCE: Record<ModelWeek["source"], string> = {
 };
 
 type Week = ModelWeek & { average: number | null; highest: number | null };
+
+/** Did the week's score (before hits) land inside its simulated middle 80%? */
+const inside = (w: ModelWeek) => w.simulation && w.gross !== undefined
+  ? w.gross >= w.simulation.points.p10 && w.gross <= w.simulation.points.p90 : undefined;
 
 export default function ModelTeamPage() {
   const site = useSite();
@@ -39,10 +44,13 @@ export default function ModelTeamPage() {
       Plot.barY(weeks, { x: "gw", y: "points", fill: color.s1, fillOpacity: (w: Week) => (w.source === "live" ? 1 : 0.45), ry2: 4 }),
       Plot.line(weeks, { x: "gw", y: "average", stroke: color.s2, strokeWidth: 2 }),
       Plot.dot(weeks, { x: "gw", y: "average", fill: color.s2, r: 4, stroke: color.surface, strokeWidth: 2 }),
+      Plot.ruleX(weeks.filter((w) => w.simulation), { x: "gw", y1: (w: Week) => w.simulation!.points.p10,
+        y2: (w: Week) => w.simulation!.points.p90, stroke: color.ink2, strokeWidth: 2 }),
       Plot.tickY(weeks.filter((w) => w.forecast != null), { x: "gw", y: "forecast", stroke: color.s3, strokeWidth: 3 }),
       Plot.tip(weeks, Plot.pointerX({ x: "gw", y: "points",
         title: (w: Week) => `GW${w.gw} (${SOURCE[w.source].toLowerCase()}): ${w.points} points, FPL average ${w.average ?? "–"}` +
           (w.forecast != null ? `\nforecast ${pts(w.forecast)}, scored ${w.gross} before transfer hits` : "") +
+          (w.simulation ? `\nlikely range ${band(w.simulation.points.p10, w.simulation.points.p90)} (simulated)` : "") +
           (w.hits ? `\nincl. −${4 * w.hits} for transfers` : "") })),
     ],
   }), [weeks]);
@@ -62,6 +70,8 @@ export default function ModelTeamPage() {
   const forecastWeeks = weeks.filter((w) => w.forecast != null);
   const forecastTotal = forecastWeeks.reduce((s, w) => s + w.forecast!, 0);
   const forecastScored = forecastWeeks.reduce((s, w) => s + (w.gross ?? 0), 0);
+  const simulated = weeks.filter((w) => inside(w) !== undefined);
+  const landed = simulated.filter((w) => inside(w)).length;
 
   const week = gw === data.next?.gw ? data.next : weeks.find((w) => w.gw === gw);
   const played = week && week.points !== undefined;
@@ -77,6 +87,10 @@ export default function ModelTeamPage() {
     { key: "vsf", label: "vs forecast", numeric: true, value: (w) => (w.forecast == null ? null : (w.gross ?? 0) - w.forecast),
       render: (w) => (w.forecast == null ? "–" : <span className={(w.gross ?? 0) >= w.forecast ? "good" : "bad"}>{signed((w.gross ?? 0) - w.forecast, 1)}</span>),
       title: "Points before transfer hits, minus the forecast" },
+    { key: "range", label: "Likely range", numeric: true, value: (w) => w.simulation?.points.p90 ?? null,
+      render: (w) => !w.simulation ? "–"
+        : <span className={inside(w) ? "good" : "bad"}>{band(w.simulation.points.p10, w.simulation.points.p90)}</span>,
+      title: "The middle 80% of the team's simulated scores before the deadline (Monte Carlo): green if the score landed inside" },
     { key: "avg", label: "FPL average", numeric: true, value: (w) => w.average },
     { key: "vs", label: "vs average", numeric: true, value: (w) => (w.average === null ? null : (w.points ?? 0) - w.average),
       render: (w) => (w.average === null ? "–" : <span className={(w.points ?? 0) >= w.average ? "good" : "bad"}>{signed((w.points ?? 0) - w.average, 0)}</span>) },
@@ -108,6 +122,8 @@ export default function ModelTeamPage() {
           { label: "Left on the table", value: int(missed), note: "best XI and captain from the same 15, all season" },
           ...(forecastWeeks.length ? [{ label: "Against the forecast", value: signed(forecastScored - forecastTotal, 0),
             note: `forecast ${int(forecastTotal)}, scored ${int(forecastScored)} before hits (${forecastWeeks.length} GWs)` }] : []),
+          ...(simulated.length ? [{ label: "Inside the likely range", value: `${landed} of ${simulated.length}`,
+            note: "weeks whose score landed in the simulated middle 80% (about 4 in 5 should)" }] : []),
         ]} />
       )}
 
@@ -116,7 +132,8 @@ export default function ModelTeamPage() {
           <h3 style={{ marginTop: 0 }}>Points per gameweek</h3>
           <Legend items={[{ label: "Live", color: color.s1 }, ...(replayed.length ? [{ label: "Replay", color: `color-mix(in srgb, ${color.s1} 45%, transparent)` }] : []),
                           { label: "FPL average", color: color.s2, kind: "line" as const },
-                          ...(forecastWeeks.length ? [{ label: "Forecast before the deadline", color: color.s3, kind: "line" as const }] : [])]} />
+                          ...(forecastWeeks.length ? [{ label: "Forecast before the deadline", color: color.s3, kind: "line" as const }] : []),
+                          ...(weeks.some((w) => w.simulation) ? [{ label: "Likely range (simulated)", color: color.ink2, kind: "line" as const }] : [])]} />
           <Chart make={chart} height={240} ariaLabel="The Model's Team's points per gameweek against the FPL average" />
         </div>
       )}
@@ -165,6 +182,36 @@ export default function ModelTeamPage() {
         </div>
       )}
 
+      {week?.simulation && (
+        <div className="card">
+          <h3 style={{ marginTop: 0 }}>How GW{week.gw} could go</h3>
+          <p style={{ marginTop: 0 }}>
+            Played {week.simulation.sims.toLocaleString()} times before the deadline, the team scored{" "}
+            <strong>{band(week.simulation.points.p10, week.simulation.points.p90)}</strong> in the middle 80% of simulated weeks
+            (median {Math.round(week.simulation.points.p50)}, average {pts(week.simulation.points.mean)} with auto-subs and the vice-captain).
+            {played && week.gross !== undefined && <> It scored <strong>{week.gross}</strong> before transfer hits: {inside(week)
+              ? "inside that range." : week.gross > week.simulation.points.p90 ? "above it, a one-in-ten week." : "below it, a one-in-ten week."}</>}
+          </p>
+          <ScoreChart spread={week.simulation.points} forecast={week.forecast ?? week.xp} actual={played ? week.gross : null} gw={week.gw} />
+          <h4>Captain options</h4>
+          <CaptainOddsTable sim={week.simulation} captain={week.captain} />
+          <p className="note">
+            Each option's own points in the simulations (before the armband). Best pick: how often he outscored every other
+            option in the same simulated week. The captain is still the highest xP; these odds show how close the call was.
+          </p>
+          {Object.keys(week.simulation.chips).length > 0 && <>
+            <h4>Chips</h4>
+            <ChipOddsList chips={week.simulation.chips} />
+          </>}
+          <p className="note">
+            Each simulated week draws the goals in every fixture, who plays, goals, assists, clean sheets, bonus and cards, with
+            each player's average matched to his xP. See <a href="#about">About</a> for how, and <a href="#accuracy">Model
+            Accuracy</a> for how often the simulated chances came true. By design, one week in ten falls below the range
+            and one in ten above it.
+          </p>
+        </div>
+      )}
+
       {weeks.length > 0 && (
         <>
           <h3>Week by week</h3>
@@ -183,6 +230,11 @@ export default function ModelTeamPage() {
               What the model expected the team to score, made before the deadline and counted the way the week is scored:
               captain doubled (tripled with Triple Captain), bench only with Bench Boost, before transfer hits. For a
               carried-over week it's summed from that week's player forecasts. It's drawn as a line on each week's bar.
+            </dd>
+            <dt>Likely range</dt>
+            <dd>
+              The middle 80% of the team's scores when the week was simulated thousands of times before the deadline (Monte
+              Carlo). About four weeks in five should land inside it; green if this one did.
             </dd>
             <dt>Carried over</dt>
             <dd>No decision was saved before the deadline, so the previous week's team played on and a free transfer was banked.</dd>

@@ -128,8 +128,9 @@ def decide(bs: dict | None = None, fixtures: list[dict] | None = None, model: st
     rules = dict(free_transfers=free, max_hits=config.MAX_HITS, plan_transfers=config.PLAN_TRANSFERS)
     plan = solve(players, gws, **base, **rules, pool_size=config.POOL_SIZE if config.PLAN_TRANSFERS else None)
     chip = None
+    available = chips.available_chips(bs, used, gw) if squad else {}
     if squad:
-        advice = chips.advise(players, gws, plan, chips.available_chips(bs, used, gw), base)
+        advice = chips.advise(players, gws, plan, available, base)
         best = next((a for a in advice if a.recommended), None)
         chip = best.chip if best else None
         plan = backtest.play_chip(players, gws, base, chip, plan, **rules)
@@ -137,8 +138,33 @@ def decide(bs: dict | None = None, fixtures: list[dict] | None = None, model: st
     decision = _decision(season, gw, "live", model, plan=plan, chip=chip, pool=players, squad=squad, bank=bank,
                          free_transfers=free, selling=selling, now_cost=now_cost,
                          after=dict(zip(("squad", "bank", "free_transfers"), settled)))
+    odds = simulation(season, gw, model, players, gws, plan, chip, available)
+    if odds:
+        decision["simulation"] = odds
     _save(decision)
     return decision
+
+
+def simulation(season: str, gw: int, model: str, players: pd.DataFrame, gws: list[int], plan, chip: str | None,
+               available: dict, captains: int = 5) -> dict | None:
+    """The week's Monte Carlo (simulate.py), saved with the decision so the site can put the
+    score next to it once the week is played: the team's simulated score (auto-subs, vice,
+    chip), its captain options' odds (the five highest xP in the XI), and the chance Triple
+    Captain / Bench Boost would clear their thresholds. None without saved simulations."""
+    from xpfpl import simulate
+    draws = simulate.load(season, gw, model)
+    if draws is None or gw not in draws.gameweeks or not set(plan.squad) <= set(draws.elements):
+        return None
+    position = players["position"].to_dict()
+    week = simulate.team_score(draws, gw, plan.lineups[gw], plan.bench[gw], plan.captains[gw],
+                               plan.vice_captains[gw], chip, position)
+    xp = players.loc[plan.lineups[gw], f"xp_{gw}"].sort_values(ascending=False)
+    options = list(dict.fromkeys([plan.captains[gw], *xp.index[:captains]]))
+    odds = simulate.captain_odds(draws, gw, options, 3 if chip == "3xc" else 2)
+    return {"sims": draws.sims, "points": simulate.spread(week["points"]),
+            "captains": [{"element": int(e), **{k: round(float(v), 4) for k, v in r.items()}}
+                         for e, r in odds.iterrows()],
+            "chips": simulate.chip_odds(draws, plan, [g for g in gws if g in draws.gameweeks], available, position)}
 
 
 def describe(decision: dict, players: pd.DataFrame) -> str:
@@ -199,7 +225,8 @@ def season_record(season: str, rows: pd.DataFrame, bs: dict, xp: dict[int, pd.Se
                 continue
             base = last if last["chip"] != "freehit" else next(
                 (saved[g] for g in sorted(saved, reverse=True) if g < last["gw"] and saved[g]["chip"] != "freehit"), last)
-            d = {**base, "gw": gw, "source": "carried", "chip": None, "hits": 0, "transfers": [], "xp": None}
+            d = {**base, "gw": gw, "source": "carried", "chip": None, "hits": 0, "transfers": [], "xp": None,
+                 "simulation": None}
         week = rows[rows["round"] == gw].groupby("element").agg(points=("total_points", "sum"),
                                                                 minutes=("minutes", "sum"))
         points, minutes = week["points"].to_dict(), week["minutes"].to_dict()

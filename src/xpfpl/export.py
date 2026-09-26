@@ -10,9 +10,12 @@ odds come from odds.json on the `odds` branch, which a scheduled GitHub Action
   gws/gwNN.json      each played gameweek: every player's stats with the model's xP (and minutes in
                      the midweek cup or European match before it), and the fixtures
   modelteam.json     the Model's Team: a paper FPL team run on the model's own advice, each week's
-                     decision (saved before the deadline) and what it scored
+                     decision (saved before the deadline, with its Monte Carlo: the team's simulated
+                     score, captain odds, chip odds) and what it scored
   next.json          the forecast saved for the next gameweek, for every week of its horizon, with
-                     each player's midweek rotation group and the factor it put on his xP
+                     each player's midweek rotation group and the factor it put on his xP, and his
+                     simulated range for the next gameweek (simulate.py: 10th/50th/90th percentile,
+                     chances of 10+ and of 2 or fewer)
   markets.json       Polymarket odds at each FPL deadline since 2024-25 next to what happened,
                      anytime-scorer odds, how the odds did against our ratings, season markets
   market_history/<season>/gwNN.json
@@ -183,7 +186,8 @@ def _next_gameweek(bs: dict, season: str, model: str) -> dict | None:
     t = saved[key]
     gws = sorted(int(c[3:]) for c in t if c.startswith("xp_") and c[3:].isdigit())
     keep = ["element", *[f"xp_{g}" for g in gws], "xp_total",
-            *[c for c in ("xmins", "p_play", "mkt_anytime", "market_out", "rotation", "rotation_factor") if c in t]]
+            *[c for c in ("xmins", "p_play", "mkt_anytime", "market_out", "rotation", "rotation_factor",
+                          "pts_p10", "pts_p50", "pts_p90", "p_haul", "p_blank") if c in t]]
     return {"gw": gw, "deadline": upcoming["deadline_time"], "model": key.split("_", 1)[1], "gameweeks": gws,
             "players": table(t[keep], digits=3)}
 

@@ -14,6 +14,8 @@ The report answers five questions, in the order a manager would ask them:
                                                       each match from the component model's
                                                       probabilities and score the true expectation
                                                       against those simulated outcomes
+  6. Are the Monte Carlo ranges right?             -> of the players given a 20% chance of 10+,
+                                                      did 20% get there (simulate.check)
 Optionally it also scores forecasts made 2 and 3 gameweeks ahead (`horizons`), since the
 optimiser leans on those too.
 """
@@ -266,13 +268,14 @@ def _captain_test(df: pd.DataFrame, y: np.ndarray, preds: dict[str, np.ndarray],
 def build_report(val_df: pd.DataFrame, preds: dict[str, np.ndarray], *, target: str,
                  trained_on: str, best_epoch: int | None = None, primary: str | None = None,
                  horizons: dict[int, dict[str, np.ndarray]] | None = None,
-                 ceiling: dict | None = None) -> dict:
+                 ceiling: dict | None = None, simulation: dict | None = None) -> dict:
     """Assemble every section of the accuracy report for one held-out season.
 
     `preds` maps a label to that model's predictions; `primary` names the one being reported on
     (the first by default), which is the one the calibration and error charts describe.
     `horizons` maps k -> predictions made k gameweeks ahead for the same rows (k=1 is `preds`),
     and `ceiling` is `simulate_ceiling(...)` over the active rows, when a component model ran.
+    `simulation` is `simulate.check(...)`: whether the Monte Carlo ranges held up on this season.
     """
     primary = primary or next(iter(preds))
     y = val_df[target].to_numpy(dtype=float)
@@ -303,6 +306,7 @@ def build_report(val_df: pd.DataFrame, preds: dict[str, np.ndarray], *, target: 
         "deciles": _deciles(y, preds, active),
         "errors": _error_histogram(y, preds[primary], active),
         "captain": _captain_test(df, y, preds, active),
+        "simulation": simulation,
     }
 
 
@@ -344,6 +348,11 @@ def summarise(report: dict) -> str:
     if ceiling:
         lines.append(f"  Perfect-model ceiling    RMSE {ceiling['rmse_median']:.3f}  MAE {ceiling['mae_median']:.3f}  "
                      f"R² {ceiling['r2_median']:.3f}  (median of {ceiling['sims']} simulated seasons)")
+    sim = report.get("simulation")
+    if sim:
+        lines.append(f"  Monte Carlo ranges       {sim['coverage_80']:.1%} of scores inside the 10th-90th percentile "
+                     f"band (80% if right; club totals {sim['club_coverage_80']:.1%}); "
+                     f"simulated average vs xP off by {sim['mean_gap']:.2f}")
     cap = pd.DataFrame(report["captain"])
     primary, reference = report.get("primary", "MLP"), report.get("reference", REFERENCE)
     if len(cap):

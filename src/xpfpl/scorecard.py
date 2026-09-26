@@ -8,7 +8,10 @@ accuracy record that can't be revised after the fact.
 
 Per gameweek and model: MAE, RMSE, R², rank correlation and bias, over every player forecast
 and over the players who'd been getting minutes. Bias by position is the early warning for
-rule changes the history can't teach (e.g. the 2026-27 bonus-points changes).
+rule changes the history can't teach (e.g. the 2026-27 bonus-points changes). Forecasts saved
+with Monte Carlo ranges (simulate.py) are also scored on those (`ranges`): how many scores
+landed inside the 10th-90th percentile band, and the average chance of 10+ / of 2 or fewer
+against how often it happened.
 """
 
 import json
@@ -40,7 +43,7 @@ def score(matches: pd.DataFrame, season: str) -> dict:
     """Score every saved forecast for `season` whose gameweek has been played."""
     folder = config.PREDICTIONS_DIR / season
     played = set(matches.loc[matches["season"] == season, "gw"].unique())
-    rows, positions = [], []
+    rows, positions, ranges = [], [], []
     for path in sorted(folder.glob("gw*_*.csv")) if folder.exists() else []:
         match = FILE.search(path.name)
         if not match:
@@ -59,6 +62,13 @@ def score(matches: pd.DataFrame, season: str) -> dict:
         for subset, mask in (("All players", np.ones(len(y), dtype=bool)), ("Players getting minutes", active)):
             rows.append({"gw": gw, "model": model, "subset": subset, **_scores(y[mask], p[mask]),
                          "spearman": _spearman(y[mask], p[mask])})
+        if {"pts_p10", "pts_p90", "p_haul", "p_blank"} <= set(pred.columns):
+            r, got = pred[active], y[active]
+            ranges.append({"gw": gw, "model": model, "n": int(active.sum()),
+                           "below": float((got < r["pts_p10"]).mean()), "above": float((got > r["pts_p90"]).mean()),
+                           "inside": float(((got >= r["pts_p10"]) & (got <= r["pts_p90"])).mean()),
+                           "p_haul": float(r["p_haul"].mean()), "haul": float((got >= 10).mean()),
+                           "p_blank": float(r["p_blank"].mean()), "blank": float((got <= 2).mean())})
         for pos, name in config.POSITIONS.items():
             mask = active & (pred["position"].to_numpy() == pos)
             if mask.any():
@@ -66,7 +76,7 @@ def score(matches: pd.DataFrame, season: str) -> dict:
                                   "predicted": float(p[mask].mean()), "actual": float(y[mask].mean()),
                                   "n": int(mask.sum())})
     return {"generated": datetime.now().isoformat(timespec="seconds"), "season": season,
-            "gameweeks": rows, "positions": positions}
+            "gameweeks": rows, "positions": positions, "ranges": ranges}
 
 
 def save(report: dict) -> None:
@@ -98,4 +108,9 @@ def summarise(report: dict) -> str:
         bias = pos.assign(bias=pos["predicted"] - pos["actual"]).pivot_table(
             index="model", columns="position", values="bias", aggfunc="mean")
         lines.append("\nBias by position (xP minus points, + = over-predicting):\n" + bias.round(2).to_string())
+    ranges = pd.DataFrame(report.get("ranges", []))
+    if len(ranges):
+        lines.append("\nMonte Carlo ranges (scores are whole numbers, so inside the band should be 80% or a bit more):\n"
+                     + ranges[["gw", "model", "n", "below", "inside", "above", "p_haul", "haul", "p_blank", "blank"]]
+                     .sort_values(["model", "gw"]).round(3).to_string(index=False))
     return "\n".join(lines)

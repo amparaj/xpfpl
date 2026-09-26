@@ -81,6 +81,13 @@ GLOSSARY = [
     ("Ensemble (model: ensemble)",
      "The average of the MLP, LightGBM and xMins predictions. Different models make different "
      "mistakes, so the average is usually as good as the best of them and steadier."),
+    ("Monte Carlo (range, 10+, 2 or fewer)",
+     "Playing each gameweek thousands of times on the computer to see what could happen, not just "
+     "the average. Each simulated week draws the goals in every fixture (from the betting odds or our "
+     "club ratings), who plays, who scores and assists, clean sheets, bonus and cards, with every "
+     "player's average matched to his xP. 'Range' is the middle 80% of his simulated scores; '10+' and "
+     "'2 or fewer' are how often he got there. For a team it plays the auto-subs and the vice-captain "
+     "too. It shows the risk; it doesn't change the picks, which still maximise xP."),
     ("Midweek factor",
      "When a club plays a cup or European match before a gameweek, each of its players' xP for that "
      "gameweek is multiplied by a factor for his own role in it, once the match has been played. "
@@ -696,6 +703,79 @@ def render_robustness() -> None:
                        "(the ceiling), 'pre-tuning settings' uses the original guesses, 'chips on' plays chips too.")
 
 
+def _reliability_chart(rows: list[dict], title: str) -> alt.Chart:
+    """Given chance vs how often it happened, with a 95% interval; the dashed line is perfect."""
+    df = pd.DataFrame(rows)
+    df["low"] = (df["actual"] - 1.96 * df["se"]).clip(lower=0)
+    df["high"] = (df["actual"] + 1.96 * df["se"]).clip(upper=1)
+    hi = float(max(df["predicted"].max(), df["high"].max())) * 1.05
+    lo = float(min(df["predicted"].min(), df["low"].min())) * 0.95
+    axis = alt.Scale(domain=[lo, hi], nice=False)
+    perfect = alt.Chart(pd.DataFrame({"v": [lo, hi]})).mark_line(
+        color=MUTED, strokeDash=[4, 4], strokeWidth=2).encode(x="v:Q", y="v:Q")
+    ci = alt.Chart(df).mark_rule(color=MLP_COLOUR, strokeWidth=2, opacity=0.35).encode(
+        x=alt.X("predicted:Q", scale=axis), y=alt.Y("low:Q", scale=axis), y2="high:Q")
+    line = alt.Chart(df).mark_line(color=MLP_COLOUR, strokeWidth=2, point=alt.OverlayMarkDef(
+        color=MLP_COLOUR, size=64, filled=True)).encode(
+        x=alt.X("predicted:Q", title=f"Simulated chance of {title}", scale=axis, axis=alt.Axis(format="%")),
+        y=alt.Y("actual:Q", title="How often it happened", scale=axis, axis=alt.Axis(format="%")),
+        tooltip=[alt.Tooltip("bin:N", title="Chance band"), alt.Tooltip("predicted:Q", format=".1%"),
+                 alt.Tooltip("actual:Q", title="happened", format=".1%"),
+                 alt.Tooltip("n:Q", title="players", format=",")])
+    return (perfect + ci + line).properties(height=240)
+
+
+def render_simulation() -> None:
+    """The Monte Carlo (simulate.py): what it is, and whether its ranges held up on a held-out season."""
+    st.subheader("What could happen?")
+    st.markdown(
+        "An xP is an average. \"7.1 xP\" could be a steady 6-8 or a coin flip between 2 and 15, and that "
+        "is what a captain pick, a Triple Captain or a close transfer turns on. So every forecast also "
+        f"plays the next gameweeks **{config.SIM_RUNS:,} times**, and the pages show a player's likely "
+        "**range** (the middle 80% of his simulated scores) and his chances of **10+** and of **2 or fewer**.\n\n"
+        "Each simulated week draws the goals in every fixture from the expected goals (the betting odds, "
+        "else our club ratings), then for each player: whether he plays and for how long, his share of his "
+        "side's goals and assists, clean sheets, saves, defensive contributions, and bonus and cards drawn "
+        "from history. Teammates rise and fall together, as they do on the day, and each player's "
+        "simulated average is matched to his xP. For a team it plays the auto-subs and the vice-captain too, "
+        "so the team's average usually sits a little above its XI's xP.\n\n"
+        "It doesn't change the picks: the team with the most expected points is the same with or without "
+        "simulations, which is also what [Ramezani & Dinh (2026)](https://arxiv.org/abs/2505.02170) found "
+        "for simulated forecasts. It shows how sure a pick is: **Plan Ahead** has your team's likely score, "
+        "each captain option's odds, how often this week's move beats rolling the transfer or the next-best "
+        "move in the same simulated weeks, and how often Triple Captain or Bench Boost would clear its "
+        "threshold.")
+    report = validate.load_report()
+    sim = (report or {}).get("simulation")
+    if not sim:
+        st.info("Run `xpfpl train` (or `xpfpl validate`) to check the ranges against a held-out season.")
+        return
+    st.markdown(f"**Were the ranges right?** Checked on {report['season']}, with a model that never saw it "
+                f"({sim['rows']:,} player-matches, {sim['sims']} simulations each):")
+    m = st.columns(3)
+    m[0].metric("Scores inside the range", f"{sim['coverage_80']:.0%}",
+                help="Share of real scores inside the simulated 10th-90th percentile band. 80% if the ranges "
+                     "are the right width; less would mean too narrow.")
+    m[1].metric("Club totals inside the range", f"{sim['club_coverage_80']:.0%}",
+                help="The same for each club's total in each match: a test of whether teammates move together as "
+                     "much as they do in reality. Above 80% means the simulated club totals are a little too wide.")
+    m[2].metric("Spread of points", f"{sim['spread']['simulated']:.1f} vs {sim['spread']['actual']:.1f}",
+                help="Variance of points: simulated against real. Close means the simulated world is as wild as "
+                     "the real one.")
+    c = st.columns(2)
+    with c[0]:
+        st.markdown("**Chance of 10+**")
+        st.altair_chart(_reliability_chart(sim["haul"], "10+"), width="stretch")
+    with c[1]:
+        st.markdown("**Chance of 2 or fewer**")
+        st.altair_chart(_reliability_chart(sim["blank"], "2 or fewer"), width="stretch")
+    st.caption("Players grouped by their simulated chance (x) against how often it happened (y); the dashed line is "
+               "a perfect match, bars are 95% intervals. The simulation is only as right as the xP it's built "
+               "around: where the model over-forecast the top players that season, their chance of 10+ runs high "
+               "too. Club totals come out a little wide because each player's minutes are drawn on their own, "
+               "while a club always fields eleven.")
+
+
 def render() -> None:
     st.header("How xP-FPL works")
     st.markdown(
@@ -740,6 +820,7 @@ def render() -> None:
     render_models()
     render_backtest()
     render_robustness()
+    render_simulation()
     render_tuning()
 
     st.subheader("Glossary")

@@ -79,12 +79,17 @@ def _validate(predictor, train_df, val_df, name: str = config.MODEL, stale_frame
     # The ceiling needs a component model's probabilities; `xpfpl compare` computes it.
     comparison = validate.load_comparison() or {}
     ceiling = comparison.get("ceiling") if comparison.get("season") == val_df["season"].iloc[0] else None
+    simulation = None
+    if config.SIM_RUNS > 0:
+        from xpfpl import simulate
+        print("Simulating the held-out season to check the Monte Carlo ranges...")
+        simulation = simulate.check(val_df, preds[name], predictor, validate.match_tables(train_df))
     report = validate.build_report(
         val_df, preds, target=TARGET, primary=name,
         trained_on=f"{train_df['season'].min()} to {train_df['season'].max()}",
         best_epoch=predictor.meta.get("best_epoch"),
         horizons=_horizon_preds(predictor, stale_frames, name) if stale_frames else None,
-        ceiling=ceiling)
+        ceiling=ceiling, simulation=simulation)
     validate.save_report(report)
     print("\n" + validate.summarise(report))
     print(f"Saved the accuracy report to {config.VALIDATION_PATH}")
@@ -444,6 +449,41 @@ def cmd_modelteam(args) -> None:
     _model_team(bs, fx)
 
 
+def _monte_carlo(players: pd.DataFrame, gameweeks: list[int], plan, model: str, bs: dict, solve_kwargs: dict):
+    """Print the plan's simulated range, captain odds and how its move fares against the
+    alternatives (simulate.py). Returns the simulations, or None if `predict` saved none."""
+    from xpfpl import simulate
+    from xpfpl.data import api
+
+    gw = gameweeks[0]
+    draws = simulate.load(api.current_season(bs), gw, model)
+    if draws is None or gw not in draws.gameweeks:
+        return None
+    position = players["position"].to_dict()
+    week = simulate.team_score(draws, gw, plan.lineups[gw], plan.bench[gw], plan.captains[gw],
+                               plan.vice_captains[gw], None, position)["points"]
+    q = np.percentile(week, [10, 50, 90])
+    print(f"\n--- Monte Carlo: GW{gw} played {draws.sims:,} times ---")
+    print(f"  Your team: {q[0]:.0f}-{q[2]:.0f} points in the middle 80% of simulated weeks (median {q[1]:.0f}, "
+          f"average {week.mean():.1f} with auto-subs)")
+    xp = players.loc[plan.lineups[gw], f"xp_{gw}"].sort_values(ascending=False)
+    options = list(dict.fromkeys([plan.captains[gw], *xp.index[:5]]))
+    print("  Captain options      xP   middle 80%   10+    2 or less   best pick")
+    for e, r in simulate.captain_odds(draws, gw, options).iterrows():
+        print(f"    {players.at[e, 'name'][:16]:16s} {players.at[e, f'xp_{gw}']:5.2f}   {r['pts_p10']:3.0f} to {r['pts_p90']:3.0f}"
+              f"   {r['p_haul']:4.0%}   {r['p_blank']:4.0%}        {r['p_best']:4.0%}")
+    rivals = simulate.transfer_odds(draws, players, gameweeks, plan, **solve_kwargs)
+    if rivals:
+        print(f"  The recommendation against the alternatives, over GW{gameweeks[0]}-{draws.gameweeks[-1]} "
+              f"(same simulated weeks, discounted, after hits):")
+        for r in rivals:
+            print(f"    vs {r['label'].lower()} ({r['moves']}): ahead in {r['p_better']:.0%} of simulations "
+                  f"(behind in {1 - r['p_better'] - r['p_tie']:.0%}), by {r['mean']:+.1f} on average, "
+                  f"{r['p10']:+.0f} to {r['p90']:+.0f}")
+        print("    Near 50% means a coin flip: either choice is fine.")
+    return draws
+
+
 def cmd_recommend(args) -> None:
     from xpfpl import chips
     from xpfpl.data import api
@@ -532,6 +572,10 @@ def cmd_recommend(args) -> None:
             print(f"  GW{future_gw}: OUT {outs}   IN {ins}{cost}")
 
     _print_plan(players, plan, gw, "Your team")
+    draws = _monte_carlo(players, gameweeks, plan, args.model, bs,
+                         dict(**kwargs, free_transfers=ft, max_hits=args.max_hits, plan_transfers=plan_transfers,
+                              price_weight=config.PRICE_WEIGHT,
+                              pool_size=config.POOL_SIZE if plan_transfers else None))
 
     if args.sensitivity:
         from xpfpl.optimise import sensitivity
@@ -555,11 +599,22 @@ def cmd_recommend(args) -> None:
         print("  No chips available this gameweek.")
     else:
         advice = chips.advise(players, gameweeks, plan, available, kwargs)
+        odds = {}
+        if draws is not None:
+            from xpfpl import simulate
+            odds = simulate.chip_odds(draws, plan, [g for g in gameweeks if g in draws.gameweeks], available,
+                                      players["position"].to_dict())
         for a in advice:
             flag = "PLAY" if a.recommended else "save"
             expiry = "  [expires after this GW - use it or lose it]" if a.expiring else ""
             print(f"  {flag:4s} {chips.CHIP_NAMES[a.chip]:15s} gain {round(a.gain, 1) + 0.0:5.1f} / threshold "
                   f"{a.threshold:4.1f}  - {a.reason}{expiry}")
+            if a.chip in odds:
+                o = odds[a.chip]
+                later = (f", beats every later week of the plan in {o['p_beats_later']:.0%}"
+                         if o["p_beats_later"] is not None else "")
+                print(f"       simulated: adds {o['p10']:.0f}-{o['p90']:.0f} points (middle 80%), "
+                      f"clears {o['threshold']:.0f} in {o['p_clear']:.0%} of weeks{later}")
         best = next((a for a in advice if a.recommended), None)
         if best and best.chip in ("freehit", "wildcard"):
             horizon = [gw] if best.chip == "freehit" else gameweeks
