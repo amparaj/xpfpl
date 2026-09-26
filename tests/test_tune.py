@@ -53,3 +53,20 @@ def test_summary_mentions_each_stage_and_the_spread():
     assert "horizon" in text
     assert "spread 100.0" in text
     assert "HORIZON = 5" in text
+
+
+def test_replays_are_averaged_with_a_standard_error_and_confirmed(two_seasons, tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "TUNING_PATH", tmp_path / "tuning.json")
+    base = backtest.Settings(model="baseline", start_gw=1, end_gw=4, pool_size=12)
+    stages = [("horizon", {"horizon": [1, 2]})]
+
+    report = tune.tune(["2098-99"], model="baseline", base=base, frame=two_seasons,
+                       stages=stages, chip_stages=[], replays=3, confirm_seasons=["2099-00"])
+
+    for trial in report["trials"]:
+        runs = trial["replays"]["2098-99"]
+        assert len(runs) == 3
+        assert trial["points_per_season"]["2098-99"] == pytest.approx(sum(runs) / 3)
+        assert trial["se"] is not None and trial["se"] >= 0
+    assert [c["label"] for c in report["confirmation"]] == ["tuned", "current config", "pre-tuning"]
+    assert all(set(c["points_per_season"]) == {"2099-00"} for c in report["confirmation"])

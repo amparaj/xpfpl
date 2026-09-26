@@ -101,7 +101,8 @@ def cmd_train(args) -> None:
           f"  Validation: {len(val_df):,} rows ({args.val_season})  Model: {args.model}")
 
     cfg = TrainConfig(epochs=args.epochs, lr=args.lr, batch_size=args.batch_size)
-    predictor = models.fit(args.model, train_df, val_df, cfg=cfg)
+    # Early-stopped on the season before the validation one, so the report never peeks at it.
+    predictor = models.fit_holdout(args.model, train_df, cfg=cfg)
     _validate(predictor, train_df, val_df, args.model, stale)
 
     if not args.no_final:
@@ -160,7 +161,7 @@ def cmd_validate(args) -> None:
 
     _, train_df, val_df, stale = _split(args.val_season, horizons=args.horizons)
     print(f"Train: {len(train_df):,} rows  Validation: {len(val_df):,} rows ({args.val_season})")
-    predictor = models.fit(args.model, train_df, val_df, cfg=TrainConfig(epochs=args.epochs))
+    predictor = models.fit_holdout(args.model, train_df, cfg=TrainConfig(epochs=args.epochs))
     _validate(predictor, train_df, val_df, args.model, stale)
 
 
@@ -183,7 +184,7 @@ def cmd_compare(args) -> None:
     for name in names:
         print(f"\n--- {name}: {models.DESCRIPTIONS[name]} ---")
         started = time.time()
-        predictor = models.fit(name, train_df, val_df, cfg=TrainConfig(epochs=args.epochs))
+        predictor = models.fit_holdout(name, train_df, cfg=TrainConfig(epochs=args.epochs))
         pred = predictor.predict(val_df)
         preds[name] = pred
         for k, frame in stale.items():
@@ -237,6 +238,60 @@ def cmd_compare(args) -> None:
     print(f"\nSaved to {config.COMPARISON_PATH}")
 
 
+def cmd_robustness(args) -> None:
+    """Out-of-sample checks of the forecasts and the backtest over several seasons."""
+    import json
+
+    from xpfpl import robustness
+    from xpfpl.data.history import load_matches
+    from xpfpl.features import build_training_frame
+
+    args.seasons = args.seasons or robustness.SEASONS
+    args.seed_seasons = robustness.SEED_SEASONS if args.seed_seasons is None else args.seed_seasons
+    args.leaky_seasons = robustness.LEAKY_SEASONS if args.leaky_seasons is None else args.leaky_seasons
+    args.leak_probe = args.leak_probe or robustness.LEAK_PROBES
+    stages = {"forecasts", "backtest", "report"} if args.stage == "all" else {args.stage}
+    matches = frame = None
+    if stages & {"forecasts", "backtest"}:
+        print("Building features...")
+        matches = load_matches()
+        frame = build_training_frame(matches)
+    if "forecasts" in stages:
+        stale = {}
+        for k in range(2, args.horizons + 1):
+            print(f"Building features as known {k} gameweeks ahead...")
+            stale[k] = build_training_frame(matches, stale=k)
+        for season in args.seasons:
+            print(f"\n--- {season}: training on the seasons before it and predicting it ---", flush=True)
+            seeds = robustness.SEEDS if season in args.seed_seasons else robustness.SEEDS[:1]
+            out = robustness.forecasts(frame, season, seeds=seeds, stale=stale,
+                                       leaky=season in args.leaky_seasons)
+            robustness.DIR.mkdir(parents=True, exist_ok=True)
+            out.to_parquet(robustness.forecast_path(season), index=False)
+    if "backtest" in stages:
+        for season in args.seasons:
+            print(f"\n--- {season}: backtest variants ---", flush=True)
+            earlier = robustness.load_forecasts()
+            earlier = earlier[earlier["season"] < season] if len(earlier) else None
+            seeds = robustness.SEEDS if season in args.seed_seasons else robustness.SEEDS[:1]
+            rows = robustness.backtests(frame, season, earlier, seeds=seeds)
+            robustness.backtest_path(season).write_text(json.dumps(rows, indent=1), encoding="utf-8")
+    if "report" in stages:
+        df = robustness.load_forecasts()
+        if df.empty:
+            raise SystemExit("No forecasts yet: run `xpfpl robustness --stage forecasts` first.")
+        probes = []
+        if not args.no_leak_probe:
+            matches = load_matches() if matches is None else matches
+            for season, gw in args.leak_probe:
+                print(f"Leak probe: rebuilding features from matches up to {season} GW{gw}...", flush=True)
+                probes.append(robustness.leak_probe(matches, season, int(gw)))
+        report = robustness.build_report(df, robustness.load_backtests(), probes)
+        robustness.save_report(report)
+        print("\n" + robustness.summarise(report))
+        print(f"\nSaved to {robustness.REPORT_PATH}")
+
+
 def cmd_tune(args) -> None:
     """Search the optimiser tuning parameters with the backtest and print the config.py block to paste."""
     from xpfpl import tune
@@ -255,8 +310,10 @@ def cmd_tune(args) -> None:
         if not stages and not chip_stages:
             raise SystemExit("No stage matched. Stages: "
                              + ", ".join(repr(n) for n, _ in tune.STAGES + tune.CHIP_STAGES))
+    confirm = [s.strip() for s in (args.confirm_seasons or "").split(",") if s.strip()]
     report = tune.tune(seasons, model=args.model, frame=frame, stages=stages,
-                       chip_stages=chip_stages, verbose=args.verbose)
+                       chip_stages=chip_stages, verbose=args.verbose, replays=args.replays,
+                       workers=args.workers, noise_sd=args.noise_sd, confirm_seasons=confirm)
     print("\n" + tune.summarise(report))
     print(f"\nEvery trial is in {config.TUNING_PATH}")
 
@@ -659,6 +716,20 @@ def main(argv: list[str] | None = None) -> None:
                    help="also score forecasts made up to this many gameweeks ahead")
     p.set_defaults(func=cmd_compare)
 
+    p = sub.add_parser("robustness", help="out-of-sample checks of the forecasts and backtest over several seasons")
+    p.add_argument("--stage", choices=["forecasts", "backtest", "report", "all"], default="all",
+                   help="forecasts and backtest cache per season (run seasons in parallel), report combines")
+    p.add_argument("--seasons", nargs="+", default=None, help="test seasons (default 2020-21 to 2025-26)")
+    p.add_argument("--seed-seasons", nargs="*", default=None,
+                   help="seasons also refit with other seeds (each costs two more fits)")
+    p.add_argument("--leaky-seasons", nargs="*", default=None,
+                   help="seasons also fitted the way `validate` does (early-stopped on the test season)")
+    p.add_argument("--horizons", type=int, default=3, help="also score forecasts made up to N gameweeks ahead")
+    p.add_argument("--leak-probe", nargs=2, action="append", metavar=("SEASON", "GW"),
+                   default=None, help="cut-off points for the feature leak probe (repeatable)")
+    p.add_argument("--no-leak-probe", action="store_true")
+    p.set_defaults(func=cmd_robustness)
+
     p = sub.add_parser("tune", help="search the config.py tuning parameters by replaying whole seasons")
     p.add_argument("--seasons", default=",".join(config.HISTORY_SEASONS[-4:-1]),
                    help="comma-separated seasons to score each candidate on")
@@ -667,6 +738,15 @@ def main(argv: list[str] | None = None) -> None:
                    help="only run the stages whose name contains one of these (default: all)")
     p.add_argument("--no-chips", action="store_true", help="skip the chip-threshold stages")
     p.add_argument("--verbose", action="store_true", help="print every gameweek of every backtest")
+    p.add_argument("--replays", type=int, default=4,
+                   help="runs per season per candidate: the clean forecast plus N-1 with the same "
+                        "keyed xP noise for every candidate (one replay swings ~84 points a season)")
+    p.add_argument("--noise-sd", type=float, default=0.1, help="lognormal xP noise for the extra replays")
+    p.add_argument("--workers", type=int, default=1,
+                   help="processes to run replays in (each builds the features, ~2 GB of memory)")
+    p.add_argument("--confirm-seasons", default="",
+                   help="comma-separated unseen seasons to replay the winner, today's config and the "
+                        "pre-tuning settings on afterwards")
     p.set_defaults(func=cmd_tune)
 
     p = sub.add_parser("backtest", help="replay a past season gameweek by gameweek and count the points")

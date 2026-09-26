@@ -87,25 +87,19 @@ class Settings:
 # ---------------------------------------------------------------- the model, as of a season
 
 def fit_model(frame: pd.DataFrame, season: str, epochs: int = 40, name: str = config.MODEL,
-              quiet: bool = False):
+              quiet: bool = False, seed: int = TrainConfig.seed):
     """Train on every season before `season`, exactly as the real pipeline would have then.
 
     The season before that one is the early-stopping holdout; the model is then refit on all
     of the earlier data for the epoch count that worked best. Any model in xpfpl.models works.
+    `seed` sets the starting weights (robustness.py refits with others to measure their effect).
     """
     if name == "baseline":
         return None
     history = frame[frame["season"].str[:4].astype(int) < int(season[:4])]
     if history.empty:
         raise ValueError(f"No seasons before {season} to train on.")
-    holdout = history["season"].max()
-    earlier = history["season"].str[:4].astype(int) < int(holdout[:4])
-    fit = models.fit(name, history[earlier], history[history["season"] == holdout],
-                     cfg=TrainConfig(epochs=epochs), quiet=quiet)
-    if not quiet:
-        print(f"Refitting on {len(history):,} rows up to {holdout} "
-              f"for {fit.meta['best_epoch']} epochs...")
-    return models.fit(name, history, None, cfg=models.refit_config(fit), quiet=quiet)
+    return models.fit_holdout(name, history, TrainConfig(epochs=epochs, seed=seed), quiet=quiet)
 
 
 # ---------------------------------------------------------------- what was known at a deadline

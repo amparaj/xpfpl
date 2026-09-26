@@ -73,6 +73,31 @@ def fit(name: str, train_df: pd.DataFrame, val_df: pd.DataFrame | None,
                               cfg or TrainConfig(), quiet=quiet)
 
 
+def fit_holdout(name: str, history: pd.DataFrame, cfg: TrainConfig | None = None, quiet: bool = False):
+    """Train `name` on `history` without looking at anything later: early-stop on its last season
+    (trained on the seasons before it), then refit on all of `history` for the epoch count that
+    worked best. Scoring a held-out season with this is honest; early-stopping on the held-out
+    season itself picks the epoch count that suits it (robustness.py measured ~0.005 RMSE)."""
+    from dataclasses import replace
+
+    cfg = cfg or TrainConfig()
+    if name == "baseline":
+        return baseline.Predictor()
+    holdout = history["season"].max()
+    earlier = history["season"].str[:4].astype(int) < int(holdout[:4])
+    if not earlier.any():
+        raise ValueError(f"fit_holdout needs a season before {holdout} to train on.")
+    stopped = fit(name, history[earlier], history[history["season"] == holdout], cfg=cfg, quiet=quiet)
+    if not quiet:
+        print(f"Early-stopped on {holdout} at {stopped.meta.get('best_epoch')}; "
+              f"refitting on {len(history):,} rows up to {holdout}...")
+    refit = replace(cfg, epochs=stopped.meta.get("best_epoch") or cfg.epochs,
+                    member_epochs=stopped.meta.get("member_epochs"))
+    predictor = fit(name, history, None, cfg=refit, quiet=quiet)
+    predictor.meta["holdout_season"] = holdout
+    return predictor
+
+
 def refit_config(predictor, **overrides) -> TrainConfig:
     """The TrainConfig that refits `predictor`'s model on all the data without a holdout:
     its best epoch count (and each ensemble member's own)."""

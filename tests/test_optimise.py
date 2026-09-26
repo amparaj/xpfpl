@@ -215,3 +215,31 @@ def test_sensitivity_counts_every_run_once():
     for table in robust.values():
         assert table["runs"].sum() == 4
         assert abs(table["share"].sum() - 1.0) < 1e-9
+
+
+def test_a_failed_solver_call_is_retried_once(monkeypatch):
+    import pulp
+
+    from xpfpl import optimise
+
+    calls = []
+
+    class Prob:
+        def solve(self, solver):
+            calls.append(1)
+            if len(calls) == 1:
+                raise pulp.PulpSolverError("cbc.exe fell over")
+            return 1
+
+    assert optimise._run(Prob(), time_limit=5) == 1 and len(calls) == 2
+    calls.clear()
+
+    class Broken:
+        def solve(self, solver):
+            calls.append(1)
+            raise pulp.PulpSolverError("still broken")
+
+    import pytest
+    with pytest.raises(pulp.PulpSolverError):
+        optimise._run(Broken(), time_limit=5)
+    assert len(calls) == 2
