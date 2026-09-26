@@ -31,11 +31,16 @@ export default function About() {
 
   return (
     <article className="about">
-      <h2>What is this?</h2>
+      <h2>About</h2>
       <p className="lede">
-        xP-FPL is a personal project that tries to predict how many points every Fantasy Premier League player will
-        score, and uses those predictions to pick a team each week. This site is its public record: every gameweek of
-        the {site.meta.season} season, what the model expected before each deadline, and what actually happened.
+        xP-FPL (Expected Points for FPL) is a personal project that predicts how many points every Fantasy Premier
+        League player is likely to score in the coming gameweeks. A machine-learning model, trained on every Premier
+        League season since 2016-17, makes the forecasts; an optimiser then turns them into a team each week: the
+        starting eleven, captain, transfers and when to play a chip.
+      </p>
+      <p>
+        This site is the project's public record for the {site.meta.season} season: what the model expected before each
+        deadline, what actually happened, how accurate it has been, and how its own team is doing.
       </p>
       <p>
         "xP" means <strong>expected points</strong>: the average score a player would get if the same match could be

@@ -28,26 +28,26 @@ export default function DataPage() {
         </p>
       )}
       <div className="table-wrap">
-        <table>
+        <table className="files">
           <thead><tr><th>File</th><th>What's in it</th></tr></thead>
           <tbody>
             {FILES.map(([f, d]) => (
-              <tr key={f}><td><code>{f}</code></td><td style={{ whiteSpace: "normal" }}>{d}</td></tr>
+              <tr key={f}><td><code>{f}</code></td><td>{d}</td></tr>
             ))}
           </tbody>
         </table>
       </div>
       <h3>Reading it</h3>
+      <p className="note" style={{ marginTop: 0 }}>In Python, with pandas:</p>
       <pre className="card" style={{ overflowX: "auto", fontSize: 13 }}>{`import pandas as pd
-gws = pd.read_parquet("archive/fpl/2025-26/gws.parquet")
-
--- or DuckDB, straight from GitHub:
-select * from '${repo ? repo.replace("github.com", "raw.githubusercontent.com") + "/main" : "…"}/archive/fpl/2025-26/gws.parquet' limit 10;`}</pre>
+gws = pd.read_parquet("archive/fpl/2025-26/gws.parquet")`}</pre>
+      <p className="note">Or with DuckDB, straight from GitHub:</p>
+      <pre className="card" style={{ overflowX: "auto", fontSize: 13 }}>{`select * from '${repo ? repo.replace("github.com", "raw.githubusercontent.com") + "/main" : "…"}/archive/fpl/2025-26/gws.parquet' limit 10;`}</pre>
       <h3>Sources</h3>
       <ul>
-        <li>Past seasons: <a href="https://github.com/vaastav/Fantasy-Premier-League">vaastav/Fantasy-Premier-League</a>. Please credit it.</li>
+        <li>Past seasons: <a href="https://github.com/vaastav/Fantasy-Premier-League">vaastav/Fantasy-Premier-League</a>.</li>
         <li>This season: the public <a href="https://fantasy.premierleague.com">Fantasy Premier League</a> API. The data belongs to the Premier League.</li>
-        <li>Odds: <a href="https://polymarket.com">Polymarket</a>. Upcoming matches on the Markets page are fetched from its public API on a schedule.</li>
+        <li>Odds: <a href="https://polymarket.com">Polymarket</a>.</li>
       </ul>
     </>
   );

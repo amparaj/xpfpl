@@ -42,7 +42,7 @@ export default function App() {
   const Page = page.component;
 
   useEffect(() => {
-    document.title = `${page.label} · xP-FPL`;
+    document.title = `${page.label} · xP-FPL: Expected Points for Fantasy Premier League`;
   }, [page]);
 
   return (
@@ -50,14 +50,17 @@ export default function App() {
       <header className="top">
         <div className="top-inner">
           <div className="brand">
-            <h1>xP-FPL</h1>
-            {site && (
-              <span className="muted">
-                {site.meta.season} · data to GW{Math.max(0, ...site.meta.played)} · updated {day(site.meta.generated)}
-                {site.meta.next_deadline && <> · GW{site.meta.next_gw} deadline {when(site.meta.next_deadline)}</>}
-              </span>
-            )}
+            <h1>xP-FPL<span className="brand-sub">: Expected Points for Fantasy Premier League</span></h1>
+            <span className="byline">Created by Ayush Parajuli</span>
           </div>
+          {site && (
+            <div className="status">
+              <span>{site.meta.season} season · results up to Gameweek {Math.max(0, ...site.meta.played)} · data updated {day(site.meta.generated)}</span>
+              {site.meta.next_deadline && (
+                <span>Next: Gameweek {site.meta.next_gw} deadline <strong>{when(site.meta.next_deadline)}</strong> (your local time)</span>
+              )}
+            </div>
+          )}
           <nav aria-label="Pages">
             {PAGES.map((p) => (
               <a key={p.id} href={`#${p.id}`} className={p === page ? "on" : undefined}

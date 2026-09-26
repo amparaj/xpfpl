@@ -66,6 +66,8 @@
 
 * { box-sizing: border-box; }
 html, body { margin: 0; }
+/* Stop phone browsers inflating the text in wide, scrolling tables. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 body {
   background: var(--page);
   color: var(--ink);
@@ -85,9 +87,14 @@ button { font: inherit; color: inherit; }
   border-bottom: 1px solid var(--border);
 }
 .top-inner { max-width: 1180px; margin: 0 auto; padding: 10px 16px 0; }
-.brand { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.brand { display: flex; align-items: baseline; justify-content: space-between; gap: 2px 12px; flex-wrap: wrap; }
 .brand h1 { font-size: 18px; margin: 0; letter-spacing: -0.01em; }
-.brand .muted { font-size: 13px; }
+.brand-sub { font-weight: 500; color: var(--ink-2); }
+.byline { font-size: 13px; color: var(--muted); }
+.status { display: flex; flex-direction: column; font-size: 13px; color: var(--muted); margin-top: 2px; line-height: 1.45; }
+.status strong { color: var(--ink-2); font-weight: 600; }
+/* Four lines of header is too much to pin on a phone: let it scroll away. */
+@media (max-width: 640px) { .top { position: static; } .brand h1 { font-size: 17px; } }
 nav { display: flex; gap: 2px; overflow-x: auto; margin-top: 6px; scrollbar-width: none; }
 nav a {
   padding: 8px 12px; text-decoration: none; color: var(--ink-2); white-space: nowrap;
@@ -162,6 +169,13 @@ th button { background: none; border: 0; padding: 0; cursor: pointer; font-weigh
 table.compact { width: auto; max-width: 100%; margin: 8px 0 12px; }
 table.compact td:first-child { white-space: normal; }
 th.num button { flex-direction: row-reverse; }
+/* A long text column that wraps onto two or three lines instead of widening the table. */
+/* The Data page's file list: small type, descriptions wrap. */
+table.files { font-size: 13px; }
+table.files td { padding: 4px 8px; vertical-align: top; }
+table.files td:last-child { white-space: normal; min-width: 16em; color: var(--ink-2); }
+table.files code { font-size: 12px; }
+td.wrap { white-space: normal; min-width: 16em; max-width: 24em; font-size: 13px; line-height: 1.35; color: var(--ink-2); }
 .sort-mark { font-size: 9px; color: var(--muted); min-width: 8px; display: inline-block; }
 /* Group headings over several columns: they scroll away, the column headings below stay put. */
 tr.group-row th { position: static; text-align: center; color: var(--muted); font-size: 12px; padding-bottom: 2px; border-bottom: 0; }
