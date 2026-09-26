@@ -92,3 +92,33 @@ def test_backtest_summary_gaps_and_noise_floor():
     assert gap["gap_mean"] == -75 and gap["seasons_better"] == 1 and gap["seasons_worse"] == 1
     assert gap["gap_tuned_seasons"] == -200 and gap["gap_other_seasons"] == 50
     assert out["noise_floor"]["noise_range_by_season"] == {"2021-22": 30.0, "2023-24": 30.0}
+
+
+def test_keyed_noise_is_the_same_for_a_player_week_whoever_asks():
+    frame = pd.DataFrame({"season": "2023-24", "element": np.arange(4000) % 400,
+                          "gw": np.arange(4000) // 400 + 1})
+    z = robustness.keyed_normal(frame, seed=1)
+    shuffled = frame.sample(frac=1.0, random_state=0)
+    assert np.allclose(robustness.keyed_normal(shuffled, seed=1), z[shuffled.index])
+    assert not np.allclose(robustness.keyed_normal(frame, seed=2), z)
+    assert abs(z.mean()) < 0.05 and abs(z.std() - 1) < 0.05
+
+
+def test_fit_holdout_early_stops_on_the_last_training_season(monkeypatch):
+    from xpfpl import models
+
+    calls = []
+
+    class Fake:
+        meta = {"best_epoch": 7}
+
+    def fake_fit(name, train_df, val_df, cfg=None, quiet=False):
+        calls.append((sorted(train_df["season"].unique()),
+                      None if val_df is None else sorted(val_df["season"].unique()), cfg.epochs))
+        return Fake()
+
+    monkeypatch.setattr(models, "fit", fake_fit)
+    history = pd.DataFrame({"season": ["2021-22", "2022-23", "2023-24"]})
+    models.fit_holdout("mlp", history, quiet=True)
+    assert calls[0][:2] == (["2021-22", "2022-23"], ["2023-24"])
+    assert calls[1] == (["2021-22", "2022-23", "2023-24"], None, 7)

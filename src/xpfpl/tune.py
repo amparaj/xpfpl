@@ -17,10 +17,19 @@ deliberately not written automatically, so the numbers get a human glance first.
 
 One caveat worth remembering when reading the output: the seasons used for tuning are the same
 ones used to report the backtest score, so the tuned numbers flatter themselves a little. The
-gaps between candidates are what matters, not the absolute totals.
+gaps between candidates are what matters, not the absolute totals. `confirm_seasons` answers
+that: the winner, today's config and the pre-tuning settings are replayed on seasons the search
+never saw.
+
+A single replay is chaotic: 10% noise on xP moves a season by ~84 points (robustness.py), more
+than most gaps between candidates. So each candidate is scored on `replays` runs per season -
+the clean forecast plus `replays - 1` with keyed noise (robustness.Noisy), the same noise for
+every candidate, which makes the comparison paired - and the runs can go to `workers` processes.
 """
 
 import json
+import math
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import asdict, replace
 from datetime import datetime
 
@@ -60,71 +69,182 @@ def _combos(grid: dict[str, list]) -> list[dict]:
     return [dict(zip(grid, values)) for values in product(*grid.values())]
 
 
-def _score(base: Settings, choice: dict, seasons: list[str], frame, fitted, tables,
-           chips_on: bool, verbose: bool) -> dict:
-    """Replay every season with one candidate setting and average the points per gameweek."""
-    thresholds = {k: v for k, v in choice.items() if k in ("3xc", "bboost", "freehit", "wildcard")}
-    settings = {k: v for k, v in choice.items() if k not in thresholds}
-    per_season = {}
-    for season in seasons:
-        trial_settings = replace(base, season=season, chips=chips_on, **settings)
-        if thresholds:
-            trial_settings.thresholds = {**base.thresholds, **thresholds}
-        result = run(trial_settings, frame=frame, predictor=fitted[season],
-                     price_table=tables[season], verbose=verbose)
-        per_season[season] = result.summary["points"]
-    points = list(per_season.values())
-    return {**choice, "points_per_season": per_season,
-            "mean_points": sum(points) / len(points), "worst_season": min(points)}
+CHIPS = ("3xc", "bboost", "freehit", "wildcard")
+NOISE_SD = 0.1
+_WORKER: dict = {}          # per process: frame, predictors and price tables
+
+
+def _trial(base: Settings, choice: dict, season: str, chips_on: bool) -> Settings:
+    """`base` with one candidate's settings (and chip thresholds) applied, for one season."""
+    thresholds = {k: v for k, v in choice.items() if k in CHIPS}
+    settings = replace(base, season=season, chips=chips_on,
+                       **{k: v for k, v in choice.items() if k not in CHIPS})
+    settings.thresholds = {**base.thresholds, **thresholds}
+    return settings
+
+
+def _predictor(fitted, season: str, replay: int, noise_sd: float):
+    """Replay 0 is the clean forecast; replay r > 0 adds keyed noise number r."""
+    from xpfpl.robustness import Noisy
+
+    base = fitted[season]
+    if replay == 0 or base is None:
+        return base
+    return Noisy(base, noise_sd, seed=replay, keyed=True)
+
+
+def _init_worker(seasons: list[str], model: str) -> None:
+    """Each worker builds the features and loads the cached per-season models once."""
+    import torch
+
+    from xpfpl import robustness
+
+    torch.set_num_threads(1)            # one core per worker: the pool is the parallelism
+    frame = build_training_frame(load_matches())
+    _WORKER.update(frame=frame,
+                   fitted={s: robustness.fitted(None, s, name=model) for s in seasons},
+                   tables={s: prices.fit(frame, before_season=s) for s in seasons})
+
+
+def _replay_in_worker(settings: Settings, replay: int, noise_sd: float) -> float:
+    w = _WORKER
+    predictor = _predictor(w["fitted"], settings.season, replay, noise_sd)
+    return run(settings, frame=w["frame"], predictor=predictor,
+               price_table=w["tables"][settings.season], verbose=False).summary["points"]
+
+
+class _Runner:
+    """Runs backtests in this process or in a pool of worker processes."""
+
+    def __init__(self, frame, fitted, tables, seasons, model, workers: int, noise_sd: float,
+                 verbose: bool = False):
+        self.frame, self.fitted, self.tables = frame, fitted, tables
+        self.noise_sd, self.verbose = noise_sd, verbose
+        self.pool = (ProcessPoolExecutor(workers, initializer=_init_worker, initargs=(seasons, model))
+                     if workers > 1 else None)
+
+    def points(self, jobs: list[tuple[Settings, int]]) -> list[float]:
+        if self.pool is not None:
+            futures = [self.pool.submit(_replay_in_worker, s, r, self.noise_sd) for s, r in jobs]
+            return [f.result() for f in futures]
+        return [run(s, frame=self.frame, predictor=_predictor(self.fitted, s.season, r, self.noise_sd),
+                    price_table=self.tables[s.season], verbose=self.verbose).summary["points"]
+                for s, r in jobs]
+
+    def close(self) -> None:
+        if self.pool is not None:
+            self.pool.shutdown()
+
+
+def _summarise_candidate(choice: dict, points: dict[str, list[float]]) -> dict:
+    """Mean over seasons of the mean over replays, and its standard error from the replay spread."""
+    means = {s: sum(v) / len(v) for s, v in points.items()}
+    n = len(points)
+    var = [pd.Series(v).var(ddof=1) / len(v) for v in points.values() if len(v) > 1]
+    se = math.sqrt(sum(var)) / n if var else None
+    return {**choice, "points_per_season": means, "replays": points,
+            "mean_points": sum(means.values()) / n, "worst_season": min(means.values()), "se": se}
+
+
+def _score_all(runner: _Runner, base: Settings, candidates: list[dict], seasons: list[str],
+               chips_on: bool, replays: int) -> list[dict]:
+    """Every candidate on every season and replay, submitted together so a pool stays busy."""
+    jobs, keys = [], []
+    for i, choice in enumerate(candidates):
+        for season in seasons:
+            for r in range(replays):
+                jobs.append((_trial(base, choice, season, chips_on), r))
+                keys.append((i, season))
+    results = runner.points(jobs)
+    points: list[dict[str, list[float]]] = [{s: [] for s in seasons} for _ in candidates]
+    for (i, season), value in zip(keys, results):
+        points[i][season].append(float(value))
+    return [_summarise_candidate(choice, p) for choice, p in zip(candidates, points)]
+
+
+def _fitted_models(frame, seasons: list[str], model: str, workers: int) -> dict:
+    """One model per season. With workers, fit through robustness.py's cache so they can load it."""
+    if workers > 1:
+        from xpfpl import robustness
+        return {s: robustness.fitted(frame, s, name=model) for s in seasons}
+    return {s: predictors(frame, s, [model], quiet=True)[model] for s in seasons}
 
 
 def tune(seasons: list[str], model: str = config.MODEL, base: Settings | None = None,
          frame=None, stages=None, chip_stages=None, verbose: bool = False,
-         fitted: dict | None = None) -> dict:
+         fitted: dict | None = None, replays: int = 1, workers: int = 1,
+         noise_sd: float = NOISE_SD, confirm_seasons: list[str] | None = None) -> dict:
     """Run the coordinate descent and return the report (also written to config.TUNING_PATH).
 
-    `fitted` lets a caller pass in {season: predictor} instead of training them here, which is
-    how several stages can be run as separate processes against identical models.
+    `fitted` lets a caller pass in {season: predictor} instead of training them here (in-process
+    runs only). `replays` runs per season per candidate (the clean forecast plus keyed-noise
+    copies) are averaged; `workers` > 1 spreads them over processes, which build their own
+    features and load the models from robustness.py's cache. `confirm_seasons`: afterwards,
+    replay the winner, today's config and the pre-tuning settings on these unseen seasons.
     """
+    from xpfpl.robustness import PRE_TUNING
+
     frame = build_training_frame(load_matches()) if frame is None else frame
     base = base or Settings(model=model)
     stages = STAGES if stages is None else stages
     chip_stages = CHIP_STAGES if chip_stages is None else chip_stages
+    every = list(dict.fromkeys(seasons + (confirm_seasons or [])))
 
     if fitted is None:
-        print(f"Training one {model} model per season ({', '.join(seasons)})...")
-        fitted = {s: predictors(frame, s, [model], quiet=True)[model] for s in seasons}
-    tables = {s: prices.fit(frame, before_season=s) for s in seasons}
+        print(f"Training (or loading) one {model} model per season ({', '.join(every)})...")
+        fitted = _fitted_models(frame, every, model, workers)
+    tables = {s: prices.fit(frame, before_season=s) for s in every} if workers <= 1 else {}
+    runner = _Runner(frame, fitted, tables, every, model, workers, noise_sd, verbose)
 
     chosen: dict = {}
     trials: list[dict] = []
-    for name, grid in [(n, g) for n, g in stages] + [(n, g) for n, g in chip_stages]:
-        chips_on = any(k in ("3xc", "bboost", "freehit", "wildcard") for k in grid)
-        candidates = _combos(grid)
-        print(f"\n--- {name} ({len(candidates)} candidates x {len(seasons)} seasons) ---")
-        scored = []
-        for choice in candidates:
+    confirmation: list[dict] = []
+    try:
+        for name, grid in [(n, g) for n, g in stages] + [(n, g) for n, g in chip_stages]:
+            chips_on = any(k in CHIPS for k in grid)
+            candidates = _combos(grid)
+            print(f"\n--- {name} ({len(candidates)} candidates x {len(seasons)} seasons x "
+                  f"{replays} replays) ---", flush=True)
             settings = replace(base, **{k: v for k, v in chosen.items() if k in asdict(base)})
-            settings.thresholds = {**base.thresholds,
-                                   **{k: v for k, v in chosen.items() if k in base.thresholds}}
-            row = _score(settings, choice, seasons, frame, fitted, tables, chips_on, verbose)
-            row["stage"] = name
-            scored.append(row)
-            trials.append(row)
-            values = ", ".join(f"{k}={v}" for k, v in choice.items())
-            print(f"  {values:40s} {row['mean_points']:7.1f} points "
-                  f"({'  '.join(f'{s}: {p:.0f}' for s, p in row['points_per_season'].items())})")
-        best = max(scored, key=lambda r: r["mean_points"])
-        chosen.update({k: v for k, v in best.items() if k in grid})
-        print(f"  -> {', '.join(f'{k}={best[k]}' for k in grid)} "
-              f"({best['mean_points']:.1f} points a season)")
+            settings.thresholds = {**base.thresholds, **{k: v for k, v in chosen.items() if k in CHIPS}}
+            scored = _score_all(runner, settings, candidates, seasons, chips_on, replays)
+            for row in scored:
+                row["stage"] = name
+                trials.append(row)
+                values = ", ".join(f"{k}={row[k]}" for k in grid)
+                se = f" ± {row['se']:.0f}" if row["se"] is not None else ""
+                print(f"  {values:40s} {row['mean_points']:7.1f}{se} points "
+                      f"({'  '.join(f'{s}: {p:.0f}' for s, p in row['points_per_season'].items())})",
+                      flush=True)
+            best = max(scored, key=lambda r: r["mean_points"])
+            chosen.update({k: best[k] for k in grid})
+            print(f"  -> {', '.join(f'{k}={best[k]}' for k in grid)} "
+                  f"({best['mean_points']:.1f} points a season)", flush=True)
+
+        if confirm_seasons:
+            named = {"tuned": chosen, "current config": {}, "pre-tuning": PRE_TUNING}
+            chips_on = bool(chip_stages)
+            print(f"\n--- confirmation on unseen seasons ({', '.join(confirm_seasons)}; "
+                  f"chips {'on' if chips_on else 'off'}) ---", flush=True)
+            scored = _score_all(runner, base, list(named.values()), confirm_seasons, chips_on, replays)
+            for label, row in zip(named, scored):
+                confirmation.append({"label": label, **row})
+                print(f"  {label:16s} {row['mean_points']:7.1f} ± {row['se'] or 0:.0f} points "
+                      f"({'  '.join(f'{s}: {p:.0f}' for s, p in row['points_per_season'].items())})",
+                      flush=True)
+    finally:
+        runner.close()
 
     report = {
         "generated": datetime.now().isoformat(timespec="seconds"),
         "seasons": seasons,
         "model": model,
+        "replays": replays,
+        "noise_sd": noise_sd,
         "chosen": chosen,
         "trials": trials,
+        "confirm_seasons": confirm_seasons or [],
+        "confirmation": confirmation,
         "config": config_block(chosen),
     }
     config.TUNING_PATH.parent.mkdir(parents=True, exist_ok=True)

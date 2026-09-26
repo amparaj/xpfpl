@@ -99,14 +99,7 @@ def fit_model(frame: pd.DataFrame, season: str, epochs: int = 40, name: str = co
     history = frame[frame["season"].str[:4].astype(int) < int(season[:4])]
     if history.empty:
         raise ValueError(f"No seasons before {season} to train on.")
-    holdout = history["season"].max()
-    earlier = history["season"].str[:4].astype(int) < int(holdout[:4])
-    fit = models.fit(name, history[earlier], history[history["season"] == holdout],
-                     cfg=TrainConfig(epochs=epochs, seed=seed), quiet=quiet)
-    if not quiet:
-        print(f"Refitting on {len(history):,} rows up to {holdout} "
-              f"for {fit.meta['best_epoch']} epochs...")
-    return models.fit(name, history, None, cfg=models.refit_config(fit, seed=seed), quiet=quiet)
+    return models.fit_holdout(name, history, TrainConfig(epochs=epochs, seed=seed), quiet=quiet)
 
 
 # ---------------------------------------------------------------- what was known at a deadline

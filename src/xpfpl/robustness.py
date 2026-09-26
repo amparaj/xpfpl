@@ -62,25 +62,32 @@ KEY = ["season", "element", "fixture"]
 
 # ---------------------------------------------------------------- forecasts
 
-def _model_path(season: str, seed: int, leaky: bool = False) -> Path:
-    return DIR / "models" / f"{season}_{MODEL}_s{seed}{'_leaky' if leaky else ''}.pt"
+def _model_path(season: str, seed: int, leaky: bool = False, name: str = MODEL) -> Path:
+    return DIR / "models" / f"{season}_{name}_s{seed}{'_leaky' if leaky else ''}.pt"
 
 
-def fitted(frame: pd.DataFrame, season: str, seed: int = SEEDS[0], leaky: bool = False):
-    """The ensemble as it would have been trained just before `season` (cached on disk).
+def fitted(frame: pd.DataFrame | None, season: str, seed: int = SEEDS[0], leaky: bool = False,
+           name: str = MODEL):
+    """Model `name` as it would have been trained just before `season` (cached on disk, so the
+    robustness stages and tune.py's worker processes share one fit; `frame` is only needed
+    when there is no cached copy yet).
 
-    `leaky=True` trains the way `xpfpl validate` does instead: early-stopped on `season` itself.
+    `leaky=True` trains the way `xpfpl validate` used to: early-stopped on `season` itself.
     """
-    path = _model_path(season, seed, leaky)
+    if name == "baseline":
+        return None
+    path = _model_path(season, seed, leaky, name)
     if path.exists():
-        return models.module(MODEL).Predictor.load(path)
+        return models.module(name).Predictor.load(path)
+    if frame is None:
+        raise FileNotFoundError(f"No cached {name} model for {season} at {path}.")
     if leaky:
         from xpfpl.models.trainer import TrainConfig
         history = frame[frame["season"].str[:4].astype(int) < int(season[:4])]
-        predictor = models.fit(MODEL, history, frame[frame["season"] == season],
+        predictor = models.fit(name, history, frame[frame["season"] == season],
                                cfg=TrainConfig(seed=seed), quiet=True)
     else:
-        predictor = backtest.fit_model(frame, season, name=MODEL, quiet=True, seed=seed)
+        predictor = backtest.fit_model(frame, season, name=name, quiet=True, seed=seed)
     path.parent.mkdir(parents=True, exist_ok=True)
     predictor.save(path)
     return predictor
@@ -431,16 +438,41 @@ class Oracle:
         return frame[TARGET].to_numpy(dtype="float32")
 
 
+def _mix(x: np.ndarray) -> np.ndarray:
+    """splitmix64's finaliser: scrambles integer keys into well-spread 64-bit values."""
+    x = (x ^ (x >> np.uint64(30))) * np.uint64(0xBF58476D1CE4E5B9)
+    x = (x ^ (x >> np.uint64(27))) * np.uint64(0x94D049BB133111EB)
+    return x ^ (x >> np.uint64(31))
+
+
+def keyed_normal(frame: pd.DataFrame, seed: int) -> np.ndarray:
+    """One standard normal per (season, player, gameweek, seed), the same whichever deadline or
+    candidate setting asks for it (Box-Muller on two hashed uniforms)."""
+    year = frame["season"].str[:4].astype("uint64").to_numpy()
+    key = ((year * np.uint64(1_000_003) + frame["element"].to_numpy().astype("uint64")) * np.uint64(101)
+           + frame["gw"].to_numpy().astype("uint64")) * np.uint64(10_007) + np.uint64(seed)
+    with np.errstate(over="ignore"):
+        u1 = ((_mix(key * np.uint64(2)) >> np.uint64(11)).astype(float) + 0.5) / 2.0 ** 53
+        u2 = ((_mix(key * np.uint64(2) + np.uint64(1)) >> np.uint64(11)).astype(float) + 0.5) / 2.0 ** 53
+    return np.sqrt(-2.0 * np.log(u1)) * np.cos(2.0 * np.pi * u2)
+
+
 class Noisy:
     """Another predictor's xP times lognormal noise (mean 1). Nearly the same forecasts, so the
-    spread of season totals across runs is how much a replay moves on chaos alone."""
+    spread of season totals across runs is how much a replay moves on chaos alone.
 
-    def __init__(self, base, sd: float, seed: int):
-        self.base, self.sd, self.rng = base, sd, np.random.default_rng(seed)
+    `keyed=True` ties each draw to (season, player, gameweek, seed), so two backtests with
+    different settings see identical noise: comparing them is then a paired comparison (tune.py).
+    """
+
+    def __init__(self, base, sd: float, seed: int, keyed: bool = False):
+        self.base, self.sd, self.seed, self.keyed = base, sd, seed, keyed
+        self.rng = np.random.default_rng(seed)
 
     def predict(self, frame: pd.DataFrame) -> np.ndarray:
         p = self.base.predict(frame)
-        return p * np.exp(self.rng.normal(-self.sd ** 2 / 2, self.sd, len(p)))
+        z = keyed_normal(frame, self.seed) if self.keyed else self.rng.normal(0.0, 1.0, len(p))
+        return (p * np.exp(self.sd * z - self.sd ** 2 / 2)).astype("float32")
 
 
 class Mapped:

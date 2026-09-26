@@ -101,7 +101,8 @@ def cmd_train(args) -> None:
           f"  Validation: {len(val_df):,} rows ({args.val_season})  Model: {args.model}")
 
     cfg = TrainConfig(epochs=args.epochs, lr=args.lr, batch_size=args.batch_size)
-    predictor = models.fit(args.model, train_df, val_df, cfg=cfg)
+    # Early-stopped on the season before the validation one, so the report never peeks at it.
+    predictor = models.fit_holdout(args.model, train_df, cfg=cfg)
     _validate(predictor, train_df, val_df, args.model, stale)
 
     if not args.no_final:
@@ -160,7 +161,7 @@ def cmd_validate(args) -> None:
 
     _, train_df, val_df, stale = _split(args.val_season, horizons=args.horizons)
     print(f"Train: {len(train_df):,} rows  Validation: {len(val_df):,} rows ({args.val_season})")
-    predictor = models.fit(args.model, train_df, val_df, cfg=TrainConfig(epochs=args.epochs))
+    predictor = models.fit_holdout(args.model, train_df, cfg=TrainConfig(epochs=args.epochs))
     _validate(predictor, train_df, val_df, args.model, stale)
 
 
@@ -183,7 +184,7 @@ def cmd_compare(args) -> None:
     for name in names:
         print(f"\n--- {name}: {models.DESCRIPTIONS[name]} ---")
         started = time.time()
-        predictor = models.fit(name, train_df, val_df, cfg=TrainConfig(epochs=args.epochs))
+        predictor = models.fit_holdout(name, train_df, cfg=TrainConfig(epochs=args.epochs))
         pred = predictor.predict(val_df)
         preds[name] = pred
         for k, frame in stale.items():
@@ -309,8 +310,10 @@ def cmd_tune(args) -> None:
         if not stages and not chip_stages:
             raise SystemExit("No stage matched. Stages: "
                              + ", ".join(repr(n) for n, _ in tune.STAGES + tune.CHIP_STAGES))
+    confirm = [s.strip() for s in (args.confirm_seasons or "").split(",") if s.strip()]
     report = tune.tune(seasons, model=args.model, frame=frame, stages=stages,
-                       chip_stages=chip_stages, verbose=args.verbose)
+                       chip_stages=chip_stages, verbose=args.verbose, replays=args.replays,
+                       workers=args.workers, noise_sd=args.noise_sd, confirm_seasons=confirm)
     print("\n" + tune.summarise(report))
     print(f"\nEvery trial is in {config.TUNING_PATH}")
 
@@ -735,6 +738,15 @@ def main(argv: list[str] | None = None) -> None:
                    help="only run the stages whose name contains one of these (default: all)")
     p.add_argument("--no-chips", action="store_true", help="skip the chip-threshold stages")
     p.add_argument("--verbose", action="store_true", help="print every gameweek of every backtest")
+    p.add_argument("--replays", type=int, default=4,
+                   help="runs per season per candidate: the clean forecast plus N-1 with the same "
+                        "keyed xP noise for every candidate (one replay swings ~84 points a season)")
+    p.add_argument("--noise-sd", type=float, default=0.1, help="lognormal xP noise for the extra replays")
+    p.add_argument("--workers", type=int, default=1,
+                   help="processes to run replays in (each builds the features, ~2 GB of memory)")
+    p.add_argument("--confirm-seasons", default="",
+                   help="comma-separated unseen seasons to replay the winner, today's config and the "
+                        "pre-tuning settings on afterwards")
     p.set_defaults(func=cmd_tune)
 
     p = sub.add_parser("backtest", help="replay a past season gameweek by gameweek and count the points")
