@@ -14,6 +14,8 @@ ARCHIVE_DIR = ROOT / "archive"                     # git-tracked copy of every s
 SITE_DATA_DIR = ROOT / "web" / "public" / "data"   # what `xpfpl export` writes for the website
 
 BACKTEST_DIR = DATA_DIR / "backtests"
+MY_TEAM_DIR = DATA_DIR / "myteam"                  # the teams you save in the dashboard's Plan Ahead
+APP_SETTINGS_PATH = DATA_DIR / "app_settings.json"  # the dashboard's settings (your team id)
 
 MATCHES_PATH = PROCESSED_DIR / "matches.parquet"
 MODEL_PATH = MODELS_DIR / "xp_mlp.pt"              # the default model; the others are xp_<name>.pt

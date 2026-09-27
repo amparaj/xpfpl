@@ -15,6 +15,7 @@ dependencies = [
     "requests",
     "torch>=2.2",
     "pulp>=2.7",
+    "cryptography",   # My Team's secret word on the website (export.seal)
 ]
 
 [project.optional-dependencies]

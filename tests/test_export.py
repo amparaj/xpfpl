@@ -30,3 +30,26 @@ def test_saved_forecasts_prefer_the_chosen_model(tmp_path, monkeypatch):
     got = review.saved_forecasts("2026-27", "mlp")
     assert got[6].loc[7] == 2.0 and got[6].name == "mlp"
     assert got[7].loc[7] == 3.0            # only another model's forecast was saved: use it
+
+
+def test_seal_opens_only_with_the_secret(monkeypatch):
+    import base64
+
+    import pytest
+    from cryptography.exceptions import InvalidTag
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+
+    monkeypatch.setattr(export, "SEAL_ITERATIONS", 1000)
+    sealed = export.seal({"captain": 12, "xp": float("nan")}, " three blind mice ")
+
+    def unseal(word: str):
+        raw = lambda k: base64.b64decode(sealed[k])   # noqa: E731
+        key = PBKDF2HMAC(hashes.SHA256(), 32, raw("salt"), sealed["iterations"]).derive(word.strip().encode())
+        return json.loads(AESGCM(key).decrypt(raw("iv"), raw("data"), None))
+
+    assert sealed["v"] == 1 and "captain" not in json.dumps(sealed)
+    assert unseal("three blind mice") == {"captain": 12, "xp": None}
+    with pytest.raises(InvalidTag):
+        unseal("three blind rats")

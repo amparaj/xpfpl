@@ -16,6 +16,12 @@ odds come from odds.json on the `odds` branch, which a scheduled GitHub Action
                      each player's midweek rotation group and the factor it put on his xP, and his
                      simulated range for the next gameweek (simulate.py: 10th/50th/90th percentile,
                      chances of 10+ and of 2 or fewer)
+  myteam.json        My Team: the team for the gameweek in progress (until it's finished) or the
+                     next one (saved from the dashboard's Plan Ahead, else last week's carried over;
+                     after the deadline, the team locked in) and its outlook over the same horizon
+                     (myteam.outlook). The numbers are public; before the deadline the players,
+                     captains, chip and transfers are encrypted with the secret in the dashboard's
+                     settings (`seal`), or left out without one. Nothing about results.
   markets.json       Polymarket odds at each FPL deadline since 2024-25 next to what happened,
                      anytime-scorer odds, how the odds did against our ratings, season markets
   market_history/<season>/gwNN.json
@@ -178,18 +184,69 @@ def _next_gameweek(bs: dict, season: str, model: str) -> dict | None:
     upcoming = next((ev for ev in bs["events"] if ev["is_next"]), None)
     if upcoming is None:
         return None
-    gw, saved = upcoming["id"], archive.predictions(season)
-    names = [f"gw{gw:02d}_{model}"] + sorted(k for k in saved if k.startswith(f"gw{gw:02d}_"))
-    key = next((k for k in names if k in saved), None)
-    if key is None:
+    gw = upcoming["id"]
+    found = archive.saved_forecast(season, gw, model)
+    if found is None:
         return None
-    t = saved[key]
-    gws = sorted(int(c[3:]) for c in t if c.startswith("xp_") and c[3:].isdigit())
+    key, t, gws = found
     keep = ["element", *[f"xp_{g}" for g in gws], "xp_total",
             *[c for c in ("xmins", "p_play", "mkt_anytime", "market_out", "rotation", "rotation_factor",
                           "pts_p10", "pts_p50", "pts_p90", "p_haul", "p_blank") if c in t]]
     return {"gw": gw, "deadline": upcoming["deadline_time"], "model": key.split("_", 1)[1], "gameweeks": gws,
             "players": table(t[keep], digits=3)}
+
+
+SEAL_ITERATIONS = 600_000     # PBKDF2 rounds: ~0.5 s to unlock in a browser, slow to guess offline
+
+
+def seal(obj, secret: str) -> dict:
+    """`obj` as JSON, encrypted with a key derived from `secret` (PBKDF2-SHA256 -> AES-256-GCM), in
+    the form web/src/seal.ts opens with the browser's WebCrypto. Only the secret opens it."""
+    import base64
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+
+    salt, iv = os.urandom(16), os.urandom(12)
+    key = PBKDF2HMAC(hashes.SHA256(), 32, salt, SEAL_ITERATIONS).derive(secret.strip().encode("utf-8"))
+    data = AESGCM(key).encrypt(iv, json.dumps(_scrub(obj), separators=(",", ":")).encode("utf-8"), None)
+    b64 = lambda b: base64.b64encode(b).decode("ascii")   # noqa: E731
+    return {"v": 1, "iterations": SEAL_ITERATIONS, "salt": b64(salt), "iv": b64(iv), "data": b64(data)}
+
+
+def _my_team(bs: dict, season: str, model: str) -> dict | None:
+    """My Team (myteam.py): the team for the gameweek in progress (until FPL marks it finished)
+    or the next one, and its outlook from the forecast saved for it. None without a team id in
+    the dashboard's settings, a team, or a forecast.
+
+    The numbers (forecast, likely range, horizon total, what the transfers are worth) are public.
+    Before the deadline the rest (the players, XI, captains, chip, transfers) is `sealed` with
+    the secret in the dashboard's settings, or left out without one. After the deadline FPL shows
+    the team anyway, so it's `private` in plain text."""
+    from xpfpl import myteam
+    team_id, gw = myteam.saved_team_id(), myteam.showing_gameweek(bs)
+    if team_id is None or gw is None:
+        return None
+    found = myteam.saved_forecast(season, gw, model)
+    team = myteam.shown_team(team_id, bs) if found else None
+    if team is None:
+        return None
+    players, gws, draws, used = found
+    out = myteam.outlook(team, players, gws, draws)
+    locked = myteam.deadline_passed(bs, gw)
+    public = {
+        "gw": gw, "deadline": next(e["deadline_time"] for e in bs["events"] if e["id"] == gw), "locked": locked,
+        "model": used, "team_name": api.entry(team_id)["name"], "gameweeks": out["gameweeks"], "sims": out["sims"],
+        "weeks": [{k: w[k] for k in ("gw", "xp", "points", "target", "p_target") if k in w} for w in out["weeks"]],
+        "total": {"xp": out["total"]["xp"], "points": out["total"]["points"]}, "against": out["against"],
+    }
+    private = {"source": team["source"], "saved_at": team["saved_at"], "chip": team["chip"],
+               "transfers": team["transfers"], "hits": team["hits"], "bank": team["bank"],
+               "weeks": out["weeks"], "captains": out["captains"], "players": table(out["players"], digits=3)}
+    secret = myteam.site_secret()
+    if locked:
+        return public | {"private": private, "sealed": None}
+    return public | {"private": None, "sealed": seal(private, secret) if secret else None}
 
 
 def _markets(matches: pd.DataFrame) -> dict | None:
@@ -314,6 +371,11 @@ def export(model: str = config.MODEL, out: Path = config.SITE_DATA_DIR) -> list[
     ahead = _next_gameweek(bs, season, model)
     if ahead:
         written.append(_write(ahead, out / "next.json"))
+    mine = _my_team(bs, season, model)
+    if mine:
+        written.append(_write(mine, out / "myteam.json"))
+    else:                                    # don't leave a finished week's plan on the site
+        (out / "myteam.json").unlink(missing_ok=True)
     market = _markets(matches)
     if market:
         written.append(_write(market, out / "markets.json"))

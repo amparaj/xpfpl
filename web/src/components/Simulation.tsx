@@ -2,7 +2,7 @@
 // odds, the chips' chances, and the check that the simulated chances came true.
 
 import * as Plot from "@observablehq/plot";
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { color } from "../colors";
 import type { ChipOdds, Row, Simulation, Spread } from "../data";
 import { pct, pts } from "../format";
@@ -16,13 +16,18 @@ export const band = (lo: number | null | undefined, hi: number | null | undefine
   lo == null || hi == null ? "–" : `${Math.round(lo)}–${Math.round(hi)}`;
 
 /** Histogram of a team's simulated gameweek scores, with the forecast (and, once played, the score) marked. */
-export function ScoreChart({ spread, forecast, actual, gw }: { spread: Spread; forecast?: number | null; actual?: number | null; gw: number }) {
+export function ScoreChart({ spread, forecast, actual, gw, label }: {
+  spread: Spread; forecast?: number | null; actual?: number | null; gw: number;
+  /** The x axis (default "Simulated GW<gw> points"). */
+  label?: string;
+}) {
   const h = spread.histogram;
-  const bins = h ? h.shares.map((share, i) => ({ x1: h.start + i * h.width, x2: h.start + (i + 1) * h.width, share })) : [];
+  // Memoised, so a re-render of the page doesn't redraw the chart.
+  const bins = useMemo(() => h ? h.shares.map((share, i) => ({ x1: h.start + i * h.width, x2: h.start + (i + 1) * h.width, share })) : [], [h]);
   const make = useCallback((width: number) => Plot.plot({
     ...plotDefaults(width),
     height: 200,
-    x: { label: `Simulated GW${gw} points`, grid: false },
+    x: { label: label ?? `Simulated GW${gw} points`, grid: false },
     y: { label: "Share of simulations", grid: true, tickFormat: "%" },
     marks: [
       Plot.rectY(bins, { x1: "x1", x2: "x2", y: "share", fill: color.s1, fillOpacity: 0.8, inset: 1 }),
@@ -32,14 +37,14 @@ export function ScoreChart({ spread, forecast, actual, gw }: { spread: Spread; f
       Plot.tip(bins, Plot.pointerX({ x: (b: Row) => (b.x1 + b.x2) / 2, y: "share",
         title: (b: Row) => `${b.x1}–${b.x2 - 1} points: ${pct(b.share, 1)} of simulations` })),
     ],
-  }), [bins, forecast, actual, gw]); // eslint-disable-line react-hooks/exhaustive-deps
+  }), [bins, forecast, actual, gw, label]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!h) return null;
   return (
     <>
       <Legend items={[{ label: "Simulated scores", color: color.s1 },
                       ...(forecast != null ? [{ label: "Forecast (xP)", color: color.s3, kind: "line" as const }] : []),
                       ...(actual != null ? [{ label: "Scored", color: color.s2, kind: "line" as const }] : [])]} />
-      <Chart make={make} height={200} ariaLabel={`Distribution of the team's simulated GW${gw} score`} />
+      <Chart make={make} height={200} ariaLabel={label ? `Distribution: ${label}` : `Distribution of the team's simulated GW${gw} score`} />
     </>
   );
 }

@@ -229,6 +229,17 @@ def predictions(season: str) -> dict[str, pd.DataFrame]:
     return {p.stem: pd.read_parquet(p) for p in sorted((PREDICTIONS / season).glob("gw*.parquet"))}
 
 
+def saved_forecast(season: str, gw: int, model: str) -> tuple[str, pd.DataFrame, list[int]] | None:
+    """(key, table, gameweeks) of the forecast saved for `gw`: `model`'s if saved, otherwise any model's."""
+    folder = PREDICTIONS / season
+    names = [f"gw{gw:02d}_{model}"] + sorted(p.stem for p in folder.glob(f"gw{gw:02d}_*.parquet"))
+    key = next((k for k in names if (folder / f"{k}.parquet").exists()), None)
+    if key is None:
+        return None
+    table = pd.read_parquet(folder / f"{key}.parquet")
+    return key, table, sorted(int(c[3:]) for c in table if c.startswith("xp_") and c[3:].isdigit())
+
+
 # ---------------------------------------------------------------- Polymarket
 
 def _trim(event: dict) -> dict:
