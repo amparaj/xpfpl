@@ -125,19 +125,23 @@ function Movement({ matches, end, histories }: { matches: MatchView[]; end: (m: 
 function SeasonMarkets({ snapshot, live, fetched }: { snapshot: MarketsFile["outrights"]; live: Outright[] | null | undefined; fetched?: string }) {
   const saved = useMemo(() => rows<Outright>(snapshot as never), [snapshot]);
   const list = live && live.length ? live : saved;
-  const events = useMemo(() => [...new Set(list.map((o) => o.event))].sort(), [list]);
+  // Premier League markets only: not the EFL Championship's promotion race or novelty markets.
+  const events = useMemo(() => [...new Set(list.map((o) => o.event))]
+    .filter((e) => /\b(EPL|Premier League)\b/i.test(e) && !/\bEFL\b/i.test(e)).sort(), [list]);
   const [event, setEvent] = useState<string>("");
   // The title race: "champion" as a word, not "EFL Championship" or "Champions League".
   const chosen = events.includes(event) ? event : events.find((e) => /\bchampion\b/i.test(e)) ?? events[0];
   // An outcome nobody has traded sits at its opening price (often 50%): that isn't odds.
+  // A yes/no market ("Will Manchester City be relegated...?") has one outcome named like the question: call it "Yes".
   const outcomes = list.filter((o) => o.event === chosen && !Number.isNaN(o.probability) && o.volume > 0)
+    .map((o) => (o.outcome === o.event ? { ...o, outcome: "Yes" } : o))
     .sort((a, b) => b.probability - a.probability).slice(0, 12);
   const make = useCallback((width: number) => Plot.plot({
     ...plotDefaults(width),
     marginLeft: 150,
     height: outcomes.length * 26 + 40,
     x: { label: "Chance", tickFormat: "%", domain: [0, Math.max(0.1, ...outcomes.map((o) => o.probability))], grid: true },
-    y: { label: null, domain: outcomes.map((o) => o.outcome) },
+    y: { label: null, domain: outcomes.map((o) => o.outcome), tickFormat: (o: string) => (o.length > 22 ? `${o.slice(0, 21)}…` : o) },
     marks: [
       Plot.barX(outcomes, { x: "probability", y: "outcome", fill: color.s1, rx2: 4, insetTop: 4, insetBottom: 4 }),
       Plot.text(outcomes, { x: "probability", y: "outcome", text: (o: Outright) => pct(o.probability), dx: 6, textAnchor: "start", fill: color.ink2 }),
@@ -145,7 +149,7 @@ function SeasonMarkets({ snapshot, live, fetched }: { snapshot: MarketsFile["out
     ],
   }), [outcomes]);
   if (live === undefined && !saved.length) return <Loading />;
-  if (!list.length) return <p className="muted">No season markets available.</p>;
+  if (!events.length) return <p className="muted">No season markets available.</p>;
   return (
     <div className="card">
       <div className="toolbar">

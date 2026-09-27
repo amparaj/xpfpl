@@ -139,8 +139,8 @@ export default function Gameweeks() {
               note: `average miss in points, ${scored.length} players who played` },
             ...(forecast.length ? [{ label: "Forecast vs scored", value: `${int(xpSum)} → ${int(pointsSum)}`,
               note: `all ${forecast.length} players with a forecast, played or not: ${signed(pointsSum - xpSum, 0)} points` }] : []),
-            ...(teamWeek?.forecast != null ? [{ label: "The Model's Team", value: `${pts(teamWeek.forecast)} → ${teamWeek.gross}`,
-              note: <>forecast → scored (before hits); <a href="#model-team">see the team</a></> }] : []),
+            ...(teamWeek?.forecast != null ? [{ label: "The Model's Team", value: `Scored ${teamWeek.gross ?? "–"}`,
+              note: <>against a forecast of {int(teamWeek.forecast)} (before hits); <a href="#model-team">see the team</a></> }] : []),
           ]} />
 
           <h3>Results</h3>

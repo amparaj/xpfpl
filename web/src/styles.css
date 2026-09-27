@@ -195,7 +195,28 @@ tr.selected { background: var(--selected) !important; }
 
 .chart { width: 100%; }
 .chart svg { display: block; }
+/* Plot draws the tip box in --plot-background (white by default): match the page, or dark mode's
+   light text sits on a white box and the tip looks empty. */
+.chart svg { --plot-background: var(--surface); }
 .chart [aria-label="tip"] { color: var(--ink); }
+
+/* ---------------------------------------------------------------- My Team: transfers and settings */
+
+.transfers { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 6px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); }
+.transfer {
+  display: grid; grid-template-columns: 34px minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 8px;
+  background: var(--page); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; font-size: 14px;
+}
+.transfer-pos { font-size: 11px; color: var(--muted); }
+.transfer-out, .transfer-in { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.transfer-out { color: var(--ink-2); }
+.transfer-in { font-weight: 600; }
+.transfer-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.transfer-arrow { color: var(--muted); }
+.settings { margin: 0; display: grid; gap: 8px 16px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 170px), 1fr)); }
+.settings dt { font-size: 12px; color: var(--muted); }
+.settings dd { margin: 0; font-size: 14px; }
 
 /* ---------------------------------------------------------------- fixtures */
 

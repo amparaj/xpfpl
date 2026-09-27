@@ -80,7 +80,8 @@ def test_shown_team_prefers_the_saved_plan_else_carries_last_week(tmp_path, monk
 
 def test_shown_team_after_the_deadline_is_the_team_locked_into_fpl(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "MY_TEAM_DIR", tmp_path)
-    myteam.save_plan("2026-27", 6, lineup=LINEUP, bench=BENCH, captain=7, vice=8)   # changed in FPL afterwards
+    myteam.save_plan("2026-27", 6, lineup=LINEUP, bench=BENCH, captain=7, vice=8,   # changed in FPL afterwards
+                     settings={"horizon": 3, "must_have": [16]})
     locked_order = LINEUP[:-1] + [16] + [15, 6, 11, 13]
     picks = {6: _picks(locked_order, 16, 12, chip="3xc", cost=4), 5: _picks(LINEUP + BENCH, 12, 13)}
     monkeypatch.setattr(myteam.api, "entry_picks", lambda team_id, gw: picks[gw])
@@ -91,6 +92,7 @@ def test_shown_team_after_the_deadline_is_the_team_locked_into_fpl(tmp_path, mon
     assert (team["captain"], team["vice"], team["chip"], team["hits"]) == (16, 12, "3xc", 1)
     assert team["transfers"] == [{"out": 14, "in": 16}]
     assert team["before"] == sorted(LINEUP + BENCH)
+    assert team["settings"] == {"horizon": 3, "must_have": [16]}     # what the last save was planned with
 
 
 def test_outlook_scores_the_picked_week_then_the_best_xi():

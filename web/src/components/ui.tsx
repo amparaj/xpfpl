@@ -105,6 +105,8 @@ export function plotDefaults(width: number): Plot.PlotOptions {
     width,
     style: { fontFamily: "inherit", fontSize: "12px", background: "transparent", color: "var(--muted)", overflow: "visible" },
     marginLeft: 44,
+    // Room between the tick labels and the axis label under them (Plot puts it at marginBottom - 3).
+    marginBottom: 42,
   };
 }
 

@@ -109,9 +109,15 @@ export interface MyWeek extends MyWeekNumbers {
 }
 /** The part of My Team that's hidden before the deadline. `source`: "saved" (picked in the dashboard),
  * "carried" (nothing saved: last week's team) or "locked" (the deadline has passed: the team in FPL). */
+export interface PlanSettings {
+  horizon: number; model: string; chip: string | null; free_transfers: number; free_transfers_estimated: boolean;
+  bank: number; max_hits: number; plan_transfers: boolean; value_prices: boolean; must_have: number[]; banned: number[];
+}
 export interface MyTeamPrivate {
   source: "saved" | "carried" | "locked"; saved_at: string | null; chip: string | null;
   transfers: { out: number; in: number }[]; hits: number; bank: number | null;
+  /** The Plan Ahead settings the team was last saved with (myteam.save_plan); null for older saves. */
+  settings?: PlanSettings | null;
   weeks: MyWeek[]; captains: CaptainOdds[];
   /** The squad: xP per gameweek (`xp_<gw>`, `xp_total`) and this gameweek's simulated range. */
   players: Columns;

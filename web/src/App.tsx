@@ -59,7 +59,7 @@ export default function App() {
             <div className="status">
               <span>{site.meta.season} season · results up to Gameweek {Math.max(0, ...site.meta.played)} · data updated {day(site.meta.generated)}</span>
               {site.meta.next_deadline && (
-                <span>Next: Gameweek {site.meta.next_gw} deadline <strong>{when(site.meta.next_deadline)}</strong> (your local time)</span>
+                <span>Next: Gameweek {site.meta.next_gw} deadline <strong>{when(site.meta.next_deadline)}</strong></span>
               )}
             </div>
           )}
