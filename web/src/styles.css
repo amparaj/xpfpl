@@ -120,12 +120,18 @@ footer { max-width: 1180px; margin: 0 auto; padding: 0 16px 40px; color: var(--m
 .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 12px; }
 .toolbar { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin: 4px 0 8px; }
 .toolbar label { font-size: 13px; color: var(--ink-2); display: flex; align-items: center; gap: 6px; }
-select, input[type="search"] {
+select, input[type="search"], input[type="password"] {
   font: inherit; font-size: 14px; color: var(--ink); background: var(--surface);
   border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px;
 }
 select { max-width: 100%; text-overflow: ellipsis; }   /* long option names (season markets) on a phone */
-input[type="search"] { min-width: 180px; }
+input[type="search"], input[type="password"] { min-width: 180px; max-width: 100%; }
+form.toolbar button[type="submit"] {
+  font-size: 14px; border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px;
+  background: var(--selected); color: var(--ink); font-weight: 600; cursor: pointer;
+}
+form.toolbar button[type="submit"]:disabled { opacity: 0.55; cursor: default; }
+button.link { background: none; border: 0; padding: 0; color: var(--s1); text-decoration: underline; cursor: pointer; font-size: 13px; }
 
 .segmented { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--surface); }
 .segmented button { border: 0; background: transparent; padding: 6px 12px; cursor: pointer; font-size: 14px; color: var(--ink-2); }

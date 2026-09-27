@@ -1,5 +1,7 @@
 // Loading the JSON that `xpfpl export` writes to public/data/, and the shapes it has.
 
+import type { Sealed } from "./seal";
+
 /** A column-wise table as exported: {"col": [values...]}. */
 export type Columns = Record<string, unknown[]>;
 export type Row = Record<string, any>;
@@ -97,6 +99,36 @@ export interface ModelWeek {
   simulation?: Simulation | null;
 }
 export interface ModelTeam { model: string; gameweeks: ModelWeek[]; next: ModelWeek | null }
+/** One gameweek of My Team's outlook as anyone sees it: the forecast (xP counted the way the week is
+ * scored) and the simulated score before transfer hits. */
+export interface MyWeekNumbers { gw: number; xp: number; points: Spread | null; target?: number; p_target?: number }
+/** ...and with the team (myteam.outlook): the first week as picked, later ones the same 15 with
+ * their best XI and captain. */
+export interface MyWeek extends MyWeekNumbers {
+  lineup: number[]; bench: number[]; captain: number; vice: number; chip: string | null; bench_xp: number;
+}
+/** The part of My Team that's hidden before the deadline. `source`: "saved" (picked in the dashboard),
+ * "carried" (nothing saved: last week's team) or "locked" (the deadline has passed: the team in FPL). */
+export interface MyTeamPrivate {
+  source: "saved" | "carried" | "locked"; saved_at: string | null; chip: string | null;
+  transfers: { out: number; in: number }[]; hits: number; bank: number | null;
+  weeks: MyWeek[]; captains: CaptainOdds[];
+  /** The squad: xP per gameweek (`xp_<gw>`, `xp_total`) and this gameweek's simulated range. */
+  players: Columns;
+}
+/** My Team (export._my_team): the team for the gameweek in progress, until it's finished, or the next
+ * one. The numbers are public. The team itself is `private` once the deadline has passed; before it,
+ * `sealed` (encrypted: seal.ts opens it with the secret word) or absent. */
+export interface MyTeam {
+  gw: number; deadline: string; locked: boolean; model: string; team_name: string; gameweeks: number[];
+  sims: number | null; weeks: MyWeekNumbers[];
+  /** Every week added up, after any transfer hits. */
+  total: { xp: number; points: Spread | null };
+  /** The team against keeping last week's squad (its best XI and captain each week), in the same simulated weeks. */
+  against: { xp: number; p_better?: number; p_tie?: number; mean?: number; p10?: number; p50?: number; p90?: number } | null;
+  private: MyTeamPrivate | null;
+  sealed: Sealed | null;
+}
 /** The forecast saved for the next gameweek: xP per player for each gameweek of its horizon. */
 export interface NextGw { gw: number; deadline: string; model: string; gameweeks: number[]; players: Columns }
 export interface Markets {

@@ -7,6 +7,7 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from html import escape
+from types import SimpleNamespace
 
 import altair as alt
 import numpy as np
@@ -14,7 +15,7 @@ import pandas as pd
 import requests
 import streamlit as st
 
-from xpfpl import chips, config, guide, market_view, models, review, simulate
+from xpfpl import chips, config, guide, market_view, models, myteam, review, simulate
 from xpfpl.data import api, cups
 from xpfpl.data.history import load_matches
 from xpfpl.myteam import load_my_team
@@ -22,7 +23,7 @@ from xpfpl.optimise import solve
 from xpfpl.predict import predict_upcoming
 from xpfpl.style import CLUB_COLOURS, CLUB_TEXT, DECIMAL, PERCENT, POINTS
 
-SETTINGS_PATH = config.DATA_DIR / "app_settings.json"  # data/ is gitignored, so your team id stays local
+SETTINGS_PATH = config.APP_SETTINGS_PATH  # data/ is gitignored, so your team id stays local
 SERIES = "#2a78d6"   # one hue for single-series charts
 MUTED = "#8a8984"    # reference lines (GW average)
 FORECAST = "#d9822b"  # the model's forecast, next to the points actually scored
@@ -216,6 +217,79 @@ def show_monte_carlo(players: pd.DataFrame, plan, gw: int, gameweeks: tuple[int,
         c[1].caption("Nothing to compare: no alternative plan differs from this one.")
 
 
+def save_team_panel(me, plan, players: pd.DataFrame, gw: int, chip: str | None, season: str, model: str) -> None:
+    """Plan Ahead's "Save as my team": this plan's GW team, with the captain and vice open to
+    change, to data/myteam/ (myteam.save_plan). The My Team tab and the website forecast it."""
+    xi, name = plan.lineups[gw], players["name"].to_dict()
+    st.markdown(f"**Save as my GW{gw} team**")
+    c = st.columns([1.2, 1.2, 1], vertical_alignment="bottom")
+    captain = c[0].selectbox("Captain", xi, index=xi.index(plan.captains[gw]), format_func=name.get)
+    vices = [p for p in xi if p != captain]
+    vice_default = plan.vice_captains[gw] if plan.vice_captains[gw] != captain else plan.captains[gw]
+    vice = c[1].selectbox("Vice-captain", vices, index=vices.index(vice_default), format_func=name.get)
+    if c[2].button(f"Save as my GW{gw} team", type="primary", width="stretch"):
+        position = players["position"].to_dict()
+        myteam.save_plan(season, gw, lineup=xi, bench=plan.bench[gw], captain=captain, vice=vice, chip=chip,
+                         transfers_out=sorted(plan.transfers_out, key=position.get),
+                         transfers_in=sorted(plan.transfers_in, key=position.get),
+                         hits=0 if chip in ("wildcard", "freehit") else plan.hits,
+                         bank=me.bank if chip == "freehit" else plan.budget_left, before=list(me.squad), model=model)
+        st.toast(f"Saved as your GW{gw} team. See the My Team tab.")
+    shown = myteam.showing_gameweek(live_data()[0])
+    later = f" My Team shows GW{shown} until it's finished, then this one." if shown != gw else ""
+    saved = myteam.saved_plan(season, gw)
+    if saved is None:
+        st.caption(f"Nothing saved for GW{gw} yet: My Team will show your GW{gw - 1} team carried over." + later)
+        return
+    at = datetime.fromisoformat(saved["saved_at"]).astimezone()
+    same = (saved["lineup"] == [int(p) for p in xi] and saved["bench"] == [int(p) for p in plan.bench[gw]]
+            and (saved["captain"], saved["vice"]) == (captain, vice) and saved["chip"] == chip)
+    moves = len(saved["transfers"])
+    st.caption(f"Saved {at:%a %d %b %H:%M}: captain {name.get(saved['captain'], saved['captain'])}, "
+               + (f"{moves} transfer{'s' if moves != 1 else ''}" if moves else "no transfers")
+               + (". This plan matches it." if same else ". **This plan differs from it**: save again to replace it.")
+               + later)
+
+
+def file_stamp(path) -> float:
+    return path.stat().st_mtime if path.exists() else 0.0
+
+
+@st.cache_data(ttl=300, show_spinner="Loading your team...")
+def shown_team(team_id: int, gw: int, saved_stamp: float) -> dict | None:
+    """My Team's team (myteam.shown_team): the saved one, else last week's; the locked-in one
+    after the deadline. `saved_stamp` is the save file's mtime, so saving again refreshes it."""
+    bs, _ = live_data()
+    return myteam.shown_team(team_id, bs)
+
+
+@st.cache_data(show_spinner="Loading the forecast...")
+def my_forecast(season: str, gw: int, model: str, forecast_stamp: float):
+    """The forecast saved for `gw` and its simulations (myteam.saved_forecast), as the website
+    reads them. `forecast_stamp`: the saved forecast's mtime (each `predict` run rewrites it)."""
+    return myteam.saved_forecast(season, gw, model)
+
+
+@st.cache_data(show_spinner="Simulating your team...")
+def team_outlook(team: dict, season: str, gw: int, model: str, forecast_stamp: float) -> dict:
+    players, gameweeks, draws, _ = my_forecast(season, gw, model, forecast_stamp)
+    return myteam.outlook(team, players, gameweeks, draws)
+
+
+def spread_chart(spread: dict, xp: float, label: str) -> alt.Chart:
+    """A simulate.spread histogram as bars, the xP as an orange rule."""
+    h = spread["histogram"]
+    bins = pd.DataFrame({"lo": [h["start"] + i * h["width"] for i in range(len(h["shares"]))], "share": h["shares"]})
+    bins["hi"] = bins["lo"] + h["width"]
+    bars = alt.Chart(bins).mark_bar(color=SERIES, opacity=0.85).encode(
+        x=alt.X("lo:Q", title=label), x2="hi:Q",
+        y=alt.Y("share:Q", title="Share of simulations", axis=alt.Axis(format="%")),
+        tooltip=[alt.Tooltip("lo:Q", title="From"), alt.Tooltip("share:Q", title="Share", format=".1%")])
+    rule = alt.Chart(pd.DataFrame({"xp": [xp]})).mark_rule(color=FORECAST, strokeWidth=2).encode(
+        x="xp:Q", tooltip=[alt.Tooltip("xp:Q", title="xP", format=".2f")])
+    return (bars + rule).properties(height=220)
+
+
 @st.cache_data(ttl=300, show_spinner="Loading gameweek...")
 def gw_review(team_id: int, gw: int):
     bs, _ = live_data()
@@ -395,6 +469,13 @@ with st.sidebar:
                               help="The number in the URL of your FPL Points page.")
     if team_id and team_id != settings.get("team_id"):
         save_settings(team_id=int(team_id))
+    secret = st.text_input("Website secret word", value=settings.get("my_team_secret", ""), type="password",
+                           help="Unlocks your players, captain, chip and transfers on the website's My Team page "
+                                "before the deadline. Without it the page shows only the numbers (forecast, likely "
+                                "range, horizon total, what the transfers are worth). Case-sensitive; a few words "
+                                "are safer than one. Takes effect the next time you publish.")
+    if secret.strip() != settings.get("my_team_secret", ""):
+        save_settings(my_team_secret=secret.strip())
 
     data_gw = 0
     if config.MATCHES_PATH.exists():
@@ -469,8 +550,8 @@ if not config.MATCHES_PATH.exists():
     st.stop()
 
 # The Guide's weekly routine, left to right: look back at the week, research, plan; then the season.
-tab_guide, tab_review, tab_players, tab_markets, tab_plan, tab_season = st.tabs(
-    ["Guide", "Gameweek Review", "Players & Fixtures", "Markets", "Plan Ahead", "My Season"])
+tab_guide, tab_review, tab_players, tab_markets, tab_plan, tab_myteam, tab_season = st.tabs(
+    ["Guide", "Gameweek Review", "Players & Fixtures", "Markets", "Plan Ahead", "My Team", "My Season"])
 
 with tab_guide:
     guide.render()
@@ -650,6 +731,7 @@ with tab_plan:
                   else "Later weeks assume the same squad."))
     show_pitch(players, plan, view_gw, labels, fixture_difficulty(fx, gameweeks),
                midweek_badges(season, tuple(gameweeks)))
+    save_team_panel(me, plan, players, gw, active, season, model)
 
     draws = sim_draws(horizon, model, stamp())
     if draws is None:
@@ -711,6 +793,147 @@ with tab_plan:
                        "Boost only): how often the chip's extra points - the captain's points once more, or the "
                        "bench's - reach the threshold, and how often this week beats every later week of the "
                        "plan in the same chip window.")
+
+
+# ---------------------------------------------------------------- my team
+
+with tab_myteam:
+    show_gw = myteam.showing_gameweek(bs)
+    forecast_file = config.PREDICTIONS_DIR / season / f"gw{show_gw or 0:02d}_{config.MODEL}.csv"
+    found = my_forecast(season, show_gw, config.MODEL, file_stamp(forecast_file)) if show_gw else None
+    team = shown_team(int(team_id), show_gw, file_stamp(myteam.plan_path(season, show_gw))) if found else None
+    if show_gw is None:
+        st.info("The season is over.")
+    elif found is None:
+        st.info(f"No forecast saved for GW{show_gw} yet: open **Plan Ahead** (or run `xpfpl predict`) first.")
+    elif team is None:
+        st.info(f"No team for GW{show_gw} yet. Pick one in **Plan Ahead** and press **Save as my GW{show_gw} team**.")
+    else:
+        players, gameweeks, _, _ = found
+        out = team_outlook(team, season, show_gw, config.MODEL, file_stamp(forecast_file))
+        weeks = {w["gw"]: w for w in out["weeks"]}
+        first, name = weeks[show_gw], players["name"].to_dict()
+        span = f"GW{gameweeks[0]}-{gameweeks[-1]}"
+        st.subheader(f"{my_team(int(team_id)).name}: GW{show_gw}")
+        if team["source"] == "saved":
+            at = datetime.fromisoformat(team["saved_at"]).astimezone()
+            moves = ", ".join(f"{name.get(t['out'])} -> {name.get(t['in'])}" for t in team["transfers"])
+            st.caption(f"Saved from Plan Ahead {at:%a %d %b %H:%M}. "
+                       + (f"Transfers: {moves}" + (f" (-{config.HIT_COST * team['hits']})" if team["hits"] else "")
+                          + ". " if moves else "No transfers. ")
+                       + (f"Chip: {chips.CHIP_NAMES[team['chip']]}. " if team["chip"] else "")
+                       + "Save again there to replace it.")
+        elif team["source"] == "locked":
+            moves = ", ".join(f"{name.get(t['out'])} -> {name.get(t['in'])}" for t in team["transfers"])
+            st.info(f"GW{show_gw}'s deadline has passed, so this is the team locked into FPL"
+                    + (f" (transfers: {moves}" + (f", -{config.HIT_COST * team['hits']}" if team["hits"] else "") + ")"
+                       if moves else "")
+                    + (f", with {chips.CHIP_NAMES[team['chip']]}" if team["chip"] else "")
+                    + f", and the forecast saved before it. It stays until FPL marks GW{show_gw} finished, then "
+                    f"moves on to GW{show_gw + 1}.")
+        else:
+            st.info(f"No team saved for GW{show_gw} yet, so this is your GW{show_gw - 1} team carried over: same XI, "
+                    f"captain and bench, no transfers. Pick one in **Plan Ahead** and press "
+                    f"**Save as my GW{show_gw} team**.")
+
+        m = st.columns(5)
+        m[0].metric(f"GW{show_gw} xP", f"{first['xp']:.2f}", help="The XI's expected points, captain doubled "
+                    "(tripled with Triple Captain, bench included with Bench Boost), before transfer penalties.")
+        if first["points"]:
+            q = first["points"]
+            m[1].metric("Likely range", f"{q['p10']:.0f}-{q['p90']:.0f}", help="The middle 80% of simulated scores: "
+                        "one week in ten below the first number, one in ten above the second.")
+            m[2].metric("Median", f"{q['p50']:.0f}")
+            m[3].metric(f"Chance of {first['target']}+", f"{first['p_target']:.0%}")
+        m[4].metric(f"{span} xP" if len(gameweeks) > 1 else "xP after penalties", f"{out['total']['xp']:.2f}",
+                    help="Every week of the horizon added up, after transfer penalties. Later weeks keep the "
+                         "same 15 with their best XI and captain each week.")
+        if out["against"]:
+            a = out["against"]
+            st.markdown(f"**The transfers**: {a['xp']:+.2f} xP over {span} after penalties, against keeping your "
+                        f"GW{show_gw - 1} squad (its best XI and captain each week)"
+                        + (f"; ahead in {a['p_better']:.0%} of the same simulated weeks (middle 80%: "
+                           f"{a['p10']:+.0f} to {a['p90']:+.0f})." if "p_better" in a else "."))
+
+        view = st.segmented_control("Show team for", [f"GW{g}" for g in gameweeks], default=f"GW{show_gw}",
+                                    key="myteam_week")
+        view = int((view or f"GW{show_gw}")[2:])
+        w = weeks[view]
+        shape = "-".join(str(sum(players.at[p, "position"] == k for p in w["lineup"])) for k in (2, 3, 4))
+        st.caption(f"Formation {shape} · xP {w['xp']:.2f} · bench xP {w['bench_xp']:.2f}. "
+                   + ({"saved": "As saved.", "locked": "As locked in.", "carried": "As played last week."}[team["source"]]
+                      if view == show_gw else
+                      f"The same 15{' (the squad before the Free Hit)' if team['chip'] == 'freehit' else ''}, "
+                      "with their best XI, bench order and captain for this week."))
+        show_pitch(players, SimpleNamespace(lineups={view: w["lineup"]}, bench={view: w["bench"]},
+                                            captains={view: w["captain"]}, vice_captains={view: w["vice"]}),
+                   view, fixture_labels(bs, fx, gameweeks), fixture_difficulty(fx, gameweeks),
+                   midweek_badges(season, tuple(gameweeks)))
+
+        if out["sims"] is None:
+            st.caption("No Monte Carlo for this forecast (config.SIM_RUNS is 0, or the saved simulations come "
+                       "from another run): re-run `xpfpl predict` to see the ranges.")
+        else:
+            st.markdown(f"**How it could go** ({out['sims']:,} simulated gameweeks)")
+            c = st.columns(2)
+            if w["points"]:
+                c[0].altair_chart(spread_chart(w["points"], w["xp"], f"Simulated GW{view} points"), width="stretch")
+            if out["total"]["points"] and len(gameweeks) > 1:
+                c[1].altair_chart(spread_chart(out["total"]["points"], out["total"]["xp"],
+                                               f"Simulated {span} total, after penalties"), width="stretch")
+            st.dataframe(pd.DataFrame([{
+                "GW": r["gw"], "xP": r["xp"],
+                "Likely range": f"{r['points']['p10']:.0f}-{r['points']['p90']:.0f}" if r["points"] else "-",
+                "Median": r["points"]["p50"] if r["points"] else None,
+                "Average": r["points"]["mean"] if r["points"] else None,
+                "Captain": name.get(r["captain"]), "Bench xP": r["bench_xp"],
+            } for r in out["weeks"]]), hide_index=True, width="stretch",
+                column_config={**{k: st.column_config.NumberColumn(format=POINTS) for k in ("xP", "Average", "Bench xP")},
+                               "Median": st.column_config.NumberColumn(format="%.0f")})
+            st.caption("Orange: the xP. Each simulated week plays the auto-subs, the vice-captain and the chip, so "
+                       "the average sits a little above the xP. Weekly scores are before transfer penalties; the "
+                       "total is after.")
+            if out["captains"]:
+                cap = pd.DataFrame(out["captains"])
+                st.markdown(f"**Captain options, GW{show_gw}**")
+                st.dataframe(pd.DataFrame({
+                    "Player": [name.get(e) + (" (C)" if e == first["captain"] else "") for e in cap["element"]],
+                    "Average": cap["mean"],
+                    "Middle 80%": [f"{a:.0f}-{b:.0f}" for a, b in zip(cap["pts_p10"], cap["pts_p90"])],
+                    "10+": cap["p_haul"], "2 or fewer": cap["p_blank"], "Best pick": cap["p_best"],
+                }), hide_index=True, width="stretch",
+                    column_config={"Average": st.column_config.NumberColumn(format=POINTS),
+                                   **{k: st.column_config.NumberColumn(format=PERCENT)
+                                      for k in ("10+", "2 or fewer", "Best pick")}})
+                st.caption("His own points, before the armband. Best pick: how often he outscores every other "
+                           "option in the same simulated week.")
+
+        st.markdown("**The squad**")
+        squad = out["players"].set_index("element")
+        grid = pd.DataFrame({"Player": players.loc[squad.index, "name"],
+                             "Pos": players.loc[squad.index, "position"].map(config.POSITIONS),
+                             "Team": players.loc[squad.index, "team_name"]})
+        for g in gameweeks:
+            grid[f"GW{g}"] = squad[f"xp_{g}"]
+        grid["Total"] = squad["xp_total"]
+        for col, label in (("pts_p10", "low"), ("pts_p90", "high"), ("p_haul", "10+"), ("p_blank", "2 or fewer"),
+                           ("p_play", "plays")):
+            if col in squad:
+                grid[f"GW{show_gw} {label}"] = squad[col]
+        grid = grid.sort_values(["Pos", "Total"], ascending=[True, False],
+                                key=lambda s: s.map({"GKP": 1, "DEF": 2, "MID": 3, "FWD": 4}) if s.name == "Pos" else s)
+        st.dataframe(style_team_column(grid, players.loc[grid.index, "team"]), hide_index=True, width="stretch",
+                     column_config={**{c: st.column_config.NumberColumn(format=POINTS)
+                                       for c in grid.columns if c.startswith("GW") and c[2:].isdigit() or c == "Total"},
+                                    **{c: st.column_config.NumberColumn(format=PERCENT)
+                                       for c in grid.columns if c.endswith(("10+", "2 or fewer", "plays"))},
+                                    **{c: st.column_config.NumberColumn(format="%.0f")
+                                       for c in grid.columns if c.endswith(("low", "high"))}})
+        st.caption(f"GW{show_gw} low/high: the 10th and 90th percentile of his simulated points. xP: the "
+                   f"`{config.MODEL}` forecast saved for GW{show_gw} (the last one before the deadline, once it has "
+                   "passed), whatever Plan Ahead is set to, so it matches the website. Once FPL marks the gameweek "
+                   "finished this tab moves on to the next one; how the week went is in **Gameweek Review** and "
+                   "**My Season**.")
 
 
 # ---------------------------------------------------------------- gameweek review

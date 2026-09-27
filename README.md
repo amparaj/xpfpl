@@ -81,7 +81,15 @@ Everything in one place, no command line needed. The tabs follow the Guide's wee
   Boost), override free transfers, bank and hits, and force or ban players. The pitch marks a
   player whose club plays midweek that week. Under the pitch, the Monte Carlo: the team's likely
   score, each captain option's odds, how often the move beats rolling the transfer or the next-best
-  move, and each chip's chance of clearing its threshold.
+  move, and each chip's chance of clearing its threshold. **Save as my GW team** (captain and vice
+  can be changed first) records the plan's team for the week in `data/myteam/<season>/gwNN.json`;
+  saving again replaces it.
+- **My Team**: the team you're planning for the next gameweek (the saved one, else last week's
+  carried over; from the deadline, the team you locked into FPL) and how it could do over the
+  horizon: xP and the simulated score each week (later weeks keep the same 15 with their best XI
+  and captain), the captain options' odds, and the transfers against keeping last week's squad in
+  the same simulated weeks. It never shows results: it stays on a gameweek until FPL marks it
+  finished, then moves on to the next.
 - **My Season**: points and rank by gameweek, chips used and left, transfer history.
 
 The top of the sidebar counts down to the next deadline and shows where the current gameweek is:
@@ -542,6 +550,8 @@ only the consistent ones (across both seasons) are worth acting on.
 2. **Before the deadline**: `xpfpl recommend --team-id <id>` (or the Plan Ahead tab). This saves
    the forecast that the website's xP and the [live record](#the-live-record) are scored on, and
    makes the Model's Team's decision for the website (`archive/modelteam/`; `--no-model-team` skips it).
+   Save the team you'll play from the Plan Ahead tab (**Save as my GW team**): the website's My Team
+   page forecasts it.
 3. **Update the website**: the sidebar's step 4, or `xpfpl publish`. It's live a minute or two later.
 4. **Commit the archive** every week or so. `main` only accepts pull requests, so the new files
    in `archive/` stay on your machine until you merge them (on Windows PowerShell, run the
@@ -580,9 +590,21 @@ figures, the midweek factors and the Monte Carlo), **Model Accuracy** (including
 European results before it, each player's points against the xP forecast and his midweek minutes),
 **Next Gameweek** (the forecast saved for the coming gameweek: captain picks with each one's simulated range and chance of 10+, the top players over
 the horizon with any midweek factor on their xP, each club's fixtures with our win chances and a
-badge for its cup or European matches, and anyone the betting markets have ruled out), **Players**, **Markets** (the betting odds at each deadline against what happened),
+badge for its cup or European matches, and anyone the betting markets have ruled out), **My Team** (the team I'm
+playing in the coming gameweek, as on the dashboard's My Team tab, with its simulated score this week and over the
+horizon, captain odds and what the transfers are worth; see below), **Players**, **Markets** (the betting odds at each deadline against what happened),
 **The Model's Team** (its pitch marks a club's midweek match; each live week shows its simulated score, captain odds and chip odds, and whether the score landed in its likely range) and **Data** (the archive). It
 doesn't train or plan.
+
+**My Team** shows the forecast numbers to anyone: this week's xP, likely range, the horizon total and
+what the transfers are worth. Before the deadline the team itself (players, formation, captain,
+vice-captain, chip, transfers) is encrypted in `myteam.json` with the **Website secret word** from
+the dashboard's sidebar (or `XPFPL_MY_TEAM_SECRET`), and typing the word on the page decrypts it in
+the browser (PBKDF2 + AES-GCM; the browser remembers it until "Hide the team again"). Without a
+word set, the team isn't published at all before the deadline. After the deadline FPL shows the
+team anyway, so it's published in plain text until the gameweek is finished. The word is only as
+strong as it is long: a few unrelated words are much harder to guess than one. The team id comes
+from the dashboard's settings.
 
 **The Model's Team** is a paper FPL team that does exactly what the model says. Before each
 deadline `xpfpl recommend` (or `xpfpl modelteam`) makes its transfers, XI, bench order, captain

@@ -7,17 +7,19 @@ import DataPage from "./pages/Data";
 import Gameweeks from "./pages/Gameweeks";
 import MarketsPage from "./pages/Markets";
 import ModelTeamPage from "./pages/ModelTeam";
+import MyTeamPage from "./pages/MyTeam";
 import NextGameweek from "./pages/NextGameweek";
 import Players from "./pages/Players";
 import { SiteContext, useSiteData } from "./site";
 
 // About first (where the site opens), then how far to trust the model, the weeks played and the
-// week ahead, research, the model's own team, and the raw data last.
+// week ahead (with the team I'm planning for it), research, the model's own team, and the raw data last.
 const PAGES = [
   { id: "about", label: "About", component: About },
   { id: "accuracy", label: "Model Accuracy", component: Accuracy },
   { id: "gameweeks", label: "Past Gameweeks", component: Gameweeks },
   { id: "next", label: "Next Gameweek", component: NextGameweek },
+  { id: "my-team", label: "My Team", component: MyTeamPage },
   { id: "players", label: "Players", component: Players },
   { id: "markets", label: "Markets", component: MarketsPage },
   { id: "model-team", label: "The Model's Team", component: ModelTeamPage },
