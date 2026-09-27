@@ -241,7 +241,7 @@ def _my_team(bs: dict, season: str, model: str) -> dict | None:
         "total": {"xp": out["total"]["xp"], "points": out["total"]["points"]}, "against": out["against"],
     }
     private = {"source": team["source"], "saved_at": team["saved_at"], "chip": team["chip"],
-               "transfers": team["transfers"], "hits": team["hits"], "bank": team["bank"],
+               "transfers": team["transfers"], "hits": team["hits"], "bank": team["bank"], "settings": team.get("settings"),
                "weeks": out["weeks"], "captains": out["captains"], "players": table(out["players"], digits=3)}
     secret = myteam.site_secret()
     if locked:

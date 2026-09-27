@@ -10,8 +10,8 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Pitch } from "../components/Pitch";
 import { CaptainOddsTable, ScoreChart, band } from "../components/Simulation";
 import { Club, Loading, Note, Segmented, Table, Tiles, type Column, type TileProps } from "../components/ui";
-import { rows, type MyTeam, type MyTeamPrivate, type MyWeek, type MyWeekNumbers, type Player } from "../data";
-import { POSITIONS, money, pct, pts, signed, when } from "../format";
+import { rows, type MyTeam, type MyTeamPrivate, type MyWeek, type MyWeekNumbers, type PlanSettings, type Player } from "../data";
+import { POSITIONS, int, money, pct, pts, signed, when } from "../format";
 import { rememberWord, rememberedWord, unseal } from "../seal";
 import { useData, useSite } from "../site";
 
@@ -46,6 +46,57 @@ function useTeam(data: MyTeam | null | undefined) {
 
   const lock = () => { rememberWord(null); setUnlocked(null); setState("idle"); };
   return { team: data?.private ?? unlocked, unlocked: !!unlocked, state, unlock, lock };
+}
+
+/** The week's transfers, one "out → in" row each (both sorted by position when saved). */
+function Transfers({ moves, hits }: { moves: { out: number; in: number }[]; hits: number }) {
+  const site = useSite();
+  const side = (id: number) => {
+    const p = site.player.get(id);
+    return <>{p ? <Club id={p.team} /> : null}<span className="transfer-name">{p?.web_name ?? id}</span></>;
+  };
+  return (
+    <>
+      <h4>{moves.length} transfer{moves.length === 1 ? "" : "s"}{hits ? `, −${4 * hits} in penalties` : ""}</h4>
+      <ol className="transfers">
+        {moves.map((t) => (
+          <li key={`${t.out}-${t.in}`} className="transfer">
+            <span className="transfer-pos">{POSITIONS[site.player.get(t.in)?.element_type ?? 0] ?? ""}</span>
+            <span className="transfer-out">{side(t.out)}</span>
+            <span className="transfer-arrow" aria-label="replaced by">→</span>
+            <span className="transfer-in">{side(t.in)}</span>
+          </li>
+        ))}
+      </ol>
+    </>
+  );
+}
+
+/** The Plan Ahead settings the team was saved with, to set the same scenario up again. */
+function Settings({ settings, locked }: { settings: PlanSettings; locked: boolean }) {
+  const site = useSite();
+  const names = (ids: number[]) => (ids.length ? ids.map((id) => site.player.get(id)?.web_name ?? id).join(", ") : "–");
+  const s = settings;
+  const items: [string, string][] = [
+    ["Horizon", `${s.horizon} gameweek${s.horizon === 1 ? "" : "s"}`],
+    ["Model", s.model],
+    ["Chip", s.chip ? CHIP_NAMES[s.chip] ?? s.chip : "None"],
+    ["Free transfers", `${s.free_transfers}${s.free_transfers_estimated ? " (estimated)" : ""}`],
+    ["Bank", money(s.bank)],
+    ["Max penalties", String(s.max_hits)],
+    ["Week-by-week planning", s.plan_transfers ? "On" : "Off"],
+    ["Value price rises", s.value_prices ? "On" : "Off"],
+    ["Always pick", names(s.must_have)],
+    ["Never pick", names(s.banned)],
+  ];
+  return (
+    <>
+      <h4>{locked ? "Last saved in Plan Ahead with" : "Planned in Plan Ahead with"}</h4>
+      <dl className="settings">
+        {items.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}
+      </dl>
+    </>
+  );
 }
 
 function Unlock({ gw, busy, wrong, onUnlock }: { gw: number; busy: boolean; wrong: boolean; onUnlock: (word: string) => void }) {
@@ -112,17 +163,17 @@ export default function MyTeamPage() {
     : `The same 15${chip === "freehit" ? " (the squad before the Free Hit)" : ""}, with their best XI and captain for GW${w}`;
 
   const tiles: TileProps[] = [
-    { label: `GW${data.gw} forecast`, value: `${pts(first.xp)} xP`,
+    { label: `GW${data.gw} forecast`, value: `${int(first.xp)} xP`,
       note: team ? `captain doubled${chip === "3xc" ? " (tripled)" : ""}${chip === "bboost" ? ", bench included" : ""}` : "expected points, as the week is scored" },
     ...(first.points ? [
       { label: "Likely range", value: band(first.points.p10, first.points.p90),
         note: `the middle 80% of simulated scores; median ${Math.round(first.points.p50)}` },
       ...(first.target != null ? [{ label: `Chance of ${first.target}+`, value: pct(first.p_target), note: "in the simulated weeks" }] : []),
     ] : []),
-    ...(later ? [{ label: `${span} forecast`, value: `${pts(data.total.xp)} xP`,
+    ...(later ? [{ label: `${span} forecast`, value: `${int(data.total.xp)} xP`,
       note: "every week added up, after any transfer hits" +
         (data.total.points ? `; likely ${band(data.total.points.p10, data.total.points.p90)}` : "") }] : []),
-    ...(a ? [{ label: "The transfers", value: `${signed(a.xp, 1)} xP`,
+    ...(a ? [{ label: "The transfers", value: `${signed(a.xp, 0)} xP`,
       note: `over ${span}, after hits, against keeping the GW${data.gw - 1} squad` +
         (a.p_better != null ? `; ahead in ${pct(a.p_better)} of simulated weeks` : "") }] : []),
   ];
@@ -179,18 +230,19 @@ export default function MyTeamPage() {
               team before the deadline, and stays until the gameweek is finished.</>}
       </p>
       {team && (
-        <p>
-          {team.source === "saved" && <>Picked {when(team.saved_at)}. </>}
-          {team.source === "locked" && <>Locked in at the deadline. </>}
-          {team.source === "carried"
-            ? <>No new team picked for GW{data.gw} yet, so this is the GW{data.gw - 1} team carried over: the same XI, captain
-                and bench, no transfers.</>
-            : team.transfers.length
-              ? <>Transfers: {team.transfers.map((t) => `${name(t.out)} → ${name(t.in)}`).join(", ")}{team.hits ? ` (−${4 * team.hits})` : ""}.</>
-              : "No transfers."}
-          {chip && <> <span className="tag">{CHIP_NAMES[chip] ?? chip}</span></>}
-          {unlocked && <> <button className="link" onClick={lock}>Hide the team again</button></>}
-        </p>
+        <div className="card">
+          <p style={{ marginTop: 0 }}>
+            {team.source === "saved" && <>Picked {when(team.saved_at)}.</>}
+            {team.source === "locked" && <>Locked in at the deadline.</>}
+            {team.source === "carried" && <>No new team picked for GW{data.gw} yet, so this is the GW{data.gw - 1} team carried
+              over: the same XI, captain and bench, no transfers.</>}
+            {team.source !== "carried" && !team.transfers.length && " No transfers."}
+            {chip && <> <span className="tag">{CHIP_NAMES[chip] ?? chip}</span></>}
+            {unlocked && <> <button className="link" onClick={lock}>Hide the team again</button></>}
+          </p>
+          {team.transfers.length > 0 && <Transfers moves={team.transfers} hits={team.hits} />}
+          {team.settings && <Settings settings={team.settings} locked={team.source === "locked"} />}
+        </div>
       )}
       <Tiles tiles={tiles} />
 

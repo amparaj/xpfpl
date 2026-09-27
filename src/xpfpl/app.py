@@ -217,9 +217,28 @@ def show_monte_carlo(players: pd.DataFrame, plan, gw: int, gameweeks: tuple[int,
         c[1].caption("Nothing to compare: no alternative plan differs from this one.")
 
 
-def save_team_panel(me, plan, players: pd.DataFrame, gw: int, chip: str | None, season: str, model: str) -> None:
+def settings_text(settings: dict | None, name: dict) -> str:
+    """A saved team's Plan Ahead settings in a line: "3 GWs · ensemble · Wildcard · ..."."""
+    if not settings:
+        return ""
+    ft = settings["free_transfers"]
+    parts = [f"{settings['horizon']} GW{'s' if settings['horizon'] != 1 else ''}", settings["model"],
+             chips.CHIP_NAMES.get(settings["chip"], "no chip") if settings["chip"] else "no chip",
+             f"{ft} free transfer{'s' if ft != 1 else ''}" + (" (estimated)" if settings["free_transfers_estimated"] else ""),
+             f"bank £{settings['bank']:.1f}m", f"max {settings['max_hits']} penalt{'y' if settings['max_hits'] == 1 else 'ies'}",
+             "week-by-week planning" if settings["plan_transfers"] else "one squad for the horizon",
+             "price rises valued" if settings["value_prices"] else "price rises ignored"]
+    for key, label in (("must_have", "always pick"), ("banned", "never pick")):
+        if settings[key]:
+            parts.append(f"{label} " + ", ".join(str(name.get(p, p)) for p in settings[key]))
+    return " · ".join(parts)
+
+
+def save_team_panel(me, plan, players: pd.DataFrame, gw: int, chip: str | None, season: str, model: str,
+                    settings: dict) -> None:
     """Plan Ahead's "Save as my team": this plan's GW team, with the captain and vice open to
-    change, to data/myteam/ (myteam.save_plan). The My Team tab and the website forecast it."""
+    change, to data/myteam/ (myteam.save_plan), with the `settings` it was planned with. The My
+    Team tab and the website forecast it."""
     xi, name = plan.lineups[gw], players["name"].to_dict()
     st.markdown(f"**Save as my GW{gw} team**")
     c = st.columns([1.2, 1.2, 1], vertical_alignment="bottom")
@@ -233,7 +252,8 @@ def save_team_panel(me, plan, players: pd.DataFrame, gw: int, chip: str | None, 
                          transfers_out=sorted(plan.transfers_out, key=position.get),
                          transfers_in=sorted(plan.transfers_in, key=position.get),
                          hits=0 if chip in ("wildcard", "freehit") else plan.hits,
-                         bank=me.bank if chip == "freehit" else plan.budget_left, before=list(me.squad), model=model)
+                         bank=me.bank if chip == "freehit" else plan.budget_left, before=list(me.squad), model=model,
+                         settings=settings)
         st.toast(f"Saved as your GW{gw} team. See the My Team tab.")
     shown = myteam.showing_gameweek(live_data()[0])
     later = f" My Team shows GW{shown} until it's finished, then this one." if shown != gw else ""
@@ -248,6 +268,7 @@ def save_team_panel(me, plan, players: pd.DataFrame, gw: int, chip: str | None, 
     st.caption(f"Saved {at:%a %d %b %H:%M}: captain {name.get(saved['captain'], saved['captain'])}, "
                + (f"{moves} transfer{'s' if moves != 1 else ''}" if moves else "no transfers")
                + (". This plan matches it." if same else ". **This plan differs from it**: save again to replace it.")
+               + (f"  \nPlanned with: {settings_text(saved.get('settings'), name)}." if saved.get("settings") else "")
                + later)
 
 
@@ -731,7 +752,11 @@ with tab_plan:
                   else "Later weeks assume the same squad."))
     show_pitch(players, plan, view_gw, labels, fixture_difficulty(fx, gameweeks),
                midweek_badges(season, tuple(gameweeks)))
-    save_team_panel(me, plan, players, gw, active, season, model)
+    save_team_panel(me, plan, players, gw, active, season, model, settings={
+        "horizon": int(horizon), "model": model, "chip": active, "free_transfers": int(ft),
+        "free_transfers_estimated": isinstance(ft_choice, str), "bank": round(float(bank), 1),
+        "max_hits": int(max_hits), "plan_transfers": bool(weekly), "value_prices": bool(value_prices),
+        "must_have": [int(p) for p in must_have], "banned": [int(p) for p in banned]})
 
     draws = sim_draws(horizon, model, stamp())
     if draws is None:
@@ -822,7 +847,8 @@ with tab_myteam:
                        + (f"Transfers: {moves}" + (f" (-{config.HIT_COST * team['hits']})" if team["hits"] else "")
                           + ". " if moves else "No transfers. ")
                        + (f"Chip: {chips.CHIP_NAMES[team['chip']]}. " if team["chip"] else "")
-                       + "Save again there to replace it.")
+                       + "Save again there to replace it."
+                       + (f"  \nPlanned with: {settings_text(team.get('settings'), name)}." if team.get("settings") else ""))
         elif team["source"] == "locked":
             moves = ", ".join(f"{name.get(t['out'])} -> {name.get(t['in'])}" for t in team["transfers"])
             st.info(f"GW{show_gw}'s deadline has passed, so this is the team locked into FPL"

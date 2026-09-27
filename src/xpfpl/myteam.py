@@ -121,17 +121,19 @@ def plan_path(season: str, gw: int):
 def save_plan(season: str, gw: int, *, lineup: list[int], bench: list[int], captain: int, vice: int,
               chip: str | None = None, transfers_out: list[int] = (), transfers_in: list[int] = (),
               hits: int = 0, bank: float | None = None, before: list[int] | None = None,
-              model: str = config.MODEL) -> dict:
+              model: str = config.MODEL, settings: dict | None = None) -> dict:
     """Save the team you'll play in `gw` (data/myteam/<season>/gwNN.json, local only), replacing
     any earlier save for that week. `before` is the squad it was planned from: the weeks after
     a Free Hit go back to it, and the transfers are judged against it. Transfers are paired in
-    the order given (sort both by position)."""
+    the order given (sort both by position). `settings` records the Plan Ahead choices it was
+    planned with (horizon, model, chip, free transfers, bank, penalties, planning, prices, always
+    and never pick), so the scenario can be set up again."""
     team = {"season": season, "gw": int(gw), "saved_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "model": model, "chip": chip, "lineup": [int(p) for p in lineup], "bench": [int(p) for p in bench],
             "captain": int(captain), "vice": int(vice),
             "transfers": [{"out": int(o), "in": int(i)} for o, i in zip(transfers_out, transfers_in)],
             "hits": int(hits), "bank": None if bank is None else round(float(bank), 1),
-            "before": None if before is None else sorted(int(p) for p in before)}
+            "before": None if before is None else sorted(int(p) for p in before), "settings": settings}
     path = plan_path(season, gw)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(team, indent=1) + "\n", encoding="utf-8")
@@ -205,9 +207,9 @@ def shown_team(team_id: int, bs: dict) -> dict | None:
         return None
     season = api.current_season(bs)
     try:
-        if deadline_passed(bs, gw):
-            return {"season": season, **locked_team(team_id, gw)}
         saved = saved_plan(season, gw)
+        if deadline_passed(bs, gw):      # the settings of the last save, which may differ from what was locked in
+            return {"season": season, **locked_team(team_id, gw), "settings": (saved or {}).get("settings")}
         if saved:
             return {**saved, "source": "saved"}
         if gw == 1:
@@ -216,7 +218,7 @@ def shown_team(team_id: int, bs: dict) -> dict | None:
     except requests.RequestException:            # no picks that week (joined later)
         return None
     return {"season": season, "gw": gw, "source": "carried", "saved_at": None, "model": None, "chip": None,
-            **last, "transfers": [], "hits": 0, "bank": None, "before": None}
+            **last, "transfers": [], "hits": 0, "bank": None, "before": None, "settings": None}
 
 
 def saved_forecast(season: str, gw: int, model: str = config.MODEL):

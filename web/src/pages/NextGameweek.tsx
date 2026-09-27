@@ -4,7 +4,7 @@ import { color } from "../colors";
 import { band } from "../components/Simulation";
 import { Chart, Club, Legend, Loading, MidweekBadge, Note, Segmented, Table, Tiles, plotDefaults, type Column, type TileProps } from "../components/ui";
 import { rows, type ModelTeam, type NextGw, type Player } from "../data";
-import { POSITIONS, dec, money, pct, pts, signed, when } from "../format";
+import { POSITIONS, dec, int, money, pct, pts, when } from "../format";
 import { ROTATION, clubMidweek, competition } from "../midweek";
 import { oddsUrl, type OddsSnapshot } from "../polymarket";
 import { matchPlayer, ours } from "../ratings";
@@ -173,6 +173,8 @@ export default function NextGameweek() {
   ];
 
   const upcoming = team?.next?.gw === gw ? team.next : null;
+  // Scored minus forecast in words: within half a point is "right on it".
+  const beat = (d: number) => (Math.abs(d) < 0.5 ? "right on it" : `${int(Math.abs(d))} ${d > 0 ? "more" : "fewer"} than forecast`);
   const lastWeek = team?.gameweeks.length ? team.gameweeks[team.gameweeks.length - 1] : null;
   const tiles: TileProps[] = [
     ...(upcoming ? [{ label: "The Model's Team", value: `${pts(upcoming.forecast ?? upcoming.xp)} xP`,
@@ -181,8 +183,8 @@ export default function NextGameweek() {
         <a href="#model-team">see the team</a></> }] : []),
     ...(captains.length ? [{ label: "Top forecast", value: `${captains[0].player.web_name} ${pts(captains[0][first])}`,
       note: `xP for GW${gw} (${site.team.get(captains[0].player.team)?.short ?? ""})` }] : []),
-    ...(lastWeek?.forecast != null ? [{ label: `Last time (GW${lastWeek.gw})`, value: `${pts(lastWeek.forecast)} → ${lastWeek.gross}`,
-      note: `the Model's Team: forecast → scored, ${signed((lastWeek.gross ?? 0) - lastWeek.forecast, 1)}` }] : []),
+    ...(lastWeek?.forecast != null ? [{ label: `The Model's Team in GW${lastWeek.gw}`, value: `Scored ${lastWeek.gross ?? "–"}`,
+      note: `against a forecast of ${int(lastWeek.forecast)}: ${beat((lastWeek.gross ?? 0) - lastWeek.forecast)} (before hits)` }] : []),
   ];
 
   return (
