@@ -224,20 +224,21 @@ export default function MarketsPage() {
   if (file === undefined) return <Loading />;
 
   const matchColumns: Column<MatchView>[] = [
-    { key: "match", label: "Match", value: (m) => m.label },
+    { key: "match", label: "Match", value: (m) => m.label, render: (m) => (
+      <span className="opponent"><Club code={m.home_code} />{m.goals_home !== null ? ` ${m.goals_home}–${m.goals_away} ` : " v "}<Club code={m.away_code} /></span>) },
     ...only<MatchView>(isLive, [{ key: "ko", label: "Kick-off", value: (m: MatchView) => m.kickoff, render: (m: MatchView) => when(m.kickoff) }]),
     { key: "home", label: "Home", group: "Market", numeric: true, value: (m) => m.home_win, render: (m) => pct(m.home_win), title: "Market odds of a home win" },
     { key: "draw", label: "Draw", group: "Market", numeric: true, value: (m) => m.draw, render: (m) => pct(m.draw), title: "Market odds of a draw" },
     { key: "away", label: "Away", group: "Market", numeric: true, value: (m) => m.away_win, render: (m) => pct(m.away_win), title: "Market odds of an away win" },
-    { key: "ohome", label: "Home", group: "Our model", numeric: true, value: (m) => m.ours_home_win, render: (m) => pct(m.ours_home_win),
-      title: "Chance of a home win from the model's own club ratings" },
-    { key: "odraw", label: "Draw", group: "Our model", numeric: true, value: oursDraw, render: (m) => pct(oursDraw(m)),
-      title: "Chance of a draw from the model's own club ratings" },
-    { key: "oaway", label: "Away", group: "Our model", numeric: true, value: (m) => m.ours_away_win, render: (m) => pct(m.ours_away_win),
-      title: "Chance of an away win from the model's own club ratings" },
+    { key: "ohome", label: "Home", group: "This model", numeric: true, value: (m) => m.ours_home_win, render: (m) => pct(m.ours_home_win),
+      title: "Chance of a home win from this model's own club ratings" },
+    { key: "odraw", label: "Draw", group: "This model", numeric: true, value: oursDraw, render: (m) => pct(oursDraw(m)),
+      title: "Chance of a draw from this model's own club ratings" },
+    { key: "oaway", label: "Away", group: "This model", numeric: true, value: (m) => m.ours_away_win, render: (m) => pct(m.ours_away_win),
+      title: "Chance of an away win from this model's own club ratings" },
     { key: "xg", label: "Market", group: "Goals (Home – Away)", value: (m) => m.lam_home + m.lam_away,
       title: "Expected goals each side, fitted to all the goal markets", render: (m) => `${dec(m.lam_home, 1)} – ${dec(m.lam_away, 1)}` },
-    { key: "oxg", label: "Ours", group: "Goals (Home – Away)", value: (m) => m.ours_home, title: "Expected goals each side from the model's own club ratings",
+    { key: "oxg", label: "Ours", group: "Goals (Home – Away)", value: (m) => m.ours_home, title: "Expected goals each side from this model's own club ratings",
       render: (m) => m.ours_home === null ? "–" : `${dec(m.ours_home, 1)} – ${dec(m.ours_away, 1)}` },
     ...only<MatchView>(!isLive, [{ key: "actual", label: "Actual xG", group: "Goals (Home – Away)", value: (m: MatchView) => m.xg_home,
       title: "Expected goals (xG) each side in the match itself",
@@ -254,7 +255,7 @@ export default function MarketsPage() {
     <>
       <h2>Markets</h2>
       <p className="lede">
-        What the betting markets thought, next to the model's own club ratings. For completed gameweeks the odds are as they
+        What the betting markets thought, next to this model's own club ratings. For completed gameweeks the odds are as they
         were at the deadline, compared to what actually happened. Upcoming matches' odds are refreshed regularly.
       </p>
       <div className="toolbar">
@@ -289,7 +290,7 @@ export default function MarketsPage() {
           <Table columns={matchColumns} data={matches} rowKey={(m) => m.slug} />
           <Note>
             The market's goals are the expected goals for each side that best fit all of a match's goal markets at once
-            (result, totals, team totals, both teams to score). "Our model" and "Ours" come from the model's own club
+            (result, totals, team totals, both teams to score). "This model" and "Ours" come from this model's own club
             ratings{isLive ? ` for GW${site.meta.next_gw}` : " before that gameweek"}.
           </Note>
           <Movement key={`${season}-${pick}`} matches={matches} end={deadline} histories={histories} />
@@ -344,7 +345,7 @@ function LiveScorers({ scorers }: { scorers: LiveScorer[] }) {
       <Table columns={columns} data={list} sort="p" rowKey={(s) => `${s.slug}-${s.player}`} limit={30} />
       <Note>
         Odds of {pct(site.meta.out_threshold)} or less almost always mean the player has been ruled out: in 2025-26, 3 of the 62 players
-        priced that low played. The model cuts that week's xP to 10% for them.
+        priced that low played. This model cuts that week's xP to 10% for them.
       </Note>
     </>
   );
@@ -390,7 +391,7 @@ function MarketAccuracy({ data }: { data: Row[] }) {
   return (
     <>
       <Table columns={columns} data={data} rowKey={(r) => `${r.season}-${r.source}`} />
-      <Note>Lower is better in every column. "Market" is Polymarket at each FPL deadline; "Our ratings" is the model's club-strength fit as it stood then.
+      <Note>Lower is better in every column. "Market" is Polymarket at each FPL deadline; "Our ratings" is this model's club-strength fit as it stood then.
         The result columns score the home win / draw / away win chances. Log loss is the one to go by: it counts only the chance
         given to what actually happened, so it separates a better forecast from a worse one in fewer matches than the ranked
         probability score. 1.099 is what "a third each" would score.</Note>

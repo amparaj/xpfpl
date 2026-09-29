@@ -61,7 +61,8 @@ def _shots(raw: pd.DataFrame, names: dict[int, str], home: str, away: str) -> pd
     """Shots in pitch metres (the home side attacking to the right), with labels for the tooltips."""
     s = raw.sort_values(["minute", "added_time", "shot_index"], na_position="first").copy()
     home_side = s["is_home"].astype(bool)
-    along, across = LENGTH * (1 - s["start_x"] / 100), WIDTH * s["start_y"] / 100
+    # start_y runs to the shooter's right: the bottom of the pitch for the home side, attacking right.
+    along, across = LENGTH * (1 - s["start_x"] / 100), WIDTH * (1 - s["start_y"] / 100)
     added = s["added_time"].fillna(0)
     s = s.assign(
         side=np.where(home_side, "home", "away"), club=np.where(home_side, home, away),
@@ -134,9 +135,9 @@ def shot_map(shots: pd.DataFrame, width: int = 760) -> alt.LayerChart:
 
 def on_goal(shots: pd.DataFrame, width: int = 380) -> alt.LayerChart | None:
     """Shots that reached the goal on the goal frame, as the shooter sees it (the source's
-    goal-mouth y runs to the shooter's left)."""
+    goal-mouth y runs to the shooter's right)."""
     reached = shots[shots["outcome"].isin(["goal", "save", "post", "blocked-off-line"])].assign(
-        across=lambda d: 100 - d["goal_mouth_y"], size_by=lambda d: d["xgot"].fillna(d["xg"]))
+        across=lambda d: d["goal_mouth_y"], size_by=lambda d: d["xgot"].fillna(d["xg"]))
     if reached.empty:
         return None
     x = alt.X("across:Q", scale=alt.Scale(domain=[43, 57], nice=False, zero=False), axis=None)
@@ -333,7 +334,7 @@ def _odds(season: str, gw: int, f: dict, home: str, away: str) -> None:
     happened = 0 if f["team_h_score"] > f["team_a_score"] else 1 if f["team_h_score"] == f["team_a_score"] else 2
     table = pd.DataFrame([
         {"Source": "Market Odds (Polymarket at the FPL deadline)", "p": [row["home_win"], row["draw"], row["away_win"]]},
-        {"Source": "Our Odds (the model's club ratings)", "p": [row["ours_home_win"], row["ours_draw"], row["ours_away_win"]]}])
+        {"Source": "Our Odds (this model's club ratings)", "p": [row["ours_home_win"], row["ours_draw"], row["ours_away_win"]]}])
     outcomes = [f"{home} win", "Draw", f"{away} win"]
     outcomes[happened] += " ✓"
     for i, name in enumerate(outcomes):

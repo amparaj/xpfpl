@@ -42,12 +42,12 @@ def _midweek_factors() -> str:
     if not table:
         return "They haven't been fitted yet: run `xpfpl cups` or retrain."
     parts = [f"{cups.ROTATION_LABELS.get(k, k)} ×{v:.2f}" for k, v in table.items()]
-    return f"For the default model ({config.MODEL}): " + "; ".join(parts) + "."
+    return f"For this model ({config.MODEL}): " + "; ".join(parts) + "."
 
 
 GLOSSARY = [
     ("xP (expected points)",
-     "The model's prediction of how many FPL points a player will score in a gameweek. It's an "
+     "This model's prediction of how many FPL points a player will score in a gameweek. It's an "
      "average over many possible outcomes, so a 5.0 xP player might blank or haul. Double gameweeks "
      "add both fixtures; blank gameweeks are 0."),
     ("MLP (model: mlp)",
@@ -65,7 +65,7 @@ GLOSSARY = [
      "forecast easier to interpret."),
     ("Embedding model (model: embed)",
     "The MLP plus a learned vector for every player and club (`nn.Embedding`). The player vector lets "
-    "the model represent persistent player-specific tendencies beyond recent form; the club vector "
+    "this model represent persistent player-specific tendencies beyond recent form; the club vector "
     "does the same for club-specific context such as playing style and typical team strength. New "
     "signings and promoted clubs share a catch-all vector until they have enough matches."),
     ("Sequence model (model: sequence)",
@@ -92,49 +92,49 @@ GLOSSARY = [
      "When a club plays a cup or European match before a gameweek, each of its players' xP for that "
      "gameweek is multiplied by a factor for his own role in it, once the match has been played. "
      "Regular starters (60+ minutes a match lately) barely move, rested or not; squad players who "
-     "weren't used score less than the model expects that weekend, and those who played score more. "
+     "weren't used score less than this model expects that weekend, and those who played score more. "
      "Fitted on 2025-26 onwards, where the cup and European data starts, and only for the next "
      "gameweek: later weeks show the midweek matches but aren't adjusted. " + _midweek_factors()),
     ("FPL's own xP",
      "The expected-points figure the official game shows for each player, taken as it stood before "
      "each match. It is essentially recent form, so it is a yardstick, not a rival model."),
     ("Features",
-     "The inputs the model sees. Here: averages of a player's recent stats (last 3, 5 and 10 "
+     "The inputs this model sees. Here: averages of a player's recent stats (last 3, 5 and 10 "
      "matches) and per-90 rates over the last 20 and 38; points at the same venue; team and opponent "
      "goals and xG; the fixture's expected goals from fitted team attack/defence ratings; the crowd's "
      "net transfers and ownership; where the player ranks at his club by price and minutes; and home "
      "or away, price, position and experience."),
     ("Training / validation",
-     "Training is when the model adjusts its weights to fit past matches. Validation checks it on a "
+     "Training is when this model adjusts its weights to fit past matches. Validation checks it on a "
      "season it never saw (2025-26), which is the best test of how it will do on new games. Once "
      "that's checked, the saved model is refitted on all seasons so it knows the latest form."),
     ("Epoch / early stopping",
      "One epoch is one pass through all the training data. Early stopping ends training when the "
-     "validation score stops improving, so the model doesn't memorise the past (overfitting)."),
+     "validation score stops improving, so this model doesn't memorise the past (overfitting)."),
     ("RMSE / MAE",
      "Accuracy scores in points. MAE (mean absolute error) is the typical miss: MAE 1.8 means "
      "predictions are about 1.8 points off on average. RMSE (root mean squared error) punishes big "
      "misses more than MAE. Lower is better for both."),
     ("Calibration",
-     "Whether the numbers mean what they say: of all the players the model called 3 xP, did they "
+     "Whether the numbers mean what they say: of all the players this model called 3 xP, did they "
      "average three points? A model can rank players well and still be badly calibrated, which "
      "would make every xP gain in the app look bigger than it is."),
     ("Captain test",
-     "A football-sized way of scoring the model: each gameweek, captain whoever the model rates "
+     "A football-sized way of scoring this model: each gameweek, captain whoever this model rates "
      "highest in the league and count what they scored. Compared with perfect hindsight and with a "
      "typical starting player, so you can see the edge in points rather than in decimals."),
     ("Backtest",
      "Replaying a past season deadline by deadline, using only the data that existed at the time: "
     "picking a squad, making transfers, applying transfer penalties and scoring each week for real. It is the only "
-     "test that measures the whole app rather than the model alone, and what the horizon, discount "
+     "test that measures the whole app rather than this model alone, and what the horizon, discount "
      "and chip thresholds get tuned with (`xpfpl tune`)."),
     ("Tuning",
     "`xpfpl tune` sets the tuning parameters in config.py by backtesting candidate values over several "
     "seasons and keeping whatever scores most points, one group of parameters at a time. It's the "
      "difference between 'a 5-gameweek horizon feels right' and 'a 5-gameweek horizon scored best'."),
     ("In-sample",
-     "Predicting matches the model was trained on. Past-gameweek xP in the review tab is in-sample, "
-     "so it looks a little more accurate than the model really is on future games."),
+     "Predicting matches this model was trained on. Past-gameweek xP in the review tab is in-sample, "
+     "so it looks a little more accurate than this model really is on future games."),
     ("Injury scaling",
      "xP is multiplied by FPL's chance-of-playing flag (a 50% flag halves xP). For later weeks, "
      "flagged players are assumed to recover by 25 percentage points per gameweek."),
@@ -181,7 +181,7 @@ GLOSSARY = [
      "In the review tab: the best XI and captain you could have picked from the same 15 players if "
      "you'd known the actual points. The gap is the points left on the table from selection alone."),
     ("FDR (fixture difficulty)",
-     "FPL's own 1 (easy) to 5 (hard) rating per fixture, shown in the fixture ticker. The model "
+     "FPL's own 1 (easy) to 5 (hard) rating per fixture, shown in the fixture ticker. This model "
      "doesn't use it; it uses team goals and xG, and each fixture's expected goals from fitted "
      "attack/defence ratings, instead."),
     ("xP per £m",
@@ -191,7 +191,7 @@ GLOSSARY = [
 
 COLUMN_HELP = [
     ("MAE", "Mean absolute error: how far a typical prediction is from the points scored.",
-    "Lower is better. This is the clearest measure of the model's typical prediction error."),
+    "Lower is better. This is the clearest measure of this model's typical prediction error."),
     ("RMSE", "Root mean squared error: the same miss, but big misses are punished far more.",
     "Lower is better. A larger gap above MAE indicates that unusually large errors have a greater "
     "effect on the result."),
@@ -208,7 +208,7 @@ COLUMN_HELP = [
     "Higher is better. The optimiser only needs the order of the players to be right, so this is "
     "the measure closest to what drives the team selection."),
     ("Bias", "The average of (prediction - points scored) across the rows.",
-    "Near zero is preferable. A positive bias means the model tends to overestimate points; a "
+    "Near zero is preferable. A positive bias means this model tends to overestimate points; a "
     "negative bias means it tends to underestimate them."),
 ]
 
@@ -246,7 +246,7 @@ def _calibration_chart(rows: list[dict]) -> alt.Chart:
         x=alt.X("predicted:Q", scale=axis), y=alt.Y("low:Q", scale=axis), y2="high:Q")
     line = alt.Chart(df).mark_line(color=MLP_COLOUR, strokeWidth=2, point=alt.OverlayMarkDef(
         color=MLP_COLOUR, size=64, filled=True)).encode(
-        x=alt.X("predicted:Q", title="What the model predicted (xP)", scale=axis),
+        x=alt.X("predicted:Q", title="What this model predicted (xP)", scale=axis),
         y=alt.Y("actual:Q", title="What they really scored", scale=axis),
         tooltip=[alt.Tooltip("bin:N", title="xP band"), alt.Tooltip("predicted:Q", format=".2f"),
                  alt.Tooltip("actual:Q", title="actual", format=".2f"),
@@ -286,7 +286,7 @@ def _captain_chart(rows: list[dict], report: dict) -> alt.Chart:
     primary, reference = _names(report)
     cap = pd.DataFrame(rows)
     df = pd.DataFrame({
-        "pick": ["Perfect hindsight", "The model's top pick", "The baseline's top pick",
+        "pick": ["Perfect hindsight", "This model's top pick", "The baseline's top pick",
                  "A typical starting player"],
         "points": [cap["best"].mean(), cap[primary].mean(), cap[reference].mean(), cap["typical"].mean()],
     })
@@ -314,7 +314,7 @@ def render_accuracy() -> None:
     report = validate.load_report()
     if not report:
         st.info("No accuracy report yet. Click **Retrain** in the sidebar (or run `xpfpl validate`) "
-                "to score the model on a season it has never seen.")
+                "to score this model on a season it has never seen.")
         return
 
     st.markdown(
@@ -362,15 +362,15 @@ def render_accuracy() -> None:
         st.altair_chart(_calibration_chart(report["calibration"]), width="stretch")
         st.caption("Players grouped by predicted points. If the blue line follows the dashed line, "
                "predicted points are well calibrated. A lower line at higher predictions indicates "
-               "that the model tends to overestimate the highest forecasts. The bars show the margin "
+               "that this model tends to overestimate the highest forecasts. The bars show the margin "
                "of error.")
     with c2:
         st.markdown("**Does it rank players effectively?**")
         st.altair_chart(_decile_chart(_pair(report["deciles"], report), report), width="stretch")
         st.caption("Players are split into ten groups by predicted points, from the lowest-ranked group to "
                "the highest-ranked group. Higher actual scores in the higher-ranked groups indicate that "
-               "the model is ordering players effectively. The comparison with the baseline shows whether "
-               "the model adds value beyond recent average points.")
+               "this model is ordering players effectively. The comparison with the baseline shows whether "
+               "this model adds value beyond recent average points.")
 
     c1, c2 = st.columns(2)
     with c1:
@@ -391,7 +391,7 @@ def render_accuracy() -> None:
     st.caption("Points scored minus points predicted for players getting minutes. The central bars represent "
          "the most common prediction errors, while the right tail represents larger underestimates. "
          "When projected points are close, consider team news and other information not available "
-         "to the model.")
+         "to this model.")
 
     _render_extras(report, comparison)
 
@@ -566,7 +566,7 @@ def render_models() -> None:
     st.markdown(
         f"Each model was trained on the same seasons and asked to predict **{report['season']}**, which "
         f"none of the models had seen ({report['rows']:,} player-matches from players getting minutes). "
-        "The model used by default is set by `config.MODEL`; `xpfpl compare` rebuilds this table.")
+        "This model (the default) is set by `config.MODEL`; `xpfpl compare` rebuilds this table.")
     columns = {"model": "MODEL", "description": "WHAT IT IS", "rmse": "RMSE", "mae": "MAE", "r2": "R²",
                "spearman": "Rank corr", "captain_pts_per_gw": "Captain pts/GW", "epochs": "Epochs",
                "seconds": "Train (s)"}
@@ -660,7 +660,7 @@ def render_robustness() -> None:
             st.markdown("**Points replaying each season**")
             long = points.reset_index(names="variant").melt(id_vars="variant", var_name="season", value_name="points")
             long = long[long["variant"].isin(["ensemble", "baseline", "oracle"])].replace(
-                {"variant": {"ensemble": "The model", "baseline": "5-match average", "oracle": "Perfect foresight"}})
+                {"variant": {"ensemble": "This model", "baseline": "5-match average", "oracle": "Perfect foresight"}})
             st.altair_chart(alt.Chart(long.dropna()).mark_line(point=True, strokeWidth=2).encode(
                 x=alt.X("season:O", title=None), y=alt.Y("points:Q", title="Points", scale=alt.Scale(zero=False)),
                 color=alt.Color("variant:N", title=None, legend=alt.Legend(orient="bottom")),
@@ -681,11 +681,11 @@ def render_robustness() -> None:
     if s["seeds"]:
         same = pd.DataFrame(s["seeds"])["captain_same"].mean()
         lines.append(f"**The captain pick is often a coin toss:** retrained from different random starting points, "
-                     f"the model's top captain is the same in {same:.0%} of weeks. The top options are that close.")
+                     f"this model's top captain is the same in {same:.0%} of weeks. The top options are that close.")
     gaps = {g["variant"]: g for g in bt["gaps"]}
     if "baseline" in gaps and bt.get("noise_sd"):
         b = gaps["baseline"]
-        lines.append(f"**Worth having:** the model beat the 5-match average by {-b['gap_mean']:.0f} points a season "
+        lines.append(f"**Worth having:** this model beat the 5-match average by {-b['gap_mean']:.0f} points a season "
                      f"in the replays, in {b['seasons_worse']} of {b['seasons']} seasons. But one replay moves by "
                      f"about {bt['noise_sd']:.0f} points a season on luck alone, so smaller gaps (between models, or "
                      "between settings) can't be told apart.")
@@ -771,7 +771,7 @@ def render_simulation() -> None:
         st.altair_chart(_reliability_chart(sim["blank"], "2 or fewer"), width="stretch")
     st.caption("Players grouped by their simulated chance (x) against how often it happened (y); the dashed line is "
                "a perfect match, bars are 95% intervals. The simulation is only as right as the xP it's built "
-               "around: where the model over-forecast the top players that season, their chance of 10+ runs high "
+               "around: where this model over-forecast the top players that season, their chance of 10+ runs high "
                "too. Club totals come out a little wide because each player's minutes are drawn on their own, "
                "while a club always fields eleven.")
 
@@ -805,7 +805,7 @@ def render() -> None:
         "1. Once the sidebar says the gameweek is **complete** (FPL has confirmed its data, usually a few "
         "hours after the last match): **Fetch match data**, **Fetch betting odds**, then **Retrain** "
         "(a few minutes).\n"
-        "2. **Gameweek Review**: see how the week went and where the model was wrong.\n"
+        "2. **Gameweek Review**: see how the week went and where this model was wrong.\n"
         "3. Before the deadline: **Refresh live FPL data** for the latest prices and injury flags, then "
         "check **Players & Fixtures** and **Markets** for team news.\n"
         "4. **Plan Ahead**: if you've activated a chip, set it first. Add injury or rotation worries to "
@@ -817,7 +817,7 @@ def render() -> None:
         "hidden before the deadline unless the sidebar's **Website secret word** is typed in.\n"
         "6. Make the moves on the FPL site. The app can't make transfers for you.\n\n"
         "**Fetch match data** and **Refresh live FPL data** both do two things. "
-        "Fetch rebuilds the saved training dataset from finished matches, so the model needs retraining "
+        "Fetch rebuilds the saved training dataset from finished matches, so this model needs retraining "
         "afterwards. Refresh only re-downloads what changes day to day (prices, injury flags, your team) "
         "for the pages you're looking at. It saves nothing and needs no retraining.")
 
@@ -842,7 +842,7 @@ def render() -> None:
         "- Later weeks of the plan are a route, not a commitment: they assume today's predictions and "
         "get re-planned every week.\n"
         "- Free transfers are estimated by replaying your season. Override them if they look wrong.\n"
-        "- The model doesn't read team news, press conferences or predicted line-ups: only FPL's injury flag.\n"
+        "- This model doesn't read team news, press conferences or predicted line-ups: only FPL's injury flag.\n"
         "- Price changes are predicted from form and transfer momentum rather than the precise criteria "
         "used by FPL, so treat them as a tie-breaker.\n"
         "- Blank and double gameweek handling still hasn't been tested against a real one.")

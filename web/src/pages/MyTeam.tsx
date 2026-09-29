@@ -144,7 +144,7 @@ export default function MyTeamPage() {
     return (
       <>
         <h2>My Team</h2>
-        <p>No team to show for GW{site.meta.next_gw} yet. It appears once the model has made its forecast for the gameweek.</p>
+        <p>No team to show for GW{site.meta.next_gw} yet. It appears once this model has made its forecast for the gameweek.</p>
       </>
     );
   }
@@ -212,7 +212,7 @@ export default function MyTeamPage() {
         render: (r: SquadRow) => pct(r.p_blank), title: "2 points or fewer, not playing included" } as Column<SquadRow>,
     ] : []),
     ...(squad.some((r) => r.p_play != null) ? [{ key: "play", label: "Plays", numeric: true, value: (r: SquadRow) => r.p_play,
-      render: (r: SquadRow) => pct(r.p_play), title: `The model's chance he plays in GW${data.gw}` } as Column<SquadRow>] : []),
+      render: (r: SquadRow) => pct(r.p_play), title: `This model's chance he plays in GW${data.gw}` } as Column<SquadRow>] : []),
   ];
 
   return (

@@ -15,8 +15,9 @@ codes. Nothing here feeds the model: it is for looking back at a match.
                         (`PLAYER_STATS` of its ~65 columns)
 
 Coordinates are Opta's: the pitch is 100 x 100 whatever its size. `start_x` is measured from the
-goal being attacked (the penalty spot is 11.5), `start_y` across the pitch (50 = centre).
-`goal_mouth_y` runs across the goal (posts at about 45.2 and 54.8) and `goal_mouth_z` up it
+goal being attacked (the penalty spot is 11.5), `start_y` across the pitch (50 = centre), rising
+towards the shooter's right (unlike Opta's own feed: right wingers average ~60, left ones ~40).
+`goal_mouth_y` runs across the goal the same way (posts at about 45.2 and 54.8) and `goal_mouth_z` up it
 (crossbar at about 38). In 2026-27 about one shot in eight comes without a player: `from_fotmob`
 names them from FotMob's own match page (the source's source), and `attribute` works out any
 left from the players' own match stats (`inferred` = True).

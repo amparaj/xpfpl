@@ -33,9 +33,9 @@ def _shots(season: str, data_stamp: float) -> pd.DataFrame:
 
 
 # Plot coordinates: x across the pitch (the shooter's left on the left: the source's across
-# coordinate runs to his left, so it's mirrored), y metres from the goal line.
+# coordinate runs to his right), y metres from the goal line.
 def _across(y):
-    return W - np.asarray(y, float) / 100 * W
+    return np.asarray(y, float) / 100 * W
 
 
 def _along(x):

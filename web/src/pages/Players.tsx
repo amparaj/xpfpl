@@ -101,7 +101,7 @@ export default function Players() {
     { key: "dc", label: "DC", numeric: true, value: (p) => p.defensive_contribution, title: "Defensive contribution" },
     { key: "form", label: "Form", numeric: true, value: (p) => p.form, render: (p) => dec(p.form, 1), title: "FPL's form: points per match over the last 30 days" },
     { key: "forecast", label: next ? `xP GW${next}` : "xP next", numeric: true, value: (p) => p.forecast,
-      render: (p) => pts(p.forecast), title: "The model's forecast for the next gameweek, saved before its deadline" },
+      render: (p) => pts(p.forecast), title: "This model's forecast for the next gameweek, saved before its deadline" },
   ];
 
   return (

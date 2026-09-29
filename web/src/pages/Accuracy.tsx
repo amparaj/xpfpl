@@ -16,9 +16,9 @@ export default function Accuracy() {
 
   return (
     <>
-      <h2>How accurate is the model?</h2>
+      <h2>How accurate is this model?</h2>
       <p className="lede">
-        The model predicts each player's points (xP) before every deadline. Here it is scored on a whole season it never
+        This {site.meta.model} model predicts each player's points (xP) before every deadline. Here it is scored on a whole season it never
         saw in training{v ? ` (${v.season})` : ""}, and on this season's forecasts as the results come in.
       </p>
 
@@ -32,7 +32,7 @@ export default function Accuracy() {
       {r && <Robustness report={r} />}
       {t && <Tuning tuning={t} retune={r?.retune} />}
       <Note>
-        The default model is <strong>{site.meta.model}</strong> ({site.meta.model_description}). The ceiling is what a model
+        This model is <strong>{site.meta.model}</strong> ({site.meta.model_description}). The ceiling is what a model
         that knew every player's true chances would score, simulated: some of each week's points are luck no model can predict.
       </Note>
     </>
@@ -46,7 +46,7 @@ function LiveRecord({ scorecard }: { scorecard: any }) {
     const next = site.meta.next_gw;
     return (
       <p className="note" style={{ marginTop: 0 }}>
-        Nothing to score yet. The model has been trained, but this table only counts forecasts that were saved{" "}
+        Nothing to score yet. This model has been trained, but this table only counts forecasts that were saved{" "}
         <em>before</em> a deadline and then checked against the real points, so nothing can be adjusted after the
         fact. Saving started partway through the season, so the earlier gameweeks aren't here
         {next ? <>; the GW{next} forecast is saved and will be scored once GW{next} has been played</> : null}. Until
@@ -77,7 +77,7 @@ function Comparison({ comparison }: { comparison: any }) {
     { key: "r2", label: "R²", numeric: true, value: (r) => r.r2, render: (r) => dec(r.r2, 3) },
     { key: "spearman", label: "Rank corr.", numeric: true, value: (r) => r.spearman, render: (r) => dec(r.spearman, 3) },
     { key: "captain", label: "Captain pts/GW", numeric: true, value: (r) => r.captain_pts_per_gw, render: (r) => dec(r.captain_pts_per_gw, 1),
-      title: "Points per gameweek from captaining the model's top pick (noisy: one pick a week)" },
+      title: "Points per gameweek from captaining this model's top pick (noisy: one pick a week)" },
   ];
   return (
     <>
@@ -195,7 +195,7 @@ function Ranges({ sim, season, live }: { sim: any; season: string; live: Row[] }
       </div>
       <Note>
         Players grouped by their simulated chance; on the dashed line a 20% chance came true 20% of the time. The simulation is
-        only as right as the xP it's built around: where the model over-forecast the top players that season, their chance of 10+
+        only as right as the xP it's built around: where this model over-forecast the top players that season, their chance of 10+
         runs high too. Club totals come out a little wide because each player's minutes are drawn on their own, while a club
         always fields eleven. The simulations show risk and leave the picks alone: the team with the most expected points is the
         same either way, as <a href={PAPER}>Ramezani &amp; Dinh (2026)</a> also found for simulated forecasts.
@@ -205,9 +205,9 @@ function Ranges({ sim, season, live }: { sim: any; season: string; live: Row[] }
 }
 
 const REPLAY_LABELS: Record<string, string> = {
-  ensemble: "The model", baseline: "5-match average", oracle: "Perfect foresight",
+  ensemble: "This model", baseline: "5-match average", oracle: "Perfect foresight",
 };
-const ACCURACY_LABELS: Record<string, string> = { ensemble: "The model", baseline: "5-match average", fpl_xp: "FPL's own xP" };
+const ACCURACY_LABELS: Record<string, string> = { ensemble: "This model", baseline: "5-match average", fpl_xp: "FPL's own xP" };
 
 /** `xpfpl robustness`: six seasons, each forecast and replayed by a model trained only on the seasons before it. */
 function Robustness({ report }: { report: any }) {
@@ -264,7 +264,7 @@ function Robustness({ report }: { report: any }) {
       <div className="card">
         <h3 style={{ marginTop: 0 }}>Forecast error each season</h3>
         <Legend items={Object.values(ACCURACY_LABELS).map((label, i) => ({ label, color: [color.s1, color.s2, color.s3][i], kind: "line" as const }))} />
-        <Chart make={chart} height={240} ariaLabel="Forecast error (RMSE) each season for the model, the 5-match average and FPL's own xP" />
+        <Chart make={chart} height={240} ariaLabel="Forecast error (RMSE) each season for this model, the 5-match average and FPL's own xP" />
       </div>
       {replayRows.length > 0 && (
         <>
@@ -275,7 +275,7 @@ function Robustness({ report }: { report: any }) {
       <Note>
         A replayed season swings by around {int(bt.noise_sd)} points on luck alone, so a gap smaller than that (between two
         models, or two settings) can't be told apart from chance. Perfect foresight knows every result in advance: it's the ceiling.
-        {sameCaptain !== undefined && <> The captain pick is often close: retrained from a different random start, the
+        {sameCaptain !== undefined && <> The captain pick is often close: retrained from a different random start, this
           model's top captain stayed the same in {pct(sameCaptain)} of weeks.</>}
         {" "}Rebuilding every input from only the matches before a deadline gives the same numbers, so nothing from the future leaks in.
       </Note>

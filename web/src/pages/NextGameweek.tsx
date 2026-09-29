@@ -2,7 +2,7 @@ import * as Plot from "@observablehq/plot";
 import { useCallback, useMemo, useState } from "react";
 import { color } from "../colors";
 import { band } from "../components/Simulation";
-import { Chart, Club, Legend, Loading, MidweekBadge, Note, Segmented, Table, Tiles, plotDefaults, type Column, type TileProps } from "../components/ui";
+import { Chart, Club, Legend, Loading, MidweekBadge, Note, Opponent, Segmented, Table, Tiles, plotDefaults, type Column, type TileProps } from "../components/ui";
 import { rows, type ModelTeam, type NextGw, type Player } from "../data";
 import { POSITIONS, dec, int, money, pct, pts, when } from "../format";
 import { ROTATION, clubMidweek, competition } from "../midweek";
@@ -33,10 +33,9 @@ function clubMatches(site: Site, team: number, gw: number): Match[] {
 }
 
 function Opponents({ matches }: { matches: Match[] }) {
-  const site = useSite();
   if (!matches.length) return <span className="muted">blank</span>;
   return <>{matches.map((m, i) => (
-    <span key={i}>{i > 0 && ", "}{site.team.get(m.opponent)?.short} ({m.home ? "H" : "A"})</span>
+    <span key={i}>{i > 0 && ", "}<Opponent id={m.opponent} home={m.home} /></span>
   ))}</>;
 }
 
@@ -109,7 +108,7 @@ export default function NextGameweek() {
     return (
       <>
         <h2>Next Gameweek</h2>
-        <p>No forecast has been saved for GW{site.meta.next_gw} yet. It appears once the model has been run for the gameweek.</p>
+        <p>No forecast has been saved for GW{site.meta.next_gw} yet. It appears once this model has been run for the gameweek.</p>
       </>
     );
   }
@@ -137,7 +136,7 @@ export default function NextGameweek() {
                            </span>) : <span className="muted">–</span>,
                          title: "What his minutes in the midweek cup or European match did to his GW xP" } as Column<Row>] : []),
     ...(hasPlay ? [{ key: "play", label: "Plays", numeric: true, value: (r: Row) => r.p_play, render: (r: Row) => pct(r.p_play),
-                     title: "The model's chance he plays in the next gameweek" } as Column<Row>] : []),
+                     title: "This model's chance he plays in the next gameweek" } as Column<Row>] : []),
     ...horizon.map((g): Column<Row> => ({ key: `xp${g}`, label: `GW${g}`, group: "xP", numeric: true,
                                           value: (r) => r[`xp_${g}`], render: (r) => pts(r[`xp_${g}`]) })),
     { key: "total", label: "Total", group: "xP", numeric: true, value: (r) => r.xp_total, render: (r) => <strong>{pts(r.xp_total)}</strong>,
@@ -177,13 +176,13 @@ export default function NextGameweek() {
   const beat = (d: number) => (Math.abs(d) < 0.5 ? "right on it" : `${int(Math.abs(d))} ${d > 0 ? "more" : "fewer"} than forecast`);
   const lastWeek = team?.gameweeks.length ? team.gameweeks[team.gameweeks.length - 1] : null;
   const tiles: TileProps[] = [
-    ...(upcoming ? [{ label: "The Model's Team", value: `${pts(upcoming.forecast ?? upcoming.xp)} xP`,
-      note: <>its forecast for GW{gw}, captain doubled{upcoming.simulation
+    ...(upcoming ? [{ label: "This Model's Team", value: `${pts(upcoming.forecast ?? upcoming.xp)} xP`,
+      note: <>this model's forecast for its team in GW{gw}, captain doubled{upcoming.simulation
         ? <>; {band(upcoming.simulation.points.p10, upcoming.simulation.points.p90)} in 4 simulated weeks out of 5</> : null};{" "}
-        <a href="#model-team">see the team</a></> }] : []),
+        <a href="#model-team">see this model's team</a></> }] : []),
     ...(captains.length ? [{ label: "Top forecast", value: `${captains[0].player.web_name} ${pts(captains[0][first])}`,
-      note: `xP for GW${gw} (${site.team.get(captains[0].player.team)?.short ?? ""})` }] : []),
-    ...(lastWeek?.forecast != null ? [{ label: `The Model's Team in GW${lastWeek.gw}`, value: `Scored ${lastWeek.gross ?? "–"}`,
+      note: <>xP for GW{gw} <Club id={captains[0].player.team} /></> }] : []),
+    ...(lastWeek?.forecast != null ? [{ label: `This Model's Team in GW${lastWeek.gw}`, value: `Scored ${lastWeek.gross ?? "–"}`,
       note: `against a forecast of ${int(lastWeek.forecast)}: ${beat((lastWeek.gross ?? 0) - lastWeek.forecast)} (before transfer hits)` }] : []),
   ];
 
@@ -191,7 +190,7 @@ export default function NextGameweek() {
     <>
       <h2>Next Gameweek: GW{gw}</h2>
       <p className="lede">
-        The model's forecast for GW{gw}, whose deadline is {when(next.deadline)}: who is expected to score the most, the captain
+        This {next.model} model's forecast for GW{gw}, whose deadline is {when(next.deadline)}: who is expected to score the most, the captain
         picks, and how each club's next {horizon.length === 1 ? "fixture looks" : `${horizon.length} gameweeks look`}.
       </p>
       {tiles.length > 0 && <Tiles tiles={tiles} />}
@@ -225,7 +224,7 @@ export default function NextGameweek() {
       <h3>Fixtures</h3>
       <Table columns={fixtureColumns} data={clubs} sort="avg" rowKey={(c) => c.team} />
       <Note>
-        Each club's chance of winning, from the model's own club ratings (the darker, the likelier).
+        Each club's chance of winning, from this model's own club ratings (the darker, the likelier).
         {midweekAhead && <> A badge such as <span className="tag cup">{competition("champions-league").short} Tue</span>
           marks a cup or European match in the week before that gameweek (hover for the opponent).</>}
       </Note>

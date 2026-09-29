@@ -25,6 +25,11 @@ export function Club({ id, code }: { id?: number; code?: number }) {
   );
 }
 
+/** An opponent: the club chip, then (H) or (A). */
+export function Opponent({ id, home }: { id: number; home: boolean }) {
+  return <span className="opponent"><Club id={id} /> ({home ? "H" : "A"})</span>;
+}
+
 /** "Leicester City FC" -> "LEI": a short name for a club that isn't in this season's list. */
 export const clubShort = (name: string) => name.replace(/^AFC /, "").slice(0, 3).toUpperCase();
 
