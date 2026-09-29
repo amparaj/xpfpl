@@ -91,3 +91,17 @@ def test_ruled_out_and_movers_ignore_opening_prices():
     matches, _ = markets.movers(market, None, days=3)
     assert list(matches["slug"]) == ["b", "a"]                   # b's home win fell 15 points
     assert abs(matches["biggest_move"].iloc[0] - 0.15) < 1e-9
+
+
+def test_fair_result_scales_to_one_and_drops_stale_triples():
+    raw = pd.DataFrame({"home_win": [0.51, 0.215, np.nan], "draw": [0.25, 0.23, 0.3], "away_win": [0.25, 0.09, 0.4]})
+    fair = markets.fair_result(raw)
+    assert np.allclose(fair.loc[0, markets.RESULTS].to_numpy(dtype=float), np.array([0.51, 0.25, 0.25]) / 1.01)
+    assert fair.loc[1:, markets.RESULTS].isna().all().all()      # sums to 0.535; one price missing
+
+
+def test_goal_rates_are_nan_without_any_price():
+    rows = pd.DataFrame([_implied(1.5, 1.0), {"home_win": np.nan, "draw": np.nan, "away_win": np.nan}])
+    fitted = markets.fit_goal_rates(rows, steps=50)
+    assert fitted.loc[0, ["lam_home", "lam_away"]].notna().all()
+    assert fitted.loc[1, ["lam_home", "lam_away"]].isna().all()

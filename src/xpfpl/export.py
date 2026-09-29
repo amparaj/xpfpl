@@ -9,6 +9,13 @@ odds come from odds.json on the `odds` branch, which a scheduled GitHub Action
   players.json       every player as FPL shows them now, plus the saved forecast for the next GW
   gws/gwNN.json      each played gameweek: every player's stats with the model's xP (and minutes in
                      the midweek cup or European match before it), and the fixtures
+  matches/gwNN.json  each played gameweek's matches as they happened (data/matchstats.py): every
+                     shot with where it was taken and where it went, xG and xG on target; the
+                     momentum by minute; the team stats; each player's match stats. For the match
+                     pages (Past Gameweeks -> a result)
+  profiles.json      where each player plays (spatial.py): his shots binned into zones round the goal,
+                     every shot, per-90 touches / box touches / final-third passes / chances / shots,
+                     shot metrics, and the players with the most similar profile
   modelteam.json     the Model's Team: a paper FPL team run on the model's own advice, each week's
                      decision (saved before the deadline, with its Monte Carlo: the team's simulated
                      score, captain odds, chip odds) and what it scored
@@ -176,6 +183,73 @@ def _gameweek(gw: int, rows: pd.DataFrame, fx: list[dict], xp: pd.Series, source
                 for f in fx if f["event"] == gw]
     return {"gw": gw, "xp_source": source, "players": table(rows.sort_values(["fixture", "element"]), digits=3),
             "fixtures": fixtures}
+
+
+SHOT_COLUMNS = ["minute", "added_time", "is_home", "element", "outcome", "situation", "body_part", "xg", "xgot",
+                "start_x", "start_y", "goal_mouth_y", "goal_mouth_z"]
+
+
+def _matches(season: str, gw: int, people: pd.DataFrame | None) -> dict | None:
+    """The gameweek's matches as they happened, per FPL fixture id: team stats as {stat: [home,
+    away]}, shots, momentum and player stats. Players are FPL element ids (null where the source
+    has no player, about one shot in eight)."""
+    from xpfpl.data import matchstats
+    tables = matchstats.gameweek(season, gw)
+    if "shots" not in tables and "matches" not in tables:
+        return None
+    element = people.set_index("code")["id"] if people is not None else pd.Series(dtype=int)
+    out = {}
+    for fixture in sorted({int(f) for df in tables.values() for f in df["fixture"]}):
+        part = {k: df[df["fixture"] == fixture] for k, df in tables.items()}
+        match = {}
+        if "matches" in part:
+            match["stats"] = {r.stat: [_plain(r.home, 3), _plain(r.away, 3)] for r in part["matches"].itertuples()}
+        if "shots" in part:
+            s = part["shots"].sort_values(["minute", "added_time", "shot_index"], na_position="first")
+            s = s.assign(element=s["code"].map(element))
+            match["shots"] = table(s[SHOT_COLUMNS], digits=4)
+        if "momentum" in part:
+            match["momentum"] = table(part["momentum"].sort_values("minute")[["minute", "value"]], digits=1)
+        if "players" in part:
+            pl = part["players"]
+            pl = pl.assign(element=pl["code"].map(element)).dropna(subset=["element"])
+            keep = ["element", *[c for c in matchstats.PLAYER_STATS if c in pl]]
+            match["players"] = table(pl[keep].astype({"element": int}), digits=3)
+        out[str(fixture)] = match
+    return {"gw": gw, "source": "FotMob via FPL-Core-Insights", "fixtures": out}
+
+
+def _profiles(season: str, people: pd.DataFrame | None) -> dict | None:
+    """Every player's spatial profile (spatial.py) by FPL element id, with position averages for
+    context, his shots, and his most similar players."""
+    from xpfpl import spatial
+    prof = spatial.profiles(season)
+    if prof.empty or people is None:
+        return None
+    ids = people.drop_duplicates("code").set_index("code")
+    prof = prof.join(ids[["id", "element_type"]], how="inner")
+    element = ids["id"]
+    similar = spatial.similar(prof.drop(columns=["id", "element_type"]), prof["element_type"])
+    enough = prof[prof["minutes"] >= spatial.MIN_MINUTES]
+    metrics = [c for c in spatial.SIMILARITY if c in prof]
+    averages = {str(int(pos)): {c: _plain(g[c].mean(), 3) for c in metrics} for pos, g in enough.groupby("element_type")}
+    s = spatial.shots(season)
+    s = s.assign(element=s["code"].map(element)).dropna(subset=["element"])
+    shot_cols = ["element", "gw", "fixture", "minute", "start_x", "start_y", "xg", "outcome", "situation", "body_part"]
+    return {
+        "zones": table_zones(spatial.zones()), "min_minutes": spatial.MIN_MINUTES, "min_shots": spatial.MIN_SHOTS,
+        "players": table(prof.rename(columns={"id": "element"}).reset_index(drop=True)
+                         .drop(columns=["element_type"]), digits=3),
+        "averages": averages,
+        "similar": {str(int(element[c])): [[int(element[o]), v] for o, v in found if o in element.index]
+                    for c, found in similar.items() if c in element.index},
+        "shots": table(s[shot_cols].astype({"element": int}), digits=3),
+    }
+
+
+def table_zones(z: pd.DataFrame) -> list[list[float]]:
+    """Zone bounds as [zone, x0, x1, y0, y1] rows."""
+    return [[int(r.zone), r.x0, r.x1, r.y0, r.y1] for r in z.itertuples()]
 
 
 def _next_gameweek(bs: dict, season: str, model: str) -> dict | None:
@@ -366,6 +440,12 @@ def export(model: str = config.MODEL, out: Path = config.SITE_DATA_DIR) -> list[
         written.append(_write(_gameweek(gw, rows[rows["round"] == gw], fx, xp, source, snapshots.get(gw),
                                         _midweek_minutes(season, gw, people)),
                               out / "gws" / f"gw{gw:02d}.json"))
+        happened = _matches(season, gw, people)
+        if happened:
+            written.append(_write(happened, out / "matches" / f"gw{gw:02d}.json"))
+    profiles = _profiles(season, people)
+    if profiles:
+        written.append(_write(profiles, out / "profiles.json"))
     from xpfpl import modelteam
     written.append(_write(modelteam.season_record(season, rows, bs, xp_by_gw), out / "modelteam.json"))
     ahead = _next_gameweek(bs, season, model)

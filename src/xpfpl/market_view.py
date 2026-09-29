@@ -545,11 +545,13 @@ def _render_accuracy() -> None:
         shown = acc.assign(source=acc["source"].map({"Market": "Market Odds", "Our ratings": "Our Odds"}))
         st.dataframe(shown.rename(columns={"season": "Season", "source": "Source", "matches": "Matches",
                                            "goals_rmse": "Goals RMSE", "clean_sheet_brier": "Clean-sheet Brier",
-                                           "win_log_loss": "Win log loss"}),
+                                           "result_log_loss": "Result log loss", "result_brier": "Result Brier"}),
                      hide_index=True, width="stretch",
                      column_config={c: st.column_config.NumberColumn(format=DECIMAL)
-                                    for c in ("Goals RMSE", "Clean-sheet Brier", "Win log loss")})
+                                    for c in ("Goals RMSE", "Clean-sheet Brier", "Result log loss", "Result Brier")})
         st.caption("Lower is better in every column; each uses the odds as they stood at the FPL deadline. The "
-                   "market is best at the result itself; for goals and clean sheets it's close to our own "
-                   "ratings. The model uses both; so far that's close to neutral for accuracy. 2024-25 only "
+                   "result columns score the home win / draw / away win chances: log loss counts only the chance "
+                   "given to what happened (the fairest single number for comparing forecasts), Brier all three. The "
+                   "market and our own ratings are close on all of them (the market a little ahead on 2025-26's "
+                   "results). The model uses both; so far that's close to neutral for accuracy. 2024-25 only "
                    "had result markets; goal markets started in 2025-26.")

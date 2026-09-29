@@ -1,6 +1,7 @@
 import * as Plot from "@observablehq/plot";
 import { useCallback, useMemo, useState } from "react";
 import { color } from "../colors";
+import { Profile } from "../components/Profile";
 import { Chart, barPadding, Club, Legend, Loading, Note, Segmented, Table, plotDefaults, type Column } from "../components/ui";
 import type { Player } from "../data";
 import { POSITIONS, dec, money, pts, signed } from "../format";
@@ -58,6 +59,7 @@ function PlayerDetail({ player }: { player: Player }) {
           </p>
         </>
       )}
+      <Profile player={player} />
     </div>
   );
 }
@@ -105,7 +107,8 @@ export default function Players() {
   return (
     <>
       <h2>Players</h2>
-      <p className="lede">Every player's season so far. Click a player to see their points against xP week by week.</p>
+      <p className="lede">Every player's season so far. Click a player to see their points against xP week by week, where they
+        play and shoot from, and the players with the most similar profile.</p>
       {selected && <PlayerDetail player={selected} />}
       <div className="toolbar" style={{ marginTop: 14 }}>
         <Segmented label="Position" value={pos} onChange={setPos}

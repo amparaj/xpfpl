@@ -382,12 +382,18 @@ function MarketAccuracy({ data }: { data: Row[] }) {
     { key: "goals", label: "Goals error", numeric: true, value: (r) => r.goals_rmse, render: (r) => dec(r.goals_rmse, 3),
       title: "RMSE of each side's expected goals against the goals scored" },
     { key: "cs", label: "Clean-sheet Brier", numeric: true, value: (r) => r.clean_sheet_brier, render: (r) => dec(r.clean_sheet_brier, 3) },
-    { key: "win", label: "Win log loss", numeric: true, value: (r) => r.win_log_loss, render: (r) => dec(r.win_log_loss, 3) },
+    { key: "result", label: "Result log loss", numeric: true, value: (r) => r.result_log_loss, render: (r) => dec(r.result_log_loss, 3),
+      title: "Minus the log of the chance given to the result that happened (home win, draw or away win), averaged over matches" },
+    { key: "brier", label: "Result Brier", numeric: true, value: (r) => r.result_brier, render: (r) => dec(r.result_brier, 3),
+      title: "Squared error over the three result chances, averaged over matches" },
   ];
   return (
     <>
       <Table columns={columns} data={data} rowKey={(r) => `${r.season}-${r.source}`} />
-      <Note>Lower is better for all three. "Market" is Polymarket at each FPL deadline; "Our ratings" is the model's club-strength fit as it stood then.</Note>
+      <Note>Lower is better in every column. "Market" is Polymarket at each FPL deadline; "Our ratings" is the model's club-strength fit as it stood then.
+        The result columns score the home win / draw / away win chances. Log loss is the one to go by: it counts only the chance
+        given to what actually happened, so it separates a better forecast from a worse one in fewer matches than the ranked
+        probability score. 1.099 is what "a third each" would score.</Note>
     </>
   );
 }

@@ -137,6 +137,20 @@ export function implied(lh: number, la: number): Record<string, number> {
   return out;
 }
 
+/** The home win / draw / away win prices scaled to sum to 1, or dropped if they are further than
+ * 0.1 from it (a stale market): markets.py `fair_result`. The three are separate yes/no markets, so
+ * they only roughly add up (1.00 +- 0.006 at deadlines). */
+export function fairResult(prices: Record<string, number>): Record<string, number> {
+  const keys = ["home_win", "draw", "away_win"];
+  const total = keys.reduce((s, k) => s + (prices[k] ?? NaN), 0);
+  const out = { ...prices };
+  for (const k of keys) {
+    if (Number.isNaN(total) || Math.abs(total - 1) > 0.1) delete out[k];
+    else out[k] = prices[k] / total;
+  }
+  return out;
+}
+
 /** Each side's expected goals, chosen so the implied prices match the market's as closely as
  * possible (squared error over whichever markets exist): a coarse grid, then a fine one. */
 export function fitRates(prices: Record<string, number>): [number, number] {
@@ -182,11 +196,12 @@ export async function liveOdds(teamCodes: Record<string, number>): Promise<{ mat
       const t = firstToken(m);
       if (t) tokens[name] = t;
     }
-    if (!("home_win" in prices)) continue;
-    const [lam_home, lam_away] = fitRates(prices);
+    const fair = fairResult(prices);
+    if (!("home_win" in fair)) continue;
+    const [lam_home, lam_away] = fitRates(fair);
     const codes = { home_code: teamCodes[home.name], away_code: teamCodes[away.name] };
     matches.push({ slug, kickoff: main.startTime, ...codes,
-                   volume: group.reduce((s, e) => s + Number(e.volume ?? 0), 0), prices, tokens, lam_home, lam_away });
+                   volume: group.reduce((s, e) => s + Number(e.volume ?? 0), 0), prices: fair, tokens, lam_home, lam_away });
     for (const e of group) for (const m of e.markets ?? []) {
       if (m.sportsMarketType === "soccer_anytime_goalscorer" && !m.closed) {
         scorers.push({ slug, player: (m.question ?? "").split(":")[0].trim(), p: yesPrice(m),

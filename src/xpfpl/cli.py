@@ -25,13 +25,16 @@ def cmd_fetch(args) -> None:
 
 
 def _fetch_cups() -> None:
-    """This season's cup and European matches and minutes (data/cups.py), for rotation risk."""
-    from xpfpl.data import api, cups
+    """This season's cup and European matches and minutes (data/cups.py), for rotation risk, and
+    the shots, momentum and match stats of its Premier League matches (data/matchstats.py), for
+    the website's match pages. Both come from FPL-Core-Insights."""
+    from xpfpl.data import api, cups, matchstats
     try:
         season = api.current_season(api.bootstrap())
         print(f"Cup and European matches: {cups.fetch(season)} archive file(s) written for {season}.")
+        print(f"Shots and match stats: {matchstats.fetch(season)} archive file(s) written for {season}.")
     except Exception as exc:          # a missing source shouldn't stop the FPL fetch
-        print(f"  (cup and European matches not updated: {exc})")
+        print(f"  (cup and European matches / match stats not updated: {exc})")
 
 
 def _metrics(y_true: np.ndarray, y_pred: np.ndarray) -> str:
@@ -648,13 +651,15 @@ def cmd_markets(args) -> None:
 
 
 def cmd_cups(args) -> None:
-    """Cup and European matches (FPL-Core-Insights): fixtures and minutes, for rotation risk."""
-    from xpfpl.data import api, cups
+    """Cup and European matches (FPL-Core-Insights): fixtures and minutes, for rotation risk; and
+    the Premier League matches' shots and match stats (the website's match pages)."""
+    from xpfpl.data import api, cups, matchstats
 
     now = api.current_season(api.bootstrap())
     seasons = [args.season] if args.season else [s for s in config.HISTORY_SEASONS + [now] if s >= cups.FIRST_SEASON]
     for season in seasons:
-        print(f"{season}: {cups.fetch(season, refresh=args.refresh)} archive file(s) written")
+        print(f"{season}: {cups.fetch(season, refresh=args.refresh)} archive file(s) written, "
+              f"{matchstats.fetch(season, refresh=args.refresh)} of shots and match stats")
     fx, _ = cups.load()
     print(fx.groupby(["season", "tournament"]).size().rename("club matches").to_string())
     ahead = fx[fx["kickoff_time"] > pd.Timestamp.now(tz="UTC")].sort_values("kickoff_time").head(12)
@@ -831,7 +836,7 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--refresh", action="store_true", help="re-download price histories already cached")
     p.set_defaults(func=cmd_markets)
 
-    p = sub.add_parser("cups", help="fetch cup and European fixtures and minutes (rotation risk, 2025-26 on)")
+    p = sub.add_parser("cups", help="fetch cup and European fixtures and minutes (rotation risk) and Premier League shots and match stats, 2025-26 on")
     p.add_argument("--season", help="one season only (default: every season with data)")
     p.add_argument("--refresh", action="store_true", help="re-download gameweeks already cached")
     p.add_argument("--model", choices=models.NAMES, default=config.MODEL,
