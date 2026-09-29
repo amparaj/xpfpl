@@ -65,8 +65,12 @@ Everything in one place, no command line needed. The tabs follow the Guide's wee
   were chosen, and a glossary.
 - **Gameweek Review**: any finished GW. Your points against the average, what the model expected
   per player (and his minutes in any cup or European match that week), the best XI you could have
-  picked from the same squad, that week's top scorers, and the midweek results before it.
-- **Players & Fixtures**: xP for every player with filters (and the midweek factor on next week's
+  picked from the same squad, that week's top scorers, and the midweek results before it. Under
+  **Matches**, pick any result for the same match view as the website: shot map (hover a shot for
+  the player, minute, outcome and xG), shots on target on the goal frame, expected goals and
+  momentum through the match, team stats, the odds before the deadline, and every player's points,
+  xP and match stats.
+- **Players & Fixtures** (with each player's spatial profile under "A player's season": shot zones, every shot, per-90 zone metrics against his position, and similar profiles): xP for every player with filters (and the midweek factor on next week's
   xP, when there is one, and his simulated range and chances of 10+ and of 2 or fewer), and a fixture difficulty ticker that marks each club's cup and European
   matches ("[UCL Tue]").
 - **Markets**: what the betting markets think ("Market Odds") next to the model's own team
@@ -228,13 +232,29 @@ markets. `predict` and `recommend` fetch the live odds for the next gameweek the
   there are no odds (before 2024-25, and any gameweek after the next one) they fall back to the
   model's own team ratings, with a flag saying which is which.
 
-How good are the odds? At the deadline, the market predicts results better than the model's team
-ratings, and goals and clean sheets about as well:
+How good are the odds? At the deadline, the market and the model's team ratings are close: the
+market a little better on 2025-26's results, level on 2024-25's, and about the same on goals and
+clean sheets. Results are scored over home win / draw / away win with log loss, which counts only
+the chance given to what happened (a third each would score 1.099). It separates a better
+forecast from a worse one in fewer matches than the ranked probability score, which gives credit
+for being "near" ([Penalty Blog](https://pena.lt/y/2025/05/01/better-metrics-for-football-forecasts-moving-beyond-the-ranked-probability-score/)):
 
-| Season | Goals RMSE (market / ours) | Clean-sheet Brier (market / ours) | Win log loss (market / ours) |
+| Season | Goals RMSE (market / ours) | Clean-sheet Brier (market / ours) | Result log loss (market / ours) |
 | --- | --- | --- | --- |
-| 2024-25 (result markets only) | 1.192 / 1.183 | 0.176 / 0.172 | **0.593** / 0.595 |
-| 2025-26 | **1.083** / 1.093 | **0.178** / 0.180 | **0.595** / 0.603 |
+| 2024-25 (result markets only) | 1.195 / 1.187 | 0.176 / 0.173 | 0.981 / 0.981 |
+| 2025-26 | **1.083** / 1.094 | **0.178** / 0.180 | **1.016** / 1.027 |
+
+**No margin to remove.** A bookmaker's odds carry a margin (the implied chances add up to more
+than 100%), and there are several ways to take it out: multiplicative, additive, power, Shin...
+([Penalty Blog](https://pena.lt/y/2025/09/14/from-biased-odds-to-fair-probabilities/)). Polymarket's
+three result prices are separate yes/no markets and add up to 1.00 ± 0.006 at the deadline, so
+there is almost nothing to remove: on every match since 2024-25 the four methods give the same log
+loss to four decimals, and the model's accuracy is unchanged to three. `markets.fair_result`
+scales them to sum to 1 (the multiplicative method) and drops a triple more than 0.1 off, which is
+a stale market, not odds (Brighton v Man City in November 2024: 0.215 / 0.23 / 0.09). A power
+calibration fitted on 2024-25 (shrinking the market a little towards a third each: it was
+slightly overconfident, and priced draws at 24% against 26% seen) helped later seasons by 0.002
+log loss, with a 90% interval from -0.001 to +0.006: not adopted.
 
 **Team news in the odds.** Injuries and rotation reach the market before FPL's flags. A player
 whose anytime-goalscorer odds are 6% or less at the deadline has almost always been ruled out: on
@@ -257,7 +277,24 @@ is the "ruled out" signal above.
 `xpfpl cups` reads every Champions, Europa and Conference League and EFL Cup match an EPL club
 plays, with each player's minutes, from
 [FPL-Core-Insights](https://github.com/olbauday/FPL-Core-Insights) (2025-26 onwards; saved in
-`archive/cups/`). `xpfpl fetch` updates this season's.
+`archive/cups/`). `xpfpl fetch` updates this season's. The same source has every Premier League
+match's shots (where each was taken and where it went, xG and xG on target), momentum, team stats
+and player stats (FotMob's data): `data/matchstats.py` saves them in `archive/matchstats/` for the
+website's match pages. Not used by the model.
+
+**Where players play (spatial profiles).** There are no heatmaps or full event data (every pass
+and touch with its location) in any source used here, only each shot's location and per-match zone
+counts (touches in the opposition box, passes into the final third). `spatial.py` turns those into
+a profile per player: his shots binned into zones round the goal (the density a heatmap would
+show), per-90 zone metrics, shot distance and quality, and the players with the most similar
+profile (cosine similarity within position). The dashboard (Players & Fixtures) and the website
+(Players) show it; match pages add field tilt (each side's share of the passes in the opposition
+half). Tested as model features on 2025-26 (a correction to the ensemble's out-of-sample errors,
+fitted on GW1-19 and scored on GW20-38): about -0.005 RMSE, mostly midfielders, on one season. Not
+enough to add yet; worth retrying once 2026-27 is complete. The optimiser picks on xP, which
+already reflects where a player shoots from, so the similar-profile list is for browsing, not
+picking. A spatial match engine for the Monte Carlo (a Markov chain over pitch zones) would need
+the full event data this doesn't have.
 
 The idea was that a club with a big midweek match rests its stars at the weekend. On 2025-26 and
 2026-27 GW1-5, that doesn't show up at club level: regulars at European clubs start just as often
@@ -587,7 +624,10 @@ A public, read-only look back at the season, served by GitHub Pages from the `gh
 (https://amparaj.github.io/xpfpl/). Its pages, in order: **About** (where it opens: the project and
 how the model forecasts, picks a team and is tested, in plain language, with the latest accuracy
 figures, the midweek factors and the Monte Carlo), **Model Accuracy** (including whether the simulated ranges came true), **Past Gameweeks** (every result, the cup and
-European results before it, each player's points against the xP forecast and his midweek minutes),
+European results before it, each player's points against the xP forecast and his midweek minutes;
+each result opens a match page: a shot map with every shot on hover, where the shots on target went,
+expected goals and momentum through the match, the team stats, the odds before the deadline, and
+each player's FPL points and xP next to his match stats),
 **Next Gameweek** (the forecast saved for the coming gameweek: captain picks with each one's simulated range and chance of 10+, the top players over
 the horizon with any midweek factor on their xP, each club's fixtures with our win chances and a
 badge for its cup or European matches, and anyone the betting markets have ruled out), **My Team** (the team I'm

@@ -351,6 +351,31 @@ def outright_prices_at(tokens: list[str], when: pd.Timestamp) -> dict[str, float
 
 # ---------------------------------------------------------------- odds -> expected goals
 
+# Home win / draw / away win are three separate yes/no markets, so their prices needn't sum to 1.
+# At the deadline they sum to 1.00 +- 0.006 (2024-25 to 2026-27): the gap is price ticks and
+# bid-ask midpoints, not a bookmaker's margin. A triple further off than this is a stale or
+# untraded market (Brighton v Man City, 9 Nov 2024: 0.215 / 0.23 / 0.09) and is dropped.
+RESULTS = ["home_win", "draw", "away_win"]
+MAX_RESULT_GAP = 0.1
+
+
+def fair_result(market: pd.DataFrame) -> pd.DataFrame:
+    """The three result prices scaled to sum to 1 (the "multiplicative" way of removing a
+    margin), or NaN where they are missing or don't add up.
+
+    Tested against every match since 2024-25: the multiplicative, additive, power and Shin
+    methods score the same to 4 decimals of log loss, as Penalty Blog found for bookmaker odds
+    (https://pena.lt/y/2025/09/14/from-biased-odds-to-fair-probabilities/), because there is
+    almost no margin to remove. The simplest one is used."""
+    if market.empty or not set(RESULTS) <= set(market):
+        return market
+    prices = market[RESULTS].astype(float)
+    total = prices.sum(axis=1, min_count=3)
+    ok = (total - 1).abs() <= MAX_RESULT_GAP
+    fair = prices.div(total, axis=0).where(ok, np.nan)
+    return market.assign(**{c: fair[c] for c in RESULTS})
+
+
 def _poisson_pmf(lam: torch.Tensor) -> torch.Tensor:
     k = torch.arange(MAX_GOALS + 1, dtype=lam.dtype)
     return torch.exp(k * torch.log(lam[:, None]) - lam[:, None] - torch.lgamma(k + 1))
@@ -363,7 +388,8 @@ def fit_goal_rates(matches: pd.DataFrame, steps: int = 300) -> pd.DataFrame:
     gradient descent in PyTorch) so the implied probabilities of home win / draw / away win,
     over 1.5 / 2.5 / 3.5 goals, each side over 0.5 / 1.5 and both teams scoring match the
     market's as closely as possible (squared error; missing markets are skipped). With only the
-    result market (2024-25) the two rates still come out, from the win/draw/loss split.
+    result market (2024-25) the two rates still come out, from the win/draw/loss split. A match
+    with no usable price at all gets NaN rates (not the starting guess).
     """
     if matches.empty:
         return matches.assign(lam_home=[], lam_away=[])
@@ -392,6 +418,7 @@ def fit_goal_rates(matches: pd.DataFrame, steps: int = 300) -> pd.DataFrame:
         loss.backward()
         opt.step()
     rates = torch.exp(log_rates).detach().numpy()
+    rates[~mask.any(1).numpy()] = np.nan
     return matches.assign(lam_home=rates[:, 0], lam_away=rates[:, 1])
 
 
@@ -510,7 +537,7 @@ def build(matches: pd.DataFrame, bs: dict | None = None, cache: bool = True) -> 
                 for r in found.itertuples()}
     market, scorers = price_games(games, per_slug, cache)
     archive.save_polymarket(games, found)
-    market = match_fixtures(fit_goal_rates(market), matches)
+    market = match_fixtures(fit_goal_rates(fair_result(market)), matches)
     if len(scorers):
         scorers = match_players(scorers, market, player_names(bs))
     config.PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
@@ -530,7 +557,7 @@ def upcoming(bs: dict, fixtures: list[dict]) -> tuple[pd.DataFrame, pd.DataFrame
     if not games:
         return pd.DataFrame(), pd.DataFrame()
     market, scorers = price_games(games, {}, cache=False)
-    market = match_fixtures(fit_goal_rates(market), api_fixture_table(bs, fixtures))
+    market = match_fixtures(fit_goal_rates(fair_result(market)), api_fixture_table(bs, fixtures))
     if len(scorers) and len(market):
         names = player_names(bs)
         scorers = match_players(scorers, market, names[names["season"] == api.current_season(bs)])
@@ -620,7 +647,14 @@ def match_history(slug: str, days: float = 7, end: pd.Timestamp | None = None) -
 
 def accuracy(market: pd.DataFrame, matches: pd.DataFrame) -> pd.DataFrame:
     """How well the deadline odds predicted each season, next to our own team ratings: goals
-    RMSE per side, clean-sheet Brier score, and the result's log loss (lower is better for all)."""
+    RMSE per side, clean-sheet Brier score, and the result's log loss and Brier score over home
+    win / draw / away win (lower is better for all).
+
+    The result is scored with log loss (the chance given to what happened, nothing else) rather
+    than the ranked probability score: RPS gives credit for being "near" (a draw when the home
+    side won) and needs more matches to tell two forecasts apart
+    (https://pena.lt/y/2025/05/01/better-metrics-for-football-forecasts-moving-beyond-the-ranked-probability-score/).
+    It is the same for either side of a match, so the mean over sides is the mean over matches."""
     from xpfpl import teams
     from xpfpl.features import _historical_strength, _poisson_win, market_side
 
@@ -629,15 +663,24 @@ def accuracy(market: pd.DataFrame, matches: pd.DataFrame) -> pd.DataFrame:
     side["ga"] = np.where(side["was_home"], side["team_a_score"], side["team_h_score"])
     side = side.join(_historical_strength(side, teams.ratings(matches), 1))
     d = side.merge(market_side(market), on=["season", "fixture", "team_code"])
-    d = d.assign(won=(d["gf"] > d["ga"]).astype(float), cs=(d["ga"] == 0).astype(float),
-                 fx_win=_poisson_win(d["fx_gf"], d["fx_ga"]))
+    d = d.merge(market[["season", "fixture", "draw"]].rename(columns={"draw": "mkt_draw"}), on=["season", "fixture"])
+    fx_win, fx_loss = _poisson_win(d["fx_gf"], d["fx_ga"]), _poisson_win(d["fx_ga"], d["fx_gf"])
+    d = d.assign(cs=(d["ga"] == 0).astype(float), fx_win=fx_win, fx_draw=1 - fx_win - fx_loss, fx_loss=fx_loss,
+                 mkt_loss=1 - d["mkt_win"] - d["mkt_draw"])
+    d = d.dropna(subset=["mkt_win", "mkt_draw"])
+    outcome = np.sign(d["gf"] - d["ga"]).to_numpy()          # 1 won, 0 drew, -1 lost
+    actual = np.stack([outcome == 1, outcome == 0, outcome == -1], axis=1).astype(float)
     rows = []
-    for season, g in d.groupby("season"):
-        for source, gf, cs, win in (("Market", g["mkt_gf"], g["mkt_cs"], g["mkt_win"]),
-                                    ("Our ratings", g["fx_gf"], g["fx_cs"], g["fx_win"])):
-            win = win.clip(0.01, 0.99)
+    for season in sorted(d["season"].unique()):
+        sel = (d["season"] == season).to_numpy()
+        g = d[sel]
+        for source, gf, cs, p in (("Market", g["mkt_gf"], g["mkt_cs"], g[["mkt_win", "mkt_draw", "mkt_loss"]]),
+                                  ("Our ratings", g["fx_gf"], g["fx_cs"], g[["fx_win", "fx_draw", "fx_loss"]])):
+            p = p.to_numpy(dtype=float).clip(1e-3, 1)
+            p = p / p.sum(axis=1, keepdims=True)
             rows.append({"season": season, "source": source, "matches": len(g) // 2,
                          "goals_rmse": float(np.sqrt(np.mean((gf - g["gf"]) ** 2))),
                          "clean_sheet_brier": float(np.mean((cs - g["cs"]) ** 2)),
-                         "win_log_loss": float(-np.mean(g["won"] * np.log(win) + (1 - g["won"]) * np.log(1 - win)))})
+                         "result_log_loss": float(-np.mean(np.log((p * actual[sel]).sum(axis=1)))),
+                         "result_brier": float(np.mean(((p - actual[sel]) ** 2).sum(axis=1)))})
     return pd.DataFrame(rows)

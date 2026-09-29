@@ -1,4 +1,4 @@
-import { Component, useEffect, useState, type ReactNode } from "react";
+import { Component, useEffect, type ReactNode } from "react";
 import { Loading } from "./components/ui";
 import { day, when } from "./format";
 import About from "./pages/About";
@@ -10,7 +10,7 @@ import ModelTeamPage from "./pages/ModelTeam";
 import MyTeamPage from "./pages/MyTeam";
 import NextGameweek from "./pages/NextGameweek";
 import Players from "./pages/Players";
-import { SiteContext, useSiteData } from "./site";
+import { SiteContext, useHash, useSiteData } from "./site";
 
 // About first (where the site opens), then how far to trust the model, the weeks played and the
 // week ahead (with the team I'm planning for it), research, the model's own team, and the raw data last.
@@ -26,20 +26,10 @@ const PAGES = [
   { id: "data", label: "Data", component: DataPage },
 ] as const;
 
-/** The page is the part of the URL hash before any "/": #players/123 -> players. */
-function useHash(): string {
-  const [hash, setHash] = useState(() => window.location.hash.slice(1));
-  useEffect(() => {
-    const onChange = () => setHash(window.location.hash.slice(1));
-    window.addEventListener("hashchange", onChange);
-    return () => window.removeEventListener("hashchange", onChange);
-  }, []);
-  return hash;
-}
-
 export default function App() {
   const site = useSiteData();
   const hash = useHash();
+  // The page is the part of the hash before any "/": #gameweeks/6/53 -> gameweeks.
   const page = PAGES.find((p) => p.id === hash.split("/")[0]) ?? PAGES[0];
   const Page = page.component;
 

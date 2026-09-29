@@ -1,19 +1,30 @@
 import * as Plot from "@observablehq/plot";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
 import { color } from "../colors";
 import { Chart, Club, Note, Loading, Table, Tiles, plotDefaults, type Column } from "../components/ui";
 import { competition, side } from "../midweek";
 import { gwFile, rows, type Gameweek, type GwRow, type ModelTeam } from "../data";
 import { POSITIONS, compact, dec, int, pts, signed, when } from "../format";
 import { totals, type PlayerGw } from "../season";
-import { useData, useSite } from "../site";
+import { useData, useHash, useSite } from "../site";
+import Match from "./Match";
 
 interface Line extends PlayerGw { name: string; team: number; position: number }
 
+/** #gameweeks shows the latest played gameweek, #gameweeks/6 GW6, and #gameweeks/6/53 fixture 53's match page. */
 export default function Gameweeks() {
   const site = useSite();
   const played = site.meta.played;
-  const [gw, setGw] = useState(played[played.length - 1]);
+  const [, wanted, fixture] = useHash().split("/").map(Number);
+  const gw = played.includes(wanted) ? wanted : played[played.length - 1];
+  if (gw && fixture) return <Match key={fixture} gw={gw} fixture={fixture} />;
+  return <Week gw={gw} />;
+}
+
+function Week({ gw }: { gw: number }) {
+  const site = useSite();
+  const played = site.meta.played;
+  const setGw = (g: number) => { window.location.hash = `gameweeks/${g}`; };
   const data = useData<Gameweek>(gw ? gwFile(gw) : null);
   const team = useData<ModelTeam>("modelteam.json");
   const teamWeek = team?.gameweeks.find((w) => w.gw === gw);
@@ -144,16 +155,18 @@ export default function Gameweeks() {
           ]} />
 
           <h3>Results</h3>
+          <p className="note" style={{ marginTop: 0 }}>Pick a result for its shot map, how the match went, the team stats and every player's numbers.</p>
           <div className="fixtures">
             {data.fixtures.map((f) => {
               const x = xg.get(f.id);
               return (
-                <div className="fixture" key={f.id}>
+                <a className="fixture" key={f.id} href={`#gameweeks/${gw}/${f.id}`}
+                   aria-label={`${site.team.get(f.home)?.name} ${f.home_score ?? ""} ${site.team.get(f.away)?.name} ${f.away_score ?? ""}: match details`}>
                   <span><Club id={f.home} /></span>
                   <span className="score">{f.home_score ?? "–"} – {f.away_score ?? "–"}</span>
                   <span className="away"><Club id={f.away} /></span>
-                  {x && <span className="xg">xG {dec(x.home)} – {dec(x.away)}</span>}
-                </div>
+                  <span className="xg">{x ? `xG ${dec(x.home)} – ${dec(x.away)}` : "Match details"}</span>
+                </a>
               );
             })}
           </div>

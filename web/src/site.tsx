@@ -57,3 +57,14 @@ export function useSiteData(): Site | null | undefined {
     return buildSite(meta, rows<Player>(players));
   }, [meta, players]);
 }
+
+/** The URL hash without the "#": "gameweeks/6/53". */
+export function useHash(): string {
+  const [hash, setHash] = useState(() => window.location.hash.slice(1));
+  useEffect(() => {
+    const onChange = () => setHash(window.location.hash.slice(1));
+    window.addEventListener("hashchange", onChange);
+    return () => window.removeEventListener("hashchange", onChange);
+  }, []);
+  return hash;
+}

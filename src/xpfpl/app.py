@@ -15,7 +15,7 @@ import pandas as pd
 import requests
 import streamlit as st
 
-from xpfpl import chips, config, guide, market_view, models, myteam, review, simulate
+from xpfpl import chips, config, guide, market_view, match_view, models, myteam, profile_view, review, simulate
 from xpfpl.data import api, cups
 from xpfpl.data.history import load_matches
 from xpfpl.myteam import load_my_team
@@ -1070,6 +1070,9 @@ with tab_review:
             st.caption(f"Model accuracy in GW{rgw} over {len(played_xp)} players who played: "
                        f"MAE {err.abs().mean():.2f}, RMSE {(err ** 2).mean() ** 0.5:.2f} points.")
 
+        st.divider()
+        match_view.render(season, rgw, bs, fx, xp)
+
 
 # ---------------------------------------------------------------- my season
 
@@ -1289,6 +1292,7 @@ with tab_players:
         st.altair_chart(bars + line, width="stretch")
         st.caption("Bars: points scored. Orange: the model's xP for that gameweek. "
                    + xp_source_note(xp_all.loc[xp_all["gw"].isin(known["gw"]), "source"].unique()))
+        profile_view.render(season, chosen, bs, players[f"xp_{gameweeks[0]}"] if len(players) else pd.Series(dtype=float))
 
     st.markdown("**Fixtures ahead**")
     rows = {}
