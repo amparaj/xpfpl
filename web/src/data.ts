@@ -39,6 +39,10 @@ export interface Meta {
   repo: string | null;
   /** This season's cup and European matches (data/cups.py), filed under the gameweek they come before. */
   midweek?: Columns;
+  /** The seasons that can be looked back at, oldest first, this one last (current meta.json only). */
+  seasons?: string[];
+  /** Set in an earlier season's meta.json (seasons/<season>/). */
+  past?: boolean;
 }
 /** A cup or European match. `home_code`/`away_code` are FPL club codes for Premier League clubs. */
 export interface MidweekMatch {

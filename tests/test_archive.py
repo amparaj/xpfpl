@@ -142,3 +142,16 @@ def test_pull_snapshots_without_the_branch_does_nothing(tmp_path, monkeypatch):
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     monkeypatch.setattr(config, "ROOT", tmp_path)
     assert archive.pull_snapshots() == []
+
+
+def test_an_archived_season_comes_back_in_the_fpl_api_shape():
+    # 2025-26 is archived from vaastav (one file per table), 2026-27 from the FPL API (one per GW).
+    for season in ("2025-26", "2026-27"):
+        bs, fixtures = archive.season_bootstrap(season), archive.fixture_list(season)
+        assert len(bs["teams"]) == 20 and {"id", "code", "name", "short_name"} <= set(bs["teams"][0])
+        assert {"id", "code", "web_name", "team", "element_type"} <= set(bs["elements"][0])
+        assert {"id", "event", "kickoff_time", "team_h", "team_a", "team_h_score", "team_a_score"} <= set(fixtures[0])
+        teams = {t["id"] for t in bs["teams"]}
+        assert all(f["team_h"] in teams and f["team_a"] in teams for f in fixtures)
+        assert all(v is None or isinstance(v, (int, float, str, bool)) for f in fixtures for v in f.values())
+    assert len(archive.fixture_list("2025-26")) == 380

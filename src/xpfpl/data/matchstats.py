@@ -385,6 +385,11 @@ def fetch(season: str, gameweeks=None, refresh: bool = False) -> int:
     return written
 
 
+def seasons() -> list[str]:
+    """The seasons with match data in the archive, oldest first."""
+    return sorted(p.name for p in ARCHIVE.glob("*") if (p / "matches").is_dir())
+
+
 def load(season: str, table: str) -> pd.DataFrame | None:
     """One table for the whole season, stacked (None if nothing is archived)."""
     parts = sorted((ARCHIVE / season / table).glob("gw*.parquet"))

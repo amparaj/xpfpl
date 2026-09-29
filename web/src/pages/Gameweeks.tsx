@@ -6,27 +6,39 @@ import { competition, side } from "../midweek";
 import { gwFile, rows, type Gameweek, type GwRow, type ModelTeam } from "../data";
 import { POSITIONS, compact, dec, int, pts, signed, when } from "../format";
 import { totals, type PlayerGw } from "../season";
-import { useData, useHash, useSite } from "../site";
+import { SiteContext, gameweekHref, useData, useHash, useSeason, useSite } from "../site";
 import Match from "./Match";
 
 interface Line extends PlayerGw { name: string; team: number; position: number }
 
-/** #gameweeks shows the latest played gameweek, #gameweeks/6 GW6, and #gameweeks/6/53 fixture 53's match page. */
+/** #gameweeks shows the latest played gameweek, #gameweeks/6 GW6, and #gameweeks/6/53 fixture 53's match page.
+ * An earlier season goes first: #gameweeks/2025-26/12/115 (its own copy of the data, seasons/2025-26/). */
 export default function Gameweeks() {
-  const site = useSite();
+  const current = useSite();
+  const parts = useHash().split("/").slice(1);
+  const season = /^\d{4}-\d{2}$/.test(parts[0] ?? "") ? parts.shift()! : null;
+  const site = useSeason(season);
+  if (site === undefined) return <Loading />;
+  if (site === null) return <p>That season isn't on the site. <a href="#gameweeks">Back to {current.meta.season}</a></p>;
   const played = site.meta.played;
-  const [, wanted, fixture] = useHash().split("/").map(Number);
+  const [wanted, fixture] = parts.map(Number);
   const gw = played.includes(wanted) ? wanted : played[played.length - 1];
-  if (gw && fixture) return <Match key={fixture} gw={gw} fixture={fixture} />;
-  return <Week gw={gw} />;
+  return (
+    <SiteContext.Provider value={site}>
+      {gw && fixture ? <Match key={`${site.meta.season}/${fixture}`} gw={gw} fixture={fixture} />
+        : <Week gw={gw} seasons={current.meta.seasons ?? [current.meta.season]} />}
+    </SiteContext.Provider>
+  );
 }
 
-function Week({ gw }: { gw: number }) {
+function Week({ gw, seasons }: { gw: number; seasons: string[] }) {
   const site = useSite();
   const played = site.meta.played;
-  const setGw = (g: number) => { window.location.hash = `gameweeks/${g}`; };
-  const data = useData<Gameweek>(gw ? gwFile(gw) : null);
-  const team = useData<ModelTeam>("modelteam.json");
+  const past = !!site.meta.past;
+  const setGw = (g: number) => { window.location.hash = gameweekHref(site, g); };
+  const setSeason = (s: string) => { window.location.hash = s === seasons[seasons.length - 1] ? "gameweeks" : `gameweeks/${s}`; };
+  const data = useData<Gameweek>(gw ? site.root + gwFile(gw) : null);
+  const team = useData<ModelTeam>(past ? null : "modelteam.json");      // the Model's Team is this season's only
   const teamWeek = team?.gameweeks.find((w) => w.gw === gw);
   const event = site.meta.events.find((e) => e.id === gw);
 
@@ -41,6 +53,7 @@ function Week({ gw }: { gw: number }) {
   const midweek = site.midweek.filter((m) => m.gw === gw && m.finished);
   const hasMidweek = playedLines.some((l) => l.midweek !== null);
   const scored = playedLines.filter((l) => l.xp !== null);
+  const hasXp = lines.some((l) => l.xp !== null);
   const mae = scored.length ? scored.reduce((s, l) => s + Math.abs(l.points - l.xp!), 0) / scored.length : null;
   // Everyone with a forecast, including those who didn't play: their xP already allowed for that
   // chance, so leaving them out would make the forecasts look too low.
@@ -139,28 +152,46 @@ function Week({ gw }: { gw: number }) {
 
   return (
     <>
-      <h2>Gameweek {gw}</h2>
-      <p className="lede">Every result and every player's points, next to what the model expected before the deadline.</p>
+      <h2>Gameweek {gw}{past && `, ${site.meta.season}`}</h2>
+      <p className="lede">
+        {hasXp || !data ? "Every result and every player's points, next to what the model expected before the deadline."
+          : "Every result and every player's points. No forecast was saved before this deadline, so there's no xP here."}
+      </p>
       <div className="toolbar">
+        {seasons.length > 1 && (
+          <label>
+            Season
+            <select value={site.meta.season} onChange={(e) => setSeason(e.target.value)}>
+              {[...seasons].reverse().map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </label>
+        )}
         <label>
           Gameweek
           <select value={gw} onChange={(e) => setGw(Number(e.target.value))}>
             {[...played].reverse().map((g) => <option key={g} value={g}>GW{g}</option>)}
           </select>
         </label>
-        {event && <span className="muted">Deadline {when(event.deadline)}</span>}
+        {/* Without FPL's gameweek summary (a season archived from vaastav) the first kick-off stands in. */}
+        {event && <span className="muted">{past && event.average == null ? "First kick-off" : "Deadline"} {when(event.deadline)}</span>}
       </div>
       {data === undefined && <Loading />}
       {data && (
         <>
           <Tiles tiles={[
-            { label: "Average score", value: int(event?.average), note: "across all FPL managers" },
-            { label: "Highest score", value: int(event?.highest) },
+            // An earlier season archived from vaastav has no FPL gameweek summary (average, highest, captain).
+            ...(event?.average != null || !past ? [{ label: "Average score", value: int(event?.average), note: "across all FPL managers" }] : []),
+            ...(event?.highest != null || !past ? [{ label: "Highest score", value: int(event?.highest) }] : []),
             { label: "Top player", value: top ? `${top.name} ${top.points}` : "–", note: top && site.team.get(top.team)?.name },
-            { label: "Most captained", value: captained ? `${captained.web_name} ${captainPts ?? "–"}` : "–",
-              note: captainPts !== undefined ? `${captainPts * 2} with the armband` : undefined },
-            { label: "Model error", value: mae === null ? "–" : pts(mae),
-              note: `average miss in points, ${scored.length} players who played` },
+            ...(past ? [
+              { label: "Goals", value: int(data.fixtures.reduce((s, f) => s + (f.home_score ?? 0) + (f.away_score ?? 0), 0)),
+                note: `in ${data.fixtures.length} matches` },
+              { label: "Players who played", value: int(playedLines.length) },
+            ] : []),
+            ...(captained || !past ? [{ label: "Most captained", value: captained ? `${captained.web_name} ${captainPts ?? "–"}` : "–",
+              note: captainPts !== undefined ? `${captainPts * 2} with the armband` : undefined }] : []),
+            ...(hasXp ? [{ label: "Model error", value: mae === null ? "–" : pts(mae),
+              note: `average miss in points, ${scored.length} players who played` }] : []),
             ...(forecast.length ? [{ label: "Forecast vs scored", value: `${int(xpSum)} → ${int(pointsSum)}`,
               note: `all ${forecast.length} players with a forecast, played or not: ${signed(pointsSum - xpSum, 0)} points` }] : []),
             ...(teamWeek?.forecast != null ? [{ label: "The Model's Team", value: `Scored ${teamWeek.gross ?? "–"}`,
@@ -173,7 +204,7 @@ function Week({ gw }: { gw: number }) {
             {data.fixtures.map((f) => {
               const x = xg.get(f.id);
               return (
-                <a className="fixture" key={f.id} href={`#gameweeks/${gw}/${f.id}`}
+                <a className="fixture" key={f.id} href={gameweekHref(site, gw, f.id)}
                    aria-label={`${site.team.get(f.home)?.name} ${f.home_score ?? ""} ${site.team.get(f.away)?.name} ${f.away_score ?? ""}: match details`}>
                   <span><Club id={f.home} /></span>
                   <span className="score">{f.home_score ?? "–"} – {f.away_score ?? "–"}</span>
@@ -200,7 +231,7 @@ function Week({ gw }: { gw: number }) {
             </>
           )}
 
-          <div className="card">
+          {hasXp && <div className="card">
             <h3 style={{ marginTop: 0 }}>Points against xP</h3>
             <p className="note" style={{ marginTop: 0 }}>
               One dot per player who played, in their club's colour. Dots above the dashed line beat their xP.
@@ -214,7 +245,7 @@ function Week({ gw }: { gw: number }) {
               </label>
             </div>
             <Chart make={scatter} height={340} ariaLabel={`Points against xP for GW${gw}`} />
-          </div>
+          </div>}
 
           {topForecasts.length > 0 && (
             <>
@@ -225,9 +256,10 @@ function Week({ gw }: { gw: number }) {
           )}
 
           <h3>Players who played</h3>
-          <Table columns={columns} data={playedLines} sort="points" rowKey={(l) => l.element} limit={40} />
+          <Table columns={hasXp ? columns : columns.filter((c) => c.key !== "xp" && c.key !== "diff")}
+                 data={playedLines} sort="points" rowKey={(l) => l.element} limit={40} />
           <Note>
-            xP here is {data.xp_source}. A red % tag is the injury flag FPL showed before the deadline, where one
+            {hasXp && <>xP here is {data.xp_source}. </>}A red % tag is the injury flag FPL showed before the deadline, where one
             was recorded. Prices (£m) are as they stood during the gameweek.
             {hasMidweek && <> Midweek is his minutes in his club's cup or European match before this gameweek
               (0: in the squad but not used; – : his club had no midweek match).</>}

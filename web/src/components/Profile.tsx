@@ -1,7 +1,8 @@
 // Where a player plays (profiles.json, spatial.py): his shots binned into zones round the goal and
 // every shot on a half pitch, per-90 zone metrics against his position's average, and the players
-// whose profile is most like his. There are no heatmaps in the source: shot locations and zone
-// counts (touches in the box, final-third passes) are the spatial data there is.
+// whose profile is most like his, for this season or an earlier one (seasons/<season>/profiles.json).
+// There are no heatmaps in the source: shot locations and zone counts (touches in the box,
+// final-third passes) are the spatial data there is.
 
 import * as Plot from "@observablehq/plot";
 import { useCallback, useMemo, useState } from "react";
@@ -9,8 +10,8 @@ import { color } from "../colors";
 import type { Player } from "../data";
 import { rows } from "../data";
 import { POSITIONS, dec, money, pct, pts } from "../format";
-import { useData, useSite } from "../site";
-import { Chart, Club, Note, Segmented, Tiles } from "./ui";
+import { useData, useSeason, useSite } from "../site";
+import { Chart, Club, Loading, Note, Segmented, Tiles } from "./ui";
 
 interface Profiles {
   zones: [number, number, number, number, number][];      // zone, x0, x1 (from the goal line), y0, y1 (across)
@@ -70,12 +71,20 @@ function pitchPlot(width: number, marks: Plot.Markish[]) {
 }
 
 export function Profile({ player }: { player: Player }) {
-  const site = useSite();
-  const data = useData<Profiles>("profiles.json");
+  const current = useSite();
+  const seasons = current.meta.seasons ?? [current.meta.season];
+  const [season, setSeason] = useState(current.meta.season);
+  const loaded = useSeason(season);
+  const site = loaded ?? current;
+  const data = useData<Profiles>(loaded ? `${loaded.root}profiles.json` : null);
+  // The player as he was that season: FPL renumbers ids every season, `code` stays.
+  const them = loaded ? loaded.players.find((p) => p.code === player.code) : undefined;
+  const id = them?.id ?? -1;
+  const when = season === current.meta.season ? "this season" : `in ${season}`;
   const [view, setView] = useState<"zones" | "shots">("zones");
   const all = useMemo(() => rows<Metrics>(data?.players), [data]);
-  const me = all.find((m) => m.element === player.id);
-  const myShots = useMemo(() => rows<Shot>(data?.shots).filter((s) => s.element === player.id), [data, player.id]);
+  const me = all.find((m) => m.element === id);
+  const myShots = useMemo(() => rows<Shot>(data?.shots).filter((s) => s.element === id), [data, id]);
   const avg = data?.averages[String(player.element_type)] ?? {};
 
   const zoneChart = useCallback((width: number) => {
@@ -103,7 +112,7 @@ export function Profile({ player }: { player: Player }) {
       .sort((a, b) => b.xg - a.xg);
     const title = (s: Shot & { x: number; y: number }) => {
       const fx = site.fixtures.find((f) => f.id === s.fixture);
-      const opp = fx ? site.team.get(fx.home === player.team ? fx.away : fx.home)?.short : "";
+      const opp = fx ? site.team.get(fx.home === them?.team ? fx.away : fx.home)?.short : "";
       return `GW${s.gw} v ${opp} · ${s.minute}'\n${OUTCOMES[s.outcome] ?? s.outcome} · xG ${dec(s.xg)}\n${s.situation.replace(/-/g, " ")}, ${s.body_part.replace(/-/g, " ")}`;
     };
     return pitchPlot(width, [
@@ -111,21 +120,38 @@ export function Profile({ player }: { player: Player }) {
       Plot.dot(placed.filter((s) => s.goal), { x: "x", y: "y", r: "xg", fill: color.s1, stroke: color.surface, strokeWidth: 2 }),
       Plot.tip(placed, Plot.pointer({ x: "x", y: "y", title, maxRadius: 24 })),
     ]);
-  }, [myShots, site, player.team]);
+  }, [myShots, site, them]);
 
-  if (data === undefined || data === null) return null;
-  if (!me) return <p className="note">No match data for him yet this season.</p>;
+  const picker = seasons.length > 1 && (
+    <div className="toolbar">
+      <Segmented label="Season" value={season} onChange={setSeason}
+                 options={[...seasons].reverse().map((s) => ({ value: s, label: s }))} />
+    </div>
+  );
+  const heading = <><h3>Where he plays</h3>{picker}</>;
+  if (loaded === undefined || (loaded && data === undefined)) return <>{heading}<Loading /></>;
+  if (!loaded || !data) return <>{heading}<p className="note">No match data for {season}.</p></>;
+  if (!me) {
+    return <>{heading}<p className="note">No match data for him {when}{season !== current.meta.season && !them
+      ? " (he wasn't a Premier League player then)" : ""}.</p></>;
+  }
   const vs = (key: keyof Metrics, digits = 2, asPct = false) => {
     const a = avg[key as string];
     const f = (v: number | null | undefined) => (asPct ? pct(v) : dec(v, digits));
     return a === null || a === undefined ? undefined : `${POSITIONS[player.element_type]} average ${f(a)}`;
   };
   const fewShots = me.shots < data.min_shots;
-  const similar = (data.similar[String(player.id)] ?? []).map(([id, sim]) => ({ p: site.player.get(id), sim })).filter((x) => x.p);
+  // Similar players are that season's; linked (with price and xP) where they're still in the game.
+  const now = new Map(current.players.map((p) => [p.code, p]));
+  const similar = (data.similar[String(id)] ?? []).map(([pid, sim]) => ({ p: site.player.get(pid), sim }))
+    .filter((x) => x.p).map(({ p, sim }) => ({ p: p!, sim, today: now.get(p!.code) }));
 
   return (
     <>
-      <h3>Where he plays</h3>
+      {heading}
+      {season !== current.meta.season && them && them.team !== undefined && (
+        <p className="note" style={{ marginTop: 0 }}>At <Club code={site.team.get(them.team)?.code} /> by the end of {season}; the numbers cover all his matches that season.</p>
+      )}
       <Tiles tiles={[
         { label: "Touches in the opposition box", value: `${dec(me.box_touches_p90, 1)} per 90`, note: vs("box_touches_p90", 1) },
         { label: "Passes into the final third", value: `${dec(me.final_third_passes_p90, 1)} per 90`, note: vs("final_third_passes_p90", 1) },
@@ -139,26 +165,28 @@ export function Profile({ player }: { player: Player }) {
           <Segmented label="Shot view" value={view} onChange={setView}
                      options={[{ value: "zones", label: "Shot zones" }, { value: "shots", label: "Every shot" }]} />
           <Chart make={view === "zones" ? zoneChart : shotChart} height={360}
-                 ariaLabel={view === "zones" ? "His shots by zone round the goal" : "Every shot he has taken this season"} />
+                 ariaLabel={view === "zones" ? "His shots by zone round the goal" : `Every shot he took ${when}`} />
           <p className="note" style={{ marginTop: 0 }}>
             {view === "zones"
-              ? `His ${myShots.length} shots this season by where they were taken: the darker the zone, the more of them came from there. Hover a zone for its xG and goals.`
+              ? `His ${myShots.length} shots ${when} by where they were taken: the darker the zone, the more of them came from there. Hover a zone for its xG and goals.`
               : "Every shot, where it was taken: the bigger the circle, the better the chance (xG); solid circles are goals. Hover for the match and minute."}
           </p>
         </div>
       )}
       {similar.length > 0 && (
         <>
-          <h3>Similar profiles</h3>
+          <h3>Similar profiles{season !== current.meta.season && ` in ${season}`}</h3>
           <div className="table-wrap">
             <table>
               <thead><tr><th>Player</th><th>Club</th><th className="num">£m</th><th className="num">Similarity</th>
-                <th className="num">{site.meta.next_gw ? `xP GW${site.meta.next_gw}` : "xP next"}</th></tr></thead>
+                <th className="num">{current.meta.next_gw ? `xP GW${current.meta.next_gw}` : "xP next"}</th></tr></thead>
               <tbody>
-                {similar.map(({ p, sim }) => (
-                  <tr key={p!.id} className="clickable" onClick={() => { window.location.hash = `players/${p!.id}`; }}>
-                    <td>{p!.web_name}</td><td><Club id={p!.team} /></td><td className="num">{money(p!.now_cost)}</td>
-                    <td className="num">{pct(sim)}</td><td className="num">{pts(p!.forecast)}</td>
+                {similar.map(({ p, sim, today }) => (
+                  <tr key={p.id} className={today ? "clickable" : undefined}
+                      onClick={today ? () => { window.location.hash = `players/${today.id}`; } : undefined}>
+                    <td>{p.web_name}</td><td><Club code={site.team.get(p.team)?.code} /></td>
+                    <td className="num">{today ? money(today.now_cost) : "–"}</td>
+                    <td className="num">{pct(sim)}</td><td className="num">{today ? pts(today.forecast) : "–"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -167,11 +195,12 @@ export function Profile({ player }: { player: Player }) {
           <Note>Players at the same position who get the ball and their shots in the most similar places: box touches, final-third
             passes, chances created, shots, where the shots come from and how good they are, each compared with the position's
             average (cosine similarity). Only players with {data.min_minutes}+ minutes are compared. It says who plays a similar
-            role, not who will score more: that's the xP.</Note>
+            role, not who will score more: that's the xP.
+            {season !== current.meta.season && " The club is theirs at the end of that season; price and xP are today's, for players still in the game."}</Note>
         </>
       )}
       {similar.length === 0 && me.minutes < data.min_minutes && (
-        <p className="note">Similar profiles need {data.min_minutes} minutes this season; he has {Math.round(me.minutes)}.</p>
+        <p className="note">Similar profiles need {data.min_minutes} minutes {when}; he has {Math.round(me.minutes)}.</p>
       )}
     </>
   );
