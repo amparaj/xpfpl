@@ -280,7 +280,9 @@ plays, with each player's minutes, from
 `archive/cups/`). `xpfpl fetch` updates this season's. The same source has every Premier League
 match's shots (where each was taken and where it went, xG and xG on target), momentum, team stats
 and player stats (FotMob's data): `data/matchstats.py` saves them in `archive/matchstats/` for the
-website's match pages. Not used by the model.
+website's match pages. Not used by the model. Earlier seasons stay viewable: the website's Past
+Gameweeks and player profiles, and the dashboard's Gameweek Review ("Matches from earlier seasons")
+and player profile, each have a season picker for every season with match data (2025-26 on).
 
 **Where players play (spatial profiles).** There are no heatmaps or full event data (every pass
 and touch with its location) in any source used here, only each shot's location and per-match zone
@@ -627,7 +629,8 @@ figures, the midweek factors and the Monte Carlo), **Model Accuracy** (including
 European results before it, each player's points against the xP forecast and his midweek minutes;
 each result opens a match page: a shot map with every shot on hover, where the shots on target went,
 expected goals and momentum through the match, the team stats, the odds before the deadline, and
-each player's FPL points and xP next to his match stats),
+each player's FPL points and xP next to his match stats; a season picker goes back to earlier
+seasons, exported to `seasons/<season>/` with their own clubs, players and fixtures),
 **Next Gameweek** (the forecast saved for the coming gameweek: captain picks with each one's simulated range and chance of 10+, the top players over
 the horizon with any midweek factor on their xP, each club's fixtures with our win chances and a
 badge for its cup or European matches, and anyone the betting markets have ruled out), **My Team** (the team I'm

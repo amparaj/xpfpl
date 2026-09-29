@@ -222,6 +222,28 @@ def team_stats_chart(stats: pd.DataFrame, home: str, away: str) -> alt.Chart:
 
 # ---------------------------------------------------------------- the view
 
+@st.cache_data(show_spinner=False)
+def _season_context(season: str) -> tuple[dict, list[dict]]:
+    """An archived season's clubs, players and fixtures in the FPL API's shape (its own ids)."""
+    return archive.season_bootstrap(season), archive.fixture_list(season)
+
+
+def render_earlier(current: str, model: str = config.MODEL) -> None:
+    """Gameweek Review's "Matches from earlier seasons": the same view for any match of an archived
+    season with match data (xP where a forecast was saved before that deadline)."""
+    from xpfpl import review
+    earlier = [s for s in matchstats.seasons() if s < current and archive.has_season(s)]
+    if not earlier:
+        return
+    with st.expander("Matches from earlier seasons"):
+        c1, c2 = st.columns(2)
+        season = c1.selectbox("Season", earlier[::-1], key="earlier_season")
+        bs, fixtures = _season_context(season)
+        gws = sorted({f["event"] for f in fixtures if f["event"] is not None and f["team_h_score"] is not None})
+        gw = c2.selectbox("Gameweek", gws[::-1], format_func=lambda g: f"GW{g}", key=f"earlier_gw_{season}")
+        render(season, gw, bs, fixtures, review.saved_forecasts(season, model).get(gw, pd.Series(dtype=float)))
+
+
 def render(season: str, gw: int, bs: dict, fixtures: list[dict], xp: pd.Series) -> None:
     """The Matches section of Gameweek Review, for gameweek `gw`. `xp`: the model's xP per element."""
     teams = {t["id"]: t for t in bs["teams"]}
@@ -233,7 +255,7 @@ def render(season: str, gw: int, bs: dict, fixtures: list[dict], xp: pd.Series) 
     label = {f["id"]: f"{teams[f['team_h']]['name']} {f['team_h_score']}–{f['team_a_score']} {teams[f['team_a']]['name']}"
              for f in played}
     st.markdown(f"**Matches in GW{gw}**")
-    fid = st.selectbox("Match", list(label), format_func=label.get, key=f"match_gw{gw}",
+    fid = st.selectbox("Match", list(label), format_func=label.get, key=f"match_{season}_gw{gw}",
                        help="Shots, how the match went, the team stats, the odds before the deadline and every player's numbers")
     f = next(x for x in played if x["id"] == fid)
     home, away = teams[f["team_h"]]["short_name"], teams[f["team_a"]]["short_name"]
@@ -256,7 +278,7 @@ def render(season: str, gw: int, bs: dict, fixtures: list[dict], xp: pd.Series) 
         m[3].metric("Possession", "{:.0f}% – {:.0f}%".format(*stat("possession")))
 
         st.markdown(f"**Shot map**: :blue[●] {home} attacking → · :orange[●] {away} ← attacking")
-        side = st.segmented_control("Shots", ["Both", home, away], default="Both", key=f"shots_{fid}",
+        side = st.segmented_control("Shots", ["Both", home, away], default="Both", key=f"shots_{season}_{fid}",
                                     label_visibility="collapsed") or "Both"
         shown = shots if side == "Both" else shots[shots["club"] == side]
         st.altair_chart(shot_map(shown), width="content")
@@ -278,7 +300,7 @@ def render(season: str, gw: int, bs: dict, fixtures: list[dict], xp: pd.Series) 
             flow = part.get("momentum", pd.DataFrame())
             end = float(max(95, shots["t"].max() + 1, flow["minute"].max() + 1 if len(flow) else 0))
             view = st.segmented_control("Chart", ["Expected goals", "Momentum"] if len(flow) else ["Expected goals"],
-                                        default="Expected goals", key=f"flow_{fid}", label_visibility="collapsed")
+                                        default="Expected goals", key=f"flow_{season}_{fid}", label_visibility="collapsed")
             if view == "Momentum":
                 st.altair_chart(momentum_chart(flow, shots, end, home, away), width="stretch")
                 st.caption(f"FotMob's momentum: which side was on top each minute (up: {home}, down: {away}). Dots are goals.")
@@ -353,6 +375,8 @@ def _players(season: str, gw: int, f: dict, stats: pd.DataFrame | None, xp: pd.S
             if col in by_code:
                 table[name] = by_code[col].reindex(codes).to_numpy()
     table = table.sort_values(["Points", "xP"], ascending=False)
+    if table["xP"].isna().all():            # an earlier season with no forecast saved before the deadline
+        table = table.drop(columns=["xP", "Points − xP"])
     st.markdown("**Players**")
     st.dataframe(club_columns(table), hide_index=True, width="stretch",
                  column_config={"xP": st.column_config.NumberColumn(format=POINTS),

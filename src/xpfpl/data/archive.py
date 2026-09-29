@@ -133,6 +133,40 @@ def fixtures(season: str) -> pd.DataFrame | None:
     return _read_parts(folder / "fixtures.parquet", folder / "fixtures")
 
 
+def _plain(v):
+    """A value as the FPL API gives it: None for missing, Python numbers, ISO text for times."""
+    if v is pd.NA or v is pd.NaT or _missing(v):
+        return None
+    if isinstance(v, pd.Timestamp):
+        return v.isoformat()
+    return v.item() if hasattr(v, "item") else v
+
+
+def fixture_list(season: str) -> list[dict]:
+    """An archived season's fixtures in the FPL API's shape (`api.fixtures()`): id, event,
+    kickoff_time, team_h, team_a, their scores and difficulties. Ids are that season's."""
+    fx = fixtures(season)
+    if fx is None:
+        return []
+    fx = fx.drop_duplicates("id", keep="last").sort_values(["event", "kickoff_time", "id"], na_position="last")
+    keep = ["id", "event", "kickoff_time", "team_h", "team_a", "team_h_score", "team_a_score",
+            "team_h_difficulty", "team_a_difficulty", "finished"]
+    return [{k: _plain(r.get(k)) for k in keep} for r in fx.to_dict("records")]
+
+
+def season_bootstrap(season: str) -> dict:
+    """The parts of FPL's bootstrap-static a look back at an archived season needs, in the API's
+    shape: `teams` (id, code, name, short_name) and `elements` (id, code, web_name, names, team,
+    element_type, now_cost). Ids are that season's (FPL renumbers them every season); `code` and
+    `team_code` link seasons."""
+    folder = FPL / season
+    teams = pd.read_parquet(folder / "teams.parquet")
+    players = pd.read_parquet(folder / "players.parquet")
+    cols = ["id", "code", "web_name", "first_name", "second_name", "team", "element_type", "now_cost"]
+    return {"teams": [{k: _plain(r[k]) for k in ("id", "code", "name", "short_name")} for r in teams.to_dict("records")],
+            "elements": [{k: _plain(r.get(k)) for k in cols} for r in players.to_dict("records")]}
+
+
 def save_vaastav(season: str, tables: dict[str, pd.DataFrame]) -> int:
     """A finished season from vaastav's CSVs: {"gws", "players", "teams", "fixtures"} (the last two
     only where the season has them). Returns the number of files written."""

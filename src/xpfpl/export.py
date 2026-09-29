@@ -149,7 +149,92 @@ def _meta(bs: dict, fixtures: list[dict], season: str, model: str, matches: pd.D
         "polymarket_teams": markets.TEAM_CODES, "out_threshold": markets.OUT_THRESHOLD,
         "ratings_next": ratings, "repo": repo,
         "midweek": table(cups.matches(season)),
+        "seasons": browsable_seasons(season),
     }
+
+
+def browsable_seasons(season: str) -> list[str]:
+    """The seasons the site can look back at (oldest first, this one last): those with match data
+    and an archived FPL season. Earlier ones are exported to seasons/<season>/ by `_past_season`."""
+    from xpfpl.data import matchstats
+    return [s for s in matchstats.seasons() if s < season and archive.has_season(s)] + [season]
+
+
+def _past_season(season: str, model: str, out: Path) -> list[Path]:
+    """A finished season's copy of the pages that look back, in seasons/<season>/: meta.json and
+    players.json (that season's clubs, players and fixtures: FPL renumbers ids every season),
+    every gameweek's player rows (gws/) and match data (matches/), and the player profiles.
+    xP is the forecast saved before each deadline where there is one (from 2026-27 on)."""
+    from xpfpl import review, style
+    from xpfpl.data import cups, markets, matchstats
+
+    root = out / "seasons" / season
+    # A finished season doesn't change: rebuilt only when something it's made from has (~35 s).
+    sources = [archive.FPL / season, matchstats.ARCHIVE / season, cups.ARCHIVE / season,
+               config.ARCHIVE_DIR / "predictions" / season]
+    newest = max((f.stat().st_mtime for d in sources if d.exists() for f in d.rglob("*") if f.is_file()), default=0.0)
+    if (root / "meta.json").exists() and (root / "meta.json").stat().st_mtime > newest:
+        return sorted(root.rglob("*.json"))
+
+    rows, people = archive.season_tables(season)
+    bs, fx = archive.season_bootstrap(season), archive.fixture_list(season)
+    played = sorted(int(g) for g in rows["round"].unique())
+    first_kickoff = {}
+    for f in fx:
+        if f["event"] is not None and f["kickoff_time"]:
+            first_kickoff[f["event"]] = min(first_kickoff.get(f["event"], f["kickoff_time"]), f["kickoff_time"])
+    events = archive.read(archive.FPL / season / "events.parquet")
+    by_event = events.set_index("id") if events is not None else None
+    meta = {
+        "generated": datetime.now(timezone.utc).isoformat(timespec="seconds"), "season": season, "past": True,
+        "model": model, "model_description": models.DESCRIPTIONS.get(model, model),
+        "played": played, "next_gw": None, "next_deadline": None,
+        "teams": [{"id": t["id"], "code": t["code"], "name": t["name"], "short": t["short_name"]} for t in bs["teams"]],
+        # FPL's own gameweek summary where the season was archived from the API; the deadline otherwise
+        # stands in as the first kick-off.
+        "events": [{"id": g,
+                    "deadline": (by_event.at[g, "deadline_time"] if by_event is not None and g in by_event.index
+                                 else first_kickoff.get(g)),
+                    "finished": True, "checked": True,
+                    **{k: (_plain(by_event.at[g, src], 0) if by_event is not None and g in by_event.index
+                           and src in by_event else None)
+                       for k, src in (("average", "average_entry_score"), ("highest", "highest_score"),
+                                      ("most_captained", "most_captained"), ("top_element", "top_element"))}}
+                   for g in played],
+        "chips": [],
+        "fixtures": table(pd.DataFrame([{"id": f["id"], "gw": f["event"], "kickoff": f["kickoff_time"],
+                                         "home": f["team_h"], "away": f["team_a"], "home_score": f["team_h_score"],
+                                         "away_score": f["team_a_score"], "home_fdr": f["team_h_difficulty"],
+                                         "away_fdr": f["team_a_difficulty"]} for f in fx])),
+        "club_colours": {c: [bg, style.CLUB_TEXT[c]] for c, bg in style.CLUB_COLOURS.items()},
+        "polymarket_teams": markets.TEAM_CODES, "out_threshold": markets.OUT_THRESHOLD,
+        "ratings_next": {}, "repo": None,
+        "midweek": table(cups.matches(season)),
+    }
+    written = []
+    el = people.reindex(columns=PLAYER_COLUMNS)
+    for col in ("selected_by_percent", "expected_goals", "expected_assists", "form", "points_per_game", "now_cost"):
+        el[col] = pd.to_numeric(el[col], errors="coerce")
+    el["now_cost"] = el["now_cost"] / 10
+    el["forecast"] = np.nan
+    written.append(_write(table(el, digits=3), root / "players.json"))
+    forecasts = review.saved_forecasts(season, model)
+    for gw in played:
+        if gw in forecasts:
+            xp, source = forecasts[gw], f"forecast ({forecasts[gw].name}, saved before the deadline)"
+        else:
+            xp, source = pd.Series(dtype=float), "not available: no forecast was saved before this deadline"
+        written.append(_write(_gameweek(gw, rows[rows["round"] == gw], fx, xp, source, None,
+                                        _midweek_minutes(season, gw, people)),
+                              root / "gws" / f"gw{gw:02d}.json"))
+        happened = _matches(season, gw, people)
+        if happened:
+            written.append(_write(happened, root / "matches" / f"gw{gw:02d}.json"))
+    profiles = _profiles(season, people)
+    if profiles:
+        written.append(_write(profiles, root / "profiles.json"))
+    written.append(_write(meta, root / "meta.json"))        # last: it marks the season as done
+    return written
 
 
 def _players(bs: dict, next_forecast: pd.Series | None) -> dict:
@@ -465,6 +550,8 @@ def export(model: str = config.MODEL, out: Path = config.SITE_DATA_DIR) -> list[
         for (market_season, gw), histories in _market_histories(saved).items():
             written.append(_write(histories, out / "market_history" / market_season / f"gw{gw:02d}.json"))
     written.append(_write(_accuracy(season, model), out / "accuracy.json"))
+    for past in browsable_seasons(season)[:-1]:
+        written += _past_season(past, model, out)
     return written
 
 

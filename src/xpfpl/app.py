@@ -1072,6 +1072,7 @@ with tab_review:
 
         st.divider()
         match_view.render(season, rgw, bs, fx, xp)
+        match_view.render_earlier(season)
 
 
 # ---------------------------------------------------------------- my season

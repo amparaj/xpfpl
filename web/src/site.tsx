@@ -4,6 +4,8 @@ import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { load, rows, type Fixture, type Meta, type MidweekMatch, type Player, type Team } from "./data";
 
 export interface Site {
+  /** Where this season's data files are: "" for the current season, "seasons/2025-26/" for an earlier one. */
+  root: string;
   meta: Meta;
   players: Player[];
   player: Map<number, Player>;
@@ -21,8 +23,9 @@ export function useSite(): Site {
   return site;
 }
 
-export function buildSite(meta: Meta, players: Player[]): Site {
+export function buildSite(meta: Meta, players: Player[], root = ""): Site {
   return {
+    root,
     meta,
     players,
     player: new Map(players.map((p) => [p.id, p])),
@@ -56,6 +59,28 @@ export function useSiteData(): Site | null | undefined {
     if (!meta || !players) return null;
     return buildSite(meta, rows<Player>(players));
   }, [meta, players]);
+}
+
+/** The site for `season`: the current one as it is, an earlier one from its own copy in
+ * seasons/<season>/ (its own clubs, players and fixtures: FPL renumbers ids every season).
+ * undefined while loading, null if that season isn't there. */
+export function useSeason(season: string | null): Site | null | undefined {
+  const current = useSite();
+  const past = season !== null && season !== current.meta.season ? `seasons/${season}/` : null;
+  const meta = useData<Meta>(past && `${past}meta.json`);
+  const players = useData<Record<string, unknown[]>>(past && `${past}players.json`);
+  return useMemo(() => {
+    if (!past) return current;
+    if (meta === undefined || players === undefined) return undefined;
+    if (!meta || !players) return null;
+    return buildSite(meta, rows<Player>(players), past);
+  }, [past, current, meta, players]);
+}
+
+/** "#gameweeks/6", or "#gameweeks/2025-26/6" for an earlier season; with a fixture, its match page. */
+export function gameweekHref(site: Site, gw: number, fixture?: number): string {
+  const season = site.meta.past ? `${site.meta.season}/` : "";
+  return `#gameweeks/${season}${gw}${fixture !== undefined ? `/${fixture}` : ""}`;
 }
 
 /** The URL hash without the "#": "gameweeks/6/53". */

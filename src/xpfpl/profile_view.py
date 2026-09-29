@@ -102,16 +102,46 @@ def shot_chart(shots: pd.DataFrame, opponents: dict[int, str]) -> alt.LayerChart
 
 
 def render(season: str, element: int, bs: dict, forecast: pd.Series) -> None:
-    """The profile of FPL player `element`. `forecast`: next-GW xP per element (for similar players)."""
+    """The profile of FPL player `element` (this season's id), for this season or, picked above it,
+    an earlier one with match data. `forecast`: next-GW xP per element (for similar players)."""
+    from xpfpl import match_view
+    from xpfpl.data import archive, matchstats
+    elements = pd.DataFrame(bs["elements"]).set_index("id")
+    if element not in elements.index:
+        return
+    st.markdown("**Where he plays**")
+    seasons = [s for s in matchstats.seasons() if s < season and archive.has_season(s)] + [season]
+    shown = season
+    if len(seasons) > 1:
+        shown = st.segmented_control("Season", seasons[::-1], default=season, key=f"profile_season_{element}",
+                                     label_visibility="collapsed") or season
+    if shown == season:
+        _render(season, element, bs, forecast, "this season")
+        return
+    # FPL renumbers players every season; `code` stays.
+    then, _ = match_view._season_context(shown)
+    ids = {e["code"]: e["id"] for e in then["elements"]}
+    code = int(elements.at[element, "code"])
+    if code not in ids:
+        st.caption(f"He wasn't a Premier League player in {shown}.")
+        return
+    team = {t["id"]: t["short_name"] for t in then["teams"]}[next(e["team"] for e in then["elements"] if e["code"] == code)]
+    st.caption(f"At {team} by the end of {shown}; the numbers cover all his matches that season.")
+    _render(shown, ids[code], then, pd.Series(dtype=float), f"in {shown}", today=(bs, forecast))
+
+
+def _render(season: str, element: int, bs: dict, forecast: pd.Series, when: str,
+            today: tuple[dict, pd.Series] | None = None) -> None:
+    """`bs` and `element` are `season`'s own; `today` (this season's bootstrap and forecast) gives
+    the similar players' current price and xP when `season` is an earlier one."""
     stamp = _stamp(season)
     table = _profiles(season, stamp)
     elements = pd.DataFrame(bs["elements"]).set_index("id")
     if table.empty or element not in elements.index:
         return
     code, pos = int(elements.at[element, "code"]), int(elements.at[element, "element_type"])
-    st.markdown("**Where he plays**")
     if code not in table.index:
-        st.caption("No match data for him yet this season.")
+        st.caption(f"No match data for him {when}.")
         return
     me = table.loc[code]
     position = elements.set_index("code")["element_type"]
@@ -153,9 +183,15 @@ def render(season: str, element: int, bs: dict, forecast: pd.Series) -> None:
     found = spatial.similar(table, position).get(code, [])
     if found:
         by_code = elements.reset_index().set_index("code")
-        rows = pd.DataFrame([{"Player": by_code.at[c, "web_name"], "Club": {t["id"]: t["short_name"] for t in bs["teams"]}[int(by_code.at[c, "team"])],
-                              "£m": by_code.at[c, "now_cost"] / 10, "Similarity": sim,
-                              "xP next GW": forecast.get(int(by_code.at[c, "id"]), np.nan)} for c, sim in found if c in by_code.index])
+        # Price and xP are today's (for an earlier season: players still in the game), the club that season's.
+        now_bs, now_forecast = today or (bs, forecast)
+        now = pd.DataFrame(now_bs["elements"]).set_index("code")
+        now["now_cost"] = pd.to_numeric(now["now_cost"], errors="coerce")
+        clubs = {t["id"]: t["short_name"] for t in bs["teams"]}
+        rows = pd.DataFrame([{"Player": by_code.at[c, "web_name"], "Club": clubs[int(by_code.at[c, "team"])],
+                              "£m": now.at[c, "now_cost"] / 10 if c in now.index else np.nan, "Similarity": sim,
+                              "xP next GW": now_forecast.get(int(now.at[c, "id"]), np.nan) if c in now.index else np.nan}
+                             for c, sim in found if c in by_code.index])
         st.markdown("**Similar profiles**")
         st.dataframe(club_columns(rows), hide_index=True, width="stretch",
                      column_config={"£m": st.column_config.NumberColumn(format="%.1f"),
@@ -165,4 +201,4 @@ def render(season: str, element: int, bs: dict, forecast: pd.Series) -> None:
                    "final-third passes, chances created, shots, where they come from and how good they are, each against "
                    f"the position's average; {spatial.MIN_MINUTES}+ minutes). A similar role, not a forecast: that's the xP.")
     elif me["minutes"] < spatial.MIN_MINUTES:
-        st.caption(f"Similar profiles need {spatial.MIN_MINUTES} minutes this season; he has {me['minutes']:.0f}.")
+        st.caption(f"Similar profiles need {spatial.MIN_MINUTES} minutes {when}; he has {me['minutes']:.0f}.")

@@ -9,7 +9,7 @@ import { color } from "../colors";
 import { Chart, Club, Legend, Loading, Note, Segmented, Table, Tiles, plotDefaults, type Column } from "../components/ui";
 import { gwFile, rows, type Gameweek, type GwRow, type Markets } from "../data";
 import { POSITIONS, dec, int, pct, pts, signed, when } from "../format";
-import { useData, useSite } from "../site";
+import { gameweekHref, useData, useSite } from "../site";
 
 // ---------------------------------------------------------------- the data
 
@@ -60,8 +60,8 @@ function clock(s: Shot): { label: string; t: number } {
 
 export default function Match({ gw, fixture }: { gw: number; fixture: number }) {
   const site = useSite();
-  const week = useData<Gameweek>(gwFile(gw));
-  const file = useData<MatchFile>(matchFile(gw));
+  const week = useData<Gameweek>(site.root + gwFile(gw));
+  const file = useData<MatchFile>(site.root + matchFile(gw));
   const markets = useData<Markets>("markets.json");
   const fx = site.fixtures.find((f) => f.id === fixture);
   const data = file?.fixtures[String(fixture)];
@@ -84,7 +84,7 @@ export default function Match({ gw, fixture }: { gw: number; fixture: number }) 
     });
   }, [data, fx, site]);
 
-  if (!fx) return <p>That match isn't in this season's fixtures. <a href={`#gameweeks/${gw}`}>Back to Gameweek {gw}</a></p>;
+  if (!fx) return <p>That match isn't in this season's fixtures. <a href={gameweekHref(site, gw)}>Back to Gameweek {gw}</a></p>;
   const home = site.team.get(fx.home), away = site.team.get(fx.away);
   const stats = data?.stats ?? {};
   const stat = (name: string) => stats[name] ?? [null, null];
@@ -96,7 +96,7 @@ export default function Match({ gw, fixture }: { gw: number; fixture: number }) 
 
   return (
     <>
-      <p className="crumb"><a href={`#gameweeks/${gw}`}>← Gameweek {gw}</a></p>
+      <p className="crumb"><a href={gameweekHref(site, gw)}>← Gameweek {gw}{site.meta.past ? `, ${site.meta.season}` : ""}</a></p>
       <h2 className="match-title">
         <Club id={fx.home} /> {home?.name} <span className="score">{fx.home_score ?? "–"} – {fx.away_score ?? "–"}</span> {away?.name} <Club id={fx.away} />
       </h2>
@@ -486,7 +486,8 @@ function Players({ week, fixture, players, home }: {
           { value: "away", label: site.team.get(lines.find((l) => !l.home)?.team ?? 0)?.short ?? "Away" },
         ]} />
       </div>
-      <Table columns={columns} data={shown} sort="points" rowKey={(l) => l.element} />
+      <Table columns={lines.some((l) => l.xp !== null) ? columns : columns.filter((c) => c.key !== "xp" && c.key !== "diff")}
+             data={shown} sort="points" rowKey={(l) => l.element} />
       <Note>Everyone who played. FPL columns are FPL's own; the rest are the match data's.
         {double && " In a double gameweek xP covers both matches, so Points − xP is left blank."}</Note>
     </>
