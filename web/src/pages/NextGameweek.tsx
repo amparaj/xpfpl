@@ -184,7 +184,7 @@ export default function NextGameweek() {
     ...(captains.length ? [{ label: "Top forecast", value: `${captains[0].player.web_name} ${pts(captains[0][first])}`,
       note: `xP for GW${gw} (${site.team.get(captains[0].player.team)?.short ?? ""})` }] : []),
     ...(lastWeek?.forecast != null ? [{ label: `The Model's Team in GW${lastWeek.gw}`, value: `Scored ${lastWeek.gross ?? "–"}`,
-      note: `against a forecast of ${int(lastWeek.forecast)}: ${beat((lastWeek.gross ?? 0) - lastWeek.forecast)} (before hits)` }] : []),
+      note: `against a forecast of ${int(lastWeek.forecast)}: ${beat((lastWeek.gross ?? 0) - lastWeek.forecast)} (before transfer hits)` }] : []),
   ];
 
   return (

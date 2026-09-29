@@ -478,7 +478,7 @@ def _monte_carlo(players: pd.DataFrame, gameweeks: list[int], plan, model: str, 
     rivals = simulate.transfer_odds(draws, players, gameweeks, plan, **solve_kwargs)
     if rivals:
         print(f"  The recommendation against the alternatives, over GW{gameweeks[0]}-{draws.gameweeks[-1]} "
-              f"(same simulated weeks, discounted, after hits):")
+              f"(same simulated weeks, discounted, after transfer hits):")
         for r in rivals:
             print(f"    vs {r['label'].lower()} ({r['moves']}): ahead in {r['p_better']:.0%} of simulations "
                   f"(behind in {1 - r['p_better'] - r['p_tie']:.0%}), by {r['mean']:+.1f} on average, "

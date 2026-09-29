@@ -104,26 +104,51 @@ def player_minutes(stats: pd.DataFrame, players: pd.DataFrame, fixtures: pd.Data
     }).reset_index(drop=True)
 
 
-def fetch(season: str, gameweeks=range(1, 39), refresh: bool = False) -> int:
+def _last_needed(season: str) -> int:
+    """The last gameweek whose cup schedule the forecasts use: the next one to be played plus the
+    horizon (`cup_<gw>` columns). Later gameweeks are left until they come into range."""
+    fx = archive.fixtures(season)                   # archived gameweeks only: the played ones
+    over = fx.groupby("event")["finished"].agg(lambda f: f.fillna(False).astype(bool).all())
+    played = [int(g) for g, done in over.items() if done]
+    return min(38, (max(played) if played else 0) + 1 + config.HORIZON)
+
+
+def fetch(season: str, gameweeks=None, refresh: bool = False) -> int:
     """Download a season's non-EPL fixtures and minutes into archive/cups. Returns files written.
 
-    Played gameweeks are cached in data/raw; `refresh` re-downloads them (the current and future
-    ones are always re-read, since kick-off times move and scores arrive)."""
+    A gameweek whose cup matches are all finished and archived (fixtures and minutes) is never
+    downloaded again. One still to be played is re-read on each fetch (kick-off times move,
+    scores and minutes arrive) up to `_last_needed`, and its minutes with it. `refresh`
+    re-downloads everything."""
     written = 0
     now = pd.Timestamp.now(tz="UTC")
+    known = archive.has_season(season)
+    if gameweeks is None:
+        gameweeks = range(1, (38 if refresh or not known else _last_needed(season)) + 1)
+    # Gameweeks FPL has finished: their cup schedule can't change any more.
+    fx = archive.fixtures(season) if known else pd.DataFrame(columns=["event", "finished"])
+    over = fx.groupby("event")["finished"].agg(lambda f: f.fillna(False).astype(bool).all())
     for gw in gameweeks:
-        raw = _csv(season, gw, "fixtures", refresh)
+        path = ARCHIVE / season / "fixtures" / f"gw{gw:02d}.parquet"
+        if not refresh and path.exists() and over.get(gw, False):
+            old = pd.read_parquet(path)
+            if old["finished"].all() and (old.empty or (ARCHIVE / season / "minutes" / f"gw{gw:02d}.parquet").exists()):
+                continue                                    # played and archived
+        fresh = refresh
+        raw = _csv(season, gw, "fixtures", fresh)
         if raw is None or raw.empty:
             continue
-        if not raw["finished"].astype(bool).all() and not refresh:
-            raw = _csv(season, gw, "fixtures", refresh=True)
+        if not raw["finished"].astype(bool).all() and not fresh:
+            fresh = True
+            raw = _csv(season, gw, "fixtures", fresh)
         fx = club_fixtures(raw, season)
         written += archive.write(fx, ARCHIVE / season / "fixtures" / f"gw{gw:02d}.parquet")
         played = fx[fx["finished"] & (fx["kickoff_time"] < now)]
         if played.empty:
             continue
-        stats = _csv(season, gw, "playermatchstats", refresh)
-        players = _csv(season, gw, "players", refresh)
+        # Re-read with the fixtures: a copy saved mid-round lacks the matches played since.
+        stats = _csv(season, gw, "playermatchstats", fresh)
+        players = _csv(season, gw, "players", fresh)
         if stats is None or players is None:
             continue
         mins = player_minutes(stats, players, played)

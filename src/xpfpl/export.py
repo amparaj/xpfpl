@@ -186,13 +186,14 @@ def _gameweek(gw: int, rows: pd.DataFrame, fx: list[dict], xp: pd.Series, source
 
 
 SHOT_COLUMNS = ["minute", "added_time", "is_home", "element", "outcome", "situation", "body_part", "xg", "xgot",
-                "start_x", "start_y", "goal_mouth_y", "goal_mouth_z"]
+                "start_x", "start_y", "goal_mouth_y", "goal_mouth_z", "inferred"]
 
 
 def _matches(season: str, gw: int, people: pd.DataFrame | None) -> dict | None:
     """The gameweek's matches as they happened, per FPL fixture id: team stats as {stat: [home,
-    away]}, shots, momentum and player stats. Players are FPL element ids (null where the source
-    has no player, about one shot in eight)."""
+    away]}, shots, momentum and player stats. Players are FPL element ids (null where no shooter is
+    known; `inferred` marks a shooter worked out from the match stats, matchstats.attribute; those taken
+    from FotMob's match page, matchstats.from_fotmob, count as recorded)."""
     from xpfpl.data import matchstats
     tables = matchstats.gameweek(season, gw)
     if "shots" not in tables and "matches" not in tables:
@@ -206,7 +207,8 @@ def _matches(season: str, gw: int, people: pd.DataFrame | None) -> dict | None:
             match["stats"] = {r.stat: [_plain(r.home, 3), _plain(r.away, 3)] for r in part["matches"].itertuples()}
         if "shots" in part:
             s = part["shots"].sort_values(["minute", "added_time", "shot_index"], na_position="first")
-            s = s.assign(element=s["code"].map(element))
+            inferred = s["inferred"].fillna(False).astype(bool) if "inferred" in s else False
+            s = s.assign(element=s["code"].map(element), inferred=inferred)
             match["shots"] = table(s[SHOT_COLUMNS], digits=4)
         if "momentum" in part:
             match["momentum"] = table(part["momentum"].sort_values("minute")[["minute", "value"]], digits=1)

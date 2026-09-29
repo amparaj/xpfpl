@@ -65,7 +65,12 @@ def _shots(raw: pd.DataFrame, names: dict[int, str], home: str, away: str) -> pd
     added = s["added_time"].fillna(0)
     s = s.assign(
         side=np.where(home_side, "home", "away"), club=np.where(home_side, home, away),
-        player=s["code"].map(names).fillna("Player not recorded"),
+        player=s["code"].map(names).fillna("Player unknown"),
+        # Shooters the source left out come from FotMob's match page (counted as recorded: it's the source's
+        # source) or, failing that, matchstats.attribute's reading of the players' match stats.
+        shooter=np.select([s["inferred"].fillna(False).astype(bool) if "inferred" in s else np.zeros(len(s), bool),
+                           s["code"].isna()], ["Worked out from match stats", "Not recorded by the source"],
+                          "Recorded by the source"),
         x=np.where(home_side, along, LENGTH - along), y=np.where(home_side, across, WIDTH - across),
         clock=[f"{m}+{a:.0f}'" if a else f"{m}'" for m, a in zip(s["minute"], added)],
         # Keeps first-half stoppage time before the second half on the time axis.
@@ -81,7 +86,7 @@ def _shots(raw: pd.DataFrame, names: dict[int, str], home: str, away: str) -> pd
 TOOLTIP = [alt.Tooltip("player:N", title="Player"), alt.Tooltip("club:N", title="Club"),
            alt.Tooltip("clock:N", title="Minute"), alt.Tooltip("result:N", title="Outcome"),
            alt.Tooltip("xg:Q", title="xG", format=".2f"), alt.Tooltip("xgot:Q", title="xG on target", format=".2f"),
-           alt.Tooltip("how:N", title="How")]
+           alt.Tooltip("how:N", title="How"), alt.Tooltip("shooter:N", title="Shooter")]
 
 
 def _pitch_lines() -> pd.DataFrame:
@@ -289,7 +294,10 @@ def render(season: str, gw: int, bs: dict, fixtures: list[dict], xp: pd.Series) 
 
     _odds(season, gw, f, home, away)
     _players(season, gw, f, part.get("players"), xp, bs, stamp)
-    st.caption("Match data: FotMob, via FPL-Core-Insights. About one shot in eight has no player recorded by the source.")
+    st.caption("Match data: FotMob, via FPL-Core-Insights. Expected goals (xG) is the chance a shot like that is scored, "
+               "from where and how it was taken; xG on target (xGOT) is the same once it's on target, knowing where it "
+               "was placed. Where the source leaves a shooter out, it's taken from FotMob's own match page, or failing "
+               "that worked out from the players' match stats (their shots, goals, xG and xGOT), which the hover says.")
 
 
 def _odds(season: str, gw: int, f: dict, home: str, away: str) -> None:
@@ -313,8 +321,8 @@ def _odds(season: str, gw: int, f: dict, home: str, away: str) -> None:
     st.dataframe(table.drop(columns="p"), hide_index=True, width="stretch",
                  column_config={**{o: st.column_config.NumberColumn(format=PERCENT) for o in outcomes},
                                 "Log loss": st.column_config.NumberColumn(format="%.3f")})
-    st.caption("✓ marks what happened. Log loss scores a forecast on the chance it gave to that result only (lower is "
-               "better; a third each scores 1.099). One match says little: the Markets tab has the season's scores.")
+    st.caption("The ✓ marks what happened. Log loss scores a forecast only on the chance it gave to that result "
+               "(lower is better). See the Markets tab for the season's scores.")
 
 
 def _players(season: str, gw: int, f: dict, stats: pd.DataFrame | None, xp: pd.Series, bs: dict, stamp: float) -> None:

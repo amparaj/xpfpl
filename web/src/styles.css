@@ -195,6 +195,7 @@ tr.selected { background: var(--selected) !important; }
 
 .chart { width: 100%; }
 .chart svg { display: block; }
+.chart > svg, .chart > figure > svg:last-child { margin-inline: auto; }   /* charts narrower than their card sit in its middle */
 /* Plot draws the tip box in --plot-background (white by default): match the page, or dark mode's
    light text sits on a white box and the tip looks empty. */
 .chart svg { --plot-background: var(--surface); }
@@ -240,7 +241,7 @@ a.fixture .xg::after { content: " · details →"; color: var(--s1); }
 .profile-pitch .segmented { margin-bottom: 6px; }
 .match-title { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .match-title .score { font-variant-numeric: tabular-nums; padding: 0 6px; }
-.versus { display: grid; gap: 10px; max-width: 640px; }
+.versus { display: grid; gap: 10px; max-width: 640px; margin-inline: auto; }
 .versus-head { display: flex; justify-content: space-between; }
 .versus-row { display: grid; grid-template-columns: 56px 1fr 56px; row-gap: 3px; align-items: baseline; font-size: 14px; }
 .versus-label { text-align: center; color: var(--ink-2); font-size: 13px; }

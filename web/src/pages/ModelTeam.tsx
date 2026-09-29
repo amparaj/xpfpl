@@ -16,7 +16,7 @@ const SOURCE: Record<ModelWeek["source"], string> = {
 
 type Week = ModelWeek & { average: number | null; highest: number | null };
 
-/** Did the week's score (before hits) land inside its simulated middle 80%? */
+/** Did the week's score (before transfer hits) land inside its simulated middle 80%? */
 const inside = (w: ModelWeek) => w.simulation && w.gross !== undefined
   ? w.gross >= w.simulation.points.p10 && w.gross <= w.simulation.points.p90 : undefined;
 
@@ -100,7 +100,7 @@ export default function ModelTeamPage() {
     { key: "transfers", label: "Transfers", value: (w) => w.transfers.length,
       render: (w) => w.transfers.length ? w.transfers.map((t) => `${name(t.out)} → ${name(t.in)}`).join(", ")
         : <span className="muted">{w.gw === weeks[0]?.gw && w.source !== "carried" ? "opening squad" : "–"}</span> },
-    { key: "hits", label: "Hits", numeric: true, value: (w) => w.hits, render: (w) => (w.hits ? `−${4 * w.hits}` : "–") },
+    { key: "hits", label: "Transfer hits", numeric: true, value: (w) => w.hits, render: (w) => (w.hits ? `−${4 * w.hits}` : "–") },
     { key: "chip", label: "Chip", value: (w) => w.chip, render: (w) => (w.chip ? <span className="tag">{CHIP_NAMES[w.chip] ?? w.chip}</span> : "–") },
     { key: "best", label: "Hindsight best", numeric: true, value: (w) => w.best, render: (w) => int(w.best),
       title: "The best XI and captain from the same 15 players, knowing the points" },
@@ -118,10 +118,10 @@ export default function ModelTeamPage() {
         <Tiles tiles={[
           { label: "Total points", value: int(total), note: `${weeks.length} gameweek${weeks.length === 1 ? "" : "s"}` },
           { label: "Against the FPL average", value: signed(total - average, 0), note: `above average in ${above} of ${weeks.length}` },
-          { label: "Transfers", value: int(moves), note: hits ? `${hits} hit${hits === 1 ? "" : "s"} (−${4 * hits})` : "no hits taken" },
+          { label: "Transfers", value: int(moves), note: hits ? `${hits} transfer hit${hits === 1 ? "" : "s"} (−${4 * hits})` : "no transfer hits taken" },
           { label: "Left on the table", value: int(missed), note: "best XI and captain from the same 15, all season" },
           ...(forecastWeeks.length ? [{ label: "Against the forecast", value: signed(forecastScored - forecastTotal, 0),
-            note: `forecast ${int(forecastTotal)}, scored ${int(forecastScored)} before hits (${forecastWeeks.length} GWs)` }] : []),
+            note: `forecast ${int(forecastTotal)}, scored ${int(forecastScored)} before transfer hits (${forecastWeeks.length} GWs)` }] : []),
           ...(simulated.length ? [{ label: "Inside the likely range", value: `${landed} of ${simulated.length}`,
             note: "weeks whose score landed in the simulated middle 80% (about 4 in 5 should)" }] : []),
         ]} />
