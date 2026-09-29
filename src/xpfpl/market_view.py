@@ -157,7 +157,7 @@ def _clean_sheet(table: pd.DataFrame, side: str) -> pd.Series:
 def render(bs: dict, fixtures: list[dict]) -> None:
     st.subheader("What the betting markets think")
     st.caption("Prediction-market prices from Polymarket: a price of 0.62 means the market "
-               "gives it a 62% chance. **Market Odds** are those prices; **Our Odds** are the model's own "
+               "gives it a 62% chance. **Market Odds** are those prices; **Our Odds** are this model's own "
                "team ratings. Match markets usually open about a week before kick-off.")
     season = api.current_season(bs)
     names = {t["code"]: t["short_name"] for t in bs["teams"]}
@@ -361,7 +361,7 @@ def _render_team_charts(table: pd.DataFrame, names: dict[int, str], played: bool
                    "Odds and Our Odds disagree, see which the diamond sits nearer.")
     else:
         st.caption("Where the dots disagree, the market knows something our ratings don't (team news, a new "
-                   "manager) - or is wrong. The model sees both.")
+                   "manager) - or is wrong. This model sees both.")
 
 
 def _render_movement(table: pd.DataFrame, played: bool) -> None:
@@ -390,7 +390,7 @@ def _render_movement(table: pd.DataFrame, played: bool) -> None:
     st.altair_chart(chart.properties(height=260), width="stretch")
     every = "Prices every 5 minutes" if days < 1 else "Hourly prices"
     if played:
-        st.caption(f"{every} over the {_days(days)} up to the FPL deadline (the dashed line): the prices the "
+        st.caption(f"{every} over the {_days(days)} up to the FPL deadline (the dashed line): the prices this "
                    "model and this page use. Anything after the deadline is news a manager can't act on, so it "
                    "isn't shown.")
     else:
@@ -452,7 +452,7 @@ def _render_news(table: pd.DataFrame, scorers: pd.DataFrame, names: dict[int, st
         st.caption("No real moves in the goalscorer odds for these matches.")
     st.caption("Moves are in percentage points. Injuries and rotation reach the market before they reach "
                f"FPL's flags. When a player's scorer odds fall to {markets.OUT_THRESHOLD:.0%} or less he has "
-               "almost always been ruled out (on 2025-26, 3 of 62 such players played), so the model cuts his "
+               "almost always been ruled out (on 2025-26, 3 of 62 such players played), so this model cuts his "
                "next-gameweek xP to "
                f"{config.MARKET_OUT_XP_FACTOR:.0%}. A fall from about 50% is usually a new market finding its "
                "price, not news.")
@@ -491,7 +491,7 @@ def _render_scorers(scorers: pd.DataFrame, bs: dict, played: bool, player_result
                    "actually scored.")
     st.caption("Tested on 2025-26, they priced scorers about 60% too high "
                "and ranked them barely better than chance (AUC 0.58, against 0.73 for our own model), and "
-               "most trade very little. The model only uses them to spot players who've been ruled out.")
+               "most trade very little. This model only uses them to spot players who've been ruled out.")
 
 
 def _render_outrights(bs: dict) -> None:
@@ -553,5 +553,5 @@ def _render_accuracy() -> None:
                    "result columns score the home win / draw / away win chances: log loss counts only the chance "
                    "given to what happened (the fairest single number for comparing forecasts), Brier all three. The "
                    "market and our own ratings are close on all of them (the market a little ahead on 2025-26's "
-                   "results). The model uses both; so far that's close to neutral for accuracy. 2024-25 only "
+                   "results). This model uses both; so far that's close to neutral for accuracy. 2024-25 only "
                    "had result markets; goal markets started in 2025-26.")

@@ -1,7 +1,7 @@
 import * as Plot from "@observablehq/plot";
 import { useCallback, useMemo, useState } from "react";
 import { color } from "../colors";
-import { Chart, Club, Note, Loading, Table, Tiles, plotDefaults, type Column } from "../components/ui";
+import { Chart, Club, Note, Loading, Opponent, Table, Tiles, plotDefaults, type Column } from "../components/ui";
 import { competition, side } from "../midweek";
 import { gwFile, rows, type Gameweek, type GwRow, type ModelTeam } from "../data";
 import { POSITIONS, compact, dec, int, pts, signed, when } from "../format";
@@ -117,7 +117,7 @@ function Week({ gw, seasons }: { gw: number; seasons: string[] }) {
     { key: "team", label: "Club", value: (l) => site.team.get(l.team)?.short, render: (l) => <Club id={l.team} /> },
     { key: "pos", label: "Pos", value: (l) => l.position, render: (l) => POSITIONS[l.position] },
     { key: "opp", label: "Opponent", value: (l) => l.opponents.map((o) => site.team.get(o.team)?.short).join(", "),
-      render: (l) => l.opponents.map((o) => `${site.team.get(o.team)?.short ?? "?"} (${o.home ? "H" : "A"})`).join(", ") },
+      render: (l) => l.opponents.map((o, i) => <span key={i}>{i > 0 && ", "}<Opponent id={o.team} home={o.home} /></span>) },
     { key: "price", label: "£m", numeric: true, value: (l) => l.price, render: (l) => dec(l.price, 1) },
     { key: "minutes", label: "Mins", numeric: true, value: (l) => l.minutes },
     ...(hasMidweek ? [{ key: "midweek", label: "Midweek", numeric: true, value: (l: Line) => l.midweek,
@@ -125,7 +125,7 @@ function Week({ gw, seasons }: { gw: number; seasons: string[] }) {
                         title: "Minutes in his club's cup or European match before this gameweek" } as Column<Line>] : []),
     { key: "points", label: "Points", numeric: true, value: (l) => l.points },
     { key: "xp", label: "xP", numeric: true, value: (l) => l.xp, render: (l) => pts(l.xp),
-      title: "The model's expected points before the deadline" },
+      title: "This model's expected points before the deadline" },
     { key: "diff", label: "Points − xP", numeric: true, value: (l) => (l.xp === null ? null : l.points - l.xp),
       render: (l) => (l.xp === null ? "–" : <span className={l.points >= l.xp ? "good" : "bad"}>{signed(l.points - l.xp)}</span>) },
     { key: "goals", label: "G", numeric: true, value: (l) => l.goals, title: "Goals" },
@@ -143,7 +143,7 @@ function Week({ gw, seasons }: { gw: number; seasons: string[] }) {
     { key: "name", label: "Player", value: (l) => l.name },
     { key: "team", label: "Club", value: (l) => site.team.get(l.team)?.short, render: (l) => <Club id={l.team} /> },
     { key: "pos", label: "Pos", value: (l) => l.position, render: (l) => POSITIONS[l.position] },
-    { key: "xp", label: "xP", numeric: true, value: (l) => l.xp, render: (l) => pts(l.xp), title: "The model's expected points before the deadline" },
+    { key: "xp", label: "xP", numeric: true, value: (l) => l.xp, render: (l) => pts(l.xp), title: "This model's expected points before the deadline" },
     { key: "points", label: "Points", numeric: true, value: (l) => l.points },
     { key: "diff", label: "Points − xP", numeric: true, value: (l) => (l.xp === null ? null : l.points - l.xp),
       render: (l) => (l.xp === null ? "–" : <span className={l.points >= l.xp ? "good" : "bad"}>{signed(l.points - l.xp)}</span>) },
@@ -154,7 +154,7 @@ function Week({ gw, seasons }: { gw: number; seasons: string[] }) {
     <>
       <h2>Gameweek {gw}{past && `, ${site.meta.season}`}</h2>
       <p className="lede">
-        {hasXp || !data ? "Every result and every player's points, next to what the model expected before the deadline."
+        {hasXp || !data ? `Every result and every player's points, next to what this ${site.meta.model} model expected before the deadline.`
           : "Every result and every player's points. No forecast was saved before this deadline, so there's no xP here."}
       </p>
       <div className="toolbar">
@@ -182,7 +182,7 @@ function Week({ gw, seasons }: { gw: number; seasons: string[] }) {
             // An earlier season archived from vaastav has no FPL gameweek summary (average, highest, captain).
             ...(event?.average != null || !past ? [{ label: "Average score", value: int(event?.average), note: "across all FPL managers" }] : []),
             ...(event?.highest != null || !past ? [{ label: "Highest score", value: int(event?.highest) }] : []),
-            { label: "Top player", value: top ? `${top.name} ${top.points}` : "–", note: top && site.team.get(top.team)?.name },
+            { label: "Top player", value: top ? `${top.name} ${top.points}` : "–", note: top && <Club id={top.team} /> },
             ...(past ? [
               { label: "Goals", value: int(data.fixtures.reduce((s, f) => s + (f.home_score ?? 0) + (f.away_score ?? 0), 0)),
                 note: `in ${data.fixtures.length} matches` },
@@ -194,8 +194,8 @@ function Week({ gw, seasons }: { gw: number; seasons: string[] }) {
               note: `average miss in points, ${scored.length} players who played` }] : []),
             ...(forecast.length ? [{ label: "Forecast vs scored", value: `${int(xpSum)} → ${int(pointsSum)}`,
               note: `all ${forecast.length} players with a forecast, played or not: ${signed(pointsSum - xpSum, 0)} points` }] : []),
-            ...(teamWeek?.forecast != null ? [{ label: "The Model's Team", value: `Scored ${teamWeek.gross ?? "–"}`,
-              note: <>against a forecast of {int(teamWeek.forecast)} (before transfer hits); <a href="#model-team">see the team</a></> }] : []),
+            ...(teamWeek?.forecast != null ? [{ label: "This Model's Team", value: `Scored ${teamWeek.gross ?? "–"}`,
+              note: <>against a forecast of {int(teamWeek.forecast)} (before transfer hits); <a href="#model-team">see this model's team</a></> }] : []),
           ]} />
 
           <h3>Results</h3>
@@ -249,7 +249,7 @@ function Week({ gw, seasons }: { gw: number; seasons: string[] }) {
 
           {topForecasts.length > 0 && (
             <>
-              <h3>The model's top forecasts</h3>
+              <h3>This model's top forecasts</h3>
               <p className="note" style={{ marginTop: 0 }}>The ten highest xP before the deadline, and what they scored.</p>
               <Table columns={forecastColumns} data={topForecasts} sort="xp" rowKey={(l) => l.element} />
             </>

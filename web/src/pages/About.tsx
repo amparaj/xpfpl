@@ -9,7 +9,7 @@ import { useData, useSite } from "../site";
 
 const STEPS = [
   { title: "Collect", text: "Every player's stats in every Premier League match since 2016, plus betting odds." },
-  { title: "Forecast", text: "A model predicts how many points each player will score in the next few gameweeks." },
+  { title: "Forecast", text: "This model predicts how many points each player will score in the next few gameweeks." },
   { title: "Pick", text: "An optimiser finds the best legal team, transfers, captain and chips for those forecasts." },
   { title: "Check", text: "After every gameweek, the forecasts are scored against what really happened." },
 ];
@@ -45,12 +45,12 @@ export default function About() {
       <h2>About</h2>
       <p className="lede">
         xP-FPL (Expected Points for FPL) is a personal project that predicts how many points every Fantasy Premier
-        League player is likely to score in the coming gameweeks. A machine-learning model, trained on every Premier
+        League player is likely to score in the coming gameweeks. This machine-learning model, trained on every Premier
         League season since 2016-17, makes the forecasts; an optimiser then turns them into a team each week: the
         starting eleven, captain, transfers and when to play a chip.
       </p>
       <p>
-        This site is the project's public record for the {site.meta.season} season: what the model expected before each
+        This site is the project's public record for the {site.meta.season} season: what this {site.meta.model} model expected before each
         deadline, what actually happened, how accurate it has been, and how its own team is doing.
       </p>
       <p>
@@ -71,7 +71,7 @@ export default function About() {
 
       <h3>1. The data</h3>
       <p>
-        The model learns from every player in every Premier League match since the 2016-17 season: about a quarter of a
+        This model learns from every player in every Premier League match since the 2016-17 season: about a quarter of a
         million player-matches, with minutes, goals, assists, clean sheets, bonus points and, for recent seasons,
         expected goals (xG). It also uses odds from Polymarket, a betting market, which often reacts to team news
         before anyone else. All of it is kept in a free, downloadable <a href="#data">archive</a>.
@@ -79,7 +79,7 @@ export default function About() {
 
       <h3>2. The forecast</h3>
       <p>
-        For each player and each upcoming match, the model looks at the kind of things an experienced FPL manager
+        For each player and each upcoming match, this model looks at the kind of things an experienced FPL manager
         weighs up:
       </p>
       <ul>
@@ -94,15 +94,15 @@ export default function About() {
       <p>
         It learned how those things relate to points by studying past seasons.{" "}
         {site.meta.model === "mlp"
-          ? <>The model is a small neural network built with a machine-learning library.</>
-          : <>The model in use is "{site.meta.model}": {site.meta.model_description}.</>}{" "}
+          ? <>This model is a small neural network built with a machine-learning library.</>
+          : <>This model is "{site.meta.model}": {site.meta.model_description}.</>}{" "}
         Its forecast is then adjusted for FPL's injury flags, and double gameweeks count both matches.
       </p>
       <p>
         <strong>Midweek matches.</strong> A club with a Champions League match on Tuesday might rest its stars on
         Saturday. In the data since 2025-26, that doesn't show up: regular starters at clubs in Europe score no less
         after a midweek match than in other weeks. A squad player's midweek role does tell you something. One who
-        wasn't used midweek tends to score less than the model expects that weekend, and one who played tends to score
+        wasn't used midweek tends to score less than this model expects that weekend, and one who played tends to score
         more. So once the midweek match has been played, the next gameweek's forecast for each player at that club is
         multiplied by:
       </p>
@@ -148,7 +148,7 @@ export default function About() {
         An xP is an average, and averages hide risk. Two players on 6 xP can be very different picks: one reliably
         gets 5 to 7, the other blanks half the time and hauls now and then. So after each forecast the computer plays the
         coming gameweeks <strong>thousands of times</strong> (a <em>Monte Carlo</em> simulation). In every simulated week it
-        draws how many goals each side scores, from the betting odds or the model's club ratings. Then, for each player, it
+        draws how many goals each side scores, from the betting odds or this model's club ratings. Then, for each player, it
         draws whether he plays and for how long, his share of his side's goals and assists, clean sheets, saves, defensive
         actions, and bonus points and cards the way they have fallen in the past. Teammates rise and fall together, as they do
         on the day. Each player's simulated average is kept equal to his xP, so the simulation changes how the points are
@@ -157,7 +157,7 @@ export default function About() {
       <p>
         That gives every player a likely <strong>range</strong> (the middle 80% of his simulated scores) and his chances of
         <strong> 10 or more</strong> and of <strong>2 or fewer</strong>, shown on <a href="#next">Next Gameweek</a>. For{" "}
-        <a href="#model-team">The Model's Team</a> it plays the auto-subs and the vice-captain too, giving the team a likely
+        <a href="#model-team">This Model's Team</a> it plays the auto-subs and the vice-captain too, giving this model's team a likely
         score, the odds of each captain option, and the chance a Triple Captain or Bench Boost would pay off.
         {simulation && <> Tested on {report?.validation?.season}, {pct(simulation.coverage_80)} of real scores landed inside
           their simulated range, where 80% means the ranges are the right width.</>}
@@ -172,7 +172,7 @@ export default function About() {
 
       <h3>4. Checking it</h3>
       <p>
-        <strong>Scoring the forecasts.</strong> The model was trained on {trainedOn ?? "past seasons"} and then tested on
+        <strong>Scoring the forecasts.</strong> This {site.meta.model} model was trained on {trainedOn ?? "past seasons"} and then tested on
         {" "}{comparison?.season ?? "the next season"}, a season it had never seen.
         {ours !== undefined && (
           <> For players who got on the pitch, its forecasts were off by <strong>{dec(ours)} points</strong> per match on
@@ -190,7 +190,7 @@ export default function About() {
         time, seeing only what was known before each deadline. It picks a team, makes transfers, scores the real points
         and moves on to the next week.
         {replayModel !== undefined && replaySeasons && <> Replaying {replaySeasons.length} seasons ({replaySeasons[0]} to{" "}
-          {replaySeasons[replaySeasons.length - 1]}), each with a model trained only on the seasons before it, it averaged
+          {replaySeasons[replaySeasons.length - 1]}), each with this model trained only on the seasons before it, it averaged
           about <strong>{int(replayModel)} points a season</strong>
           {replayBaseline !== undefined && <>, against {int(replayBaseline)} picking by the average of each player's last five matches</>}.</>}
         {" "}The settings, such as how many weeks to look ahead and how much a free transfer is worth, were tested the same
@@ -206,11 +206,11 @@ export default function About() {
           player's points against their forecast.</li>
         <li><a href="#next">Next Gameweek</a>: the forecast for the coming gameweek, captain picks, and each club's
           fixtures and midweek matches.</li>
+        <li><a href="#model-team">This Model's Team</a>: a paper FPL team that does whatever this model says, decided before
+          every deadline and scored like any other team.</li>
         <li><a href="#players">Players</a>: every player's season, week by week.</li>
         <li><a href="#markets">Markets</a>: what the betting odds said before each deadline, next to what happened. Upcoming
           matches' odds are refreshed regularly.</li>
-        <li><a href="#model-team">The Model's Team</a>: a paper FPL team that does whatever the model says, decided before
-          every deadline and scored like any other team.</li>
         <li><a href="#data">Data</a>: the archive behind all of it, free to download.</li>
       </ul>
 

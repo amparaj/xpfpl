@@ -36,9 +36,9 @@ const OUTCOMES: Record<string, string> = {
   goal: "Goal", save: "Saved", miss: "Off target", block: "Blocked", post: "Hit the woodwork", "blocked-off-line": "Cleared off the line",
 };
 // Half a 105 x 68 pitch, drawn with the goal at the top: plot x is across (0-68 m), plot y is metres from the goal line.
-// The source's across coordinate runs to the shooter's left, so it's mirrored to put his left on the left.
+// The source's across coordinate runs to the shooter's right, which is already the right-hand side here.
 const W = 68, HALF = 52.5;
-const across = (y: number) => W - (y / 100) * W;
+const across = (y: number) => (y / 100) * W;
 const along = (x: number) => (x / 100) * 105;
 
 function halfPitch(): [number, number][][] {

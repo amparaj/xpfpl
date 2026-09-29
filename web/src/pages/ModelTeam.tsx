@@ -57,7 +57,7 @@ export default function ModelTeamPage() {
 
   if (data === undefined) return <Loading />;
   if (data === null || (!weeks.length && !data.next)) {
-    return <p>The Model's Team hasn't made a decision yet. Run <code>xpfpl recommend</code> (or <code>xpfpl modelteam</code>) before a deadline.</p>;
+    return <p>This Model's Team hasn't made a decision yet. Run <code>xpfpl recommend</code> (or <code>xpfpl modelteam</code>) before a deadline.</p>;
   }
 
   const total = weeks.reduce((s, w) => s + (w.points ?? 0), 0);
@@ -83,14 +83,14 @@ export default function ModelTeamPage() {
       title: "Live: saved before the deadline. Replay: filled in by the backtest for the weeks before the live record began." },
     { key: "points", label: "Points", numeric: true, value: (w) => w.points, render: (w) => <strong>{w.points}</strong> },
     { key: "forecast", label: "Forecast", numeric: true, value: (w) => w.forecast ?? null, render: (w) => pts(w.forecast),
-      title: "What the model expected the team to score, before the deadline: captain doubled, bench only with Bench Boost, before transfer hits" },
+      title: "What this model expected its team to score, before the deadline: captain doubled, bench only with Bench Boost, before transfer hits" },
     { key: "vsf", label: "vs forecast", numeric: true, value: (w) => (w.forecast == null ? null : (w.gross ?? 0) - w.forecast),
       render: (w) => (w.forecast == null ? "–" : <span className={(w.gross ?? 0) >= w.forecast ? "good" : "bad"}>{signed((w.gross ?? 0) - w.forecast, 1)}</span>),
       title: "Points before transfer hits, minus the forecast" },
     { key: "range", label: "Likely range", numeric: true, value: (w) => w.simulation?.points.p90 ?? null,
       render: (w) => !w.simulation ? "–"
         : <span className={inside(w) ? "good" : "bad"}>{band(w.simulation.points.p10, w.simulation.points.p90)}</span>,
-      title: "The middle 80% of the team's simulated scores before the deadline (Monte Carlo): green if the score landed inside" },
+      title: "The middle 80% of this model's team's simulated scores before the deadline (Monte Carlo): green if the score landed inside" },
     { key: "avg", label: "FPL average", numeric: true, value: (w) => w.average },
     { key: "vs", label: "vs average", numeric: true, value: (w) => (w.average === null ? null : (w.points ?? 0) - w.average),
       render: (w) => (w.average === null ? "–" : <span className={(w.points ?? 0) >= w.average ? "good" : "bad"}>{signed((w.points ?? 0) - w.average, 0)}</span>) },
@@ -108,9 +108,9 @@ export default function ModelTeamPage() {
 
   return (
     <>
-      <h2>The Model's Team</h2>
+      <h2>This Model's Team</h2>
       <p className="lede">
-        An FPL team run entirely by the model. Before every deadline it chooses the transfers, starting XI, bench order,
+        An FPL team run entirely by this {data.model} model. Before every deadline it chooses the transfers, starting XI, bench order,
         captain and chips, and the decision is saved. After the gameweek it's scored like any other FPL team, with auto-subs,
         the vice-captain, chips and transfer hits all counted.
       </p>
@@ -129,16 +129,16 @@ export default function ModelTeamPage() {
 
       {weeks.length > 0 && (
         <div className="card">
-          <h3 style={{ marginTop: 0 }}>Points per gameweek</h3>
+          <h3 style={{ marginTop: 0 }}>Points per gameweek for this model's team</h3>
           <Legend items={[{ label: "Live", color: color.s1 }, ...(replayed.length ? [{ label: "Replay", color: `color-mix(in srgb, ${color.s1} 45%, transparent)` }] : []),
                           { label: "FPL average", color: color.s2, kind: "line" as const },
                           ...(forecastWeeks.length ? [{ label: "Forecast before the deadline", color: color.s3, kind: "line" as const }] : []),
                           ...(weeks.some((w) => w.simulation) ? [{ label: "Likely range (simulated)", color: color.ink2, kind: "line" as const }] : [])]} />
-          <Chart make={chart} height={240} ariaLabel="The Model's Team's points per gameweek against the FPL average" />
+          <Chart make={chart} height={240} ariaLabel="This Model's Team's points per gameweek against the FPL average" />
         </div>
       )}
 
-      <h3>The team</h3>
+      <h3>This Model's Team</h3>
       <div className="toolbar">
         <label>
           Gameweek
@@ -153,7 +153,7 @@ export default function ModelTeamPage() {
         <div className="card">
           <p style={{ marginTop: 0 }}>
             {played ? <><strong>{week.points}</strong> points{week.hits ? ` (after −${4 * week.hits} for transfers)` : ""}.
-              {week.forecast != null && <> The forecast before the deadline was <strong>{pts(week.forecast)}</strong>, so it
+              {week.forecast != null && <> This model's forecast before the deadline was <strong>{pts(week.forecast)}</strong>, so it
                 scored <span className={(week.gross ?? 0) >= week.forecast ? "good" : "bad"}>{signed((week.gross ?? 0) - week.forecast, 1)}</span> against it
                 {week.hits ? " (before the transfer hits)" : ""}.</>}
               {" "}With hindsight, the best XI and captain from the same 15 would have scored <strong>{int(week.best)}</strong>.</>
@@ -184,9 +184,9 @@ export default function ModelTeamPage() {
 
       {week?.simulation && (
         <div className="card">
-          <h3 style={{ marginTop: 0 }}>How GW{week.gw} could go</h3>
+          <h3 style={{ marginTop: 0 }}>How GW{week.gw} could go for this model's team</h3>
           <p style={{ marginTop: 0 }}>
-            Played {week.simulation.sims.toLocaleString()} times before the deadline, the team scored{" "}
+            Played {week.simulation.sims.toLocaleString()} times before the deadline, this model's team scored{" "}
             <strong>{band(week.simulation.points.p10, week.simulation.points.p90)}</strong> in the middle 80% of simulated weeks
             (median {Math.round(week.simulation.points.p50)}, average {pts(week.simulation.points.mean)} with auto-subs and the vice-captain).
             {played && week.gross !== undefined && <> It scored <strong>{week.gross}</strong> before transfer hits: {inside(week)
@@ -221,19 +221,19 @@ export default function ModelTeamPage() {
             <dd>Decided and saved before the gameweek's deadline, using only information available at the time.</dd>
             <dt>Replay</dt>
             <dd>
-              Worked out afterwards for the gameweeks before the team began, using a model trained only on earlier seasons
+              Worked out afterwards for the gameweeks before the team began, using this model trained only on earlier seasons
               and each player's form at the time. Injury news isn't included, so treat these weeks as a guide. They're shown
               paler in the chart.
             </dd>
             <dt>Forecast</dt>
             <dd>
-              What the model expected the team to score, made before the deadline and counted the way the week is scored:
+              What this {data.model} model expected its team to score, made before the deadline and counted the way the week is scored:
               captain doubled (tripled with Triple Captain), bench only with Bench Boost, before transfer hits. For a
               carried-over week it's summed from that week's player forecasts. It's drawn as a line on each week's bar.
             </dd>
             <dt>Likely range</dt>
             <dd>
-              The middle 80% of the team's scores when the week was simulated thousands of times before the deadline (Monte
+              The middle 80% of this model's team's scores when the week was simulated thousands of times before the deadline (Monte
               Carlo). About four weeks in five should land inside it; green if this one did.
             </dd>
             <dt>Carried over</dt>
@@ -264,7 +264,7 @@ export default function ModelTeamPage() {
           GW{replayed.length === 1 ? replayed[0] : `${replayed[0]}–${replayed[replayed.length - 1]}`} {replayed.length === 1 ? "is a replay" : "are replays"}:
           the live record began later.{" "}
         </>}
-        The model is <strong>{data.model}</strong>. It starts with £100m and pays FPL's selling prices, so it can't profit from rises it didn't hold.
+        This model is <strong>{data.model}</strong>. It starts with £100m and pays FPL's selling prices, so it can't profit from rises it didn't hold.
       </Note>
     </>
   );

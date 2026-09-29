@@ -320,7 +320,7 @@ def gw_review(team_id: int, gw: int):
     return points, r, best, plan
 
 
-@st.cache_data(show_spinner="Loading the model's forecasts for the season...")
+@st.cache_data(show_spinner="Loading this model's forecasts for the season...")
 def season_xp(season: str, model: str, data_stamp) -> pd.DataFrame:
     """gw, element, xp, source for every played gameweek: the forecast saved before each deadline,
     else an in-sample rebuild (review.season_forecasts)."""
@@ -353,7 +353,7 @@ def xp_source_note(sources) -> str:
     """How to read past xP, given which sources were used."""
     sources = set(sources)
     if sources <= {review.SAVED}:
-        return "xP is the forecast saved before each deadline, so it's exactly what the model said at the time."
+        return "xP is the forecast saved before each deadline, so it's exactly what this model said at the time."
     if review.SAVED in sources:
         return ("xP is the forecast saved before each deadline where there is one; the other weeks are rebuilt "
                 "by today's model, which was also trained on them, so those are a little optimistic.")
@@ -528,7 +528,7 @@ with st.sidebar:
     elif data_gw < last_gw:
         st.info(f"GW{last_gw} has finished, but FPL is still confirming its data. Fetch once it's confirmed.")
     elif model_time and config.MATCHES_PATH.stat().st_mtime > default_model_path.stat().st_mtime:
-        st.warning("The data is newer than the model. Run step 3 (Retrain) to use it.")
+        st.warning("The data is newer than this model. Run step 3 (Retrain) to use it.")
     if st.button("1. Fetch match data", width="stretch",
                  help="xpfpl fetch (~1 min): rebuilds the training dataset (every player's stats in every "
                       "finished match, history + this season) and saves it to disk"):
@@ -545,7 +545,7 @@ with st.sidebar:
     st.caption(f"Odds last fetched: **{odds_time:%a %d %b %H:%M}**" if odds_time
                else "Odds not fetched yet.")
     if st.button("3. Retrain", width="stretch",
-                 help="xpfpl train (~30 s): refits the model on the match data and odds above"):
+                 help="xpfpl train (~30 s): refits this model on the match data and odds above"):
         if run_cli("train"):
             st.cache_data.clear()
     st.caption(f"Model (`{config.MODEL}`) trained: **{model_time:%a %d %b %H:%M}**"
@@ -988,7 +988,7 @@ with tab_review:
             forecast = review.team_forecast(picks, xp)
             f = st.columns(3)
             f[0].metric("Forecast for your team", f"{forecast:.1f}",
-                        help="The model's xP for your XI as picked: captain doubled (tripled with Triple Captain), "
+                        help="This model's xP for your XI as picked: captain doubled (tripled with Triple Captain), "
                              "bench counted only with Bench Boost")
             f[1].metric("Scored", net, help="Points before transfer penalties, auto-subs included")
             f[2].metric("Scored − forecast", f"{net - forecast:+.1f}")
@@ -1125,7 +1125,7 @@ with tab_season:
             st.markdown("**Forecast against points scored**")
             f = st.columns(3)
             f[0].metric("Forecast, all season", f"{compared['forecast'].sum():.0f}",
-                        help=f"{len(compared)} gameweeks: the model's xP for your team as picked each week")
+                        help=f"{len(compared)} gameweeks: this model's xP for your team as picked each week")
             f[1].metric("Scored", f"{compared['scored'].sum():.0f}", help="Before transfer penalties")
             f[2].metric("Scored − forecast", f"{compared['vs_forecast'].sum():+.0f}",
                         f"{compared['vs_forecast'].mean():+.1f} a gameweek", delta_color="off")
@@ -1140,7 +1140,7 @@ with tab_season:
                          alt.Tooltip("scored:Q", title="Scored"), alt.Tooltip("vs_forecast:Q", title="Scored − forecast",
                                                                               format="+.1f")])
             st.altair_chart(chart, width="stretch")
-            st.caption("Forecast: the model's xP for your XI as you picked it, captain doubled (tripled with Triple "
+            st.caption("Forecast: this model's xP for your XI as you picked it, captain doubled (tripled with Triple "
                        "Captain), bench only with Bench Boost. Scored: your points before transfer penalties. "
                        + xp_source_note(compared["source"]))
 
@@ -1291,7 +1291,7 @@ with tab_players:
                                                                                       filled=True)).encode(
             y="xp:Q", tooltip=[alt.Tooltip("gw:O", title="GW"), alt.Tooltip("xp:Q", title="xP", format=".2f")])
         st.altair_chart(bars + line, width="stretch")
-        st.caption("Bars: points scored. Orange: the model's xP for that gameweek. "
+        st.caption("Bars: points scored. Orange: this model's xP for that gameweek. "
                    + xp_source_note(xp_all.loc[xp_all["gw"].isin(known["gw"]), "source"].unique()))
         profile_view.render(season, chosen, bs, players[f"xp_{gameweeks[0]}"] if len(players) else pd.Series(dtype=float))
 

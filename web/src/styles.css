@@ -93,6 +93,17 @@ button { font: inherit; color: inherit; }
 .byline { font-size: 13px; color: var(--muted); }
 .status { display: flex; flex-direction: column; font-size: 13px; color: var(--muted); margin-top: 2px; line-height: 1.45; }
 .status strong { color: var(--ink-2); font-weight: 600; }
+.opponent { white-space: nowrap; }
+.status-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap; }
+.countdown { display: flex; align-items: center; gap: 8px; }
+.countdown-label { font-size: 12px; color: var(--muted); }
+.countdown-units { display: flex; gap: 4px; }
+.countdown-unit {
+  display: flex; flex-direction: column; align-items: center; min-width: 40px; padding: 3px 4px 2px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 6px; line-height: 1.1;
+}
+.countdown-unit b { font-size: 16px; font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
+.countdown-unit small { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
 /* Four lines of header is too much to pin on a phone: let it scroll away. */
 @media (max-width: 640px) { .top { position: static; } .brand h1 { font-size: 17px; } }
 nav { display: flex; gap: 2px; overflow-x: auto; margin-top: 6px; scrollbar-width: none; }

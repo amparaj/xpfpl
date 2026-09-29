@@ -74,8 +74,9 @@ export default function Match({ gw, fixture }: { gw: number; fixture: number }) 
       const p = s.element !== null ? site.player.get(s.element) : undefined;
       const club = site.team.get(side === "home" ? fx.home : fx.away)?.short ?? "";
       running[side] += s.xg;
-      // The source measures x from the goal being attacked; the home side shoots at the right-hand goal.
-      const along = LENGTH * (1 - s.start_x / 100), across = WIDTH * (s.start_y / 100);
+      // The source measures x from the goal being attacked and y towards the shooter's right; the home side shoots
+      // at the right-hand goal, so his right is the bottom of the pitch.
+      const along = LENGTH * (1 - s.start_x / 100), across = WIDTH * (1 - s.start_y / 100);
       return {
         ...s, side, club, name: p?.web_name ?? "Player unknown", goal: s.outcome === "goal",
         x: side === "home" ? along : LENGTH - along, y: side === "home" ? across : WIDTH - across,
@@ -230,8 +231,8 @@ function OnGoal({ shots, home, away }: { shots: Placed[]; home: string; away: st
   const make = useCallback((width: number) => {
     const w = Math.min(width, 560);
     const side = (s: Placed) => (s.side === "home" ? color.s1 : color.s2);
-    // As the shooter sees it: the source's goal-mouth y runs to the shooter's left.
-    const across = (s: Placed) => 100 - s.goal_mouth_y;
+    // As the shooter sees it: the source's goal-mouth y runs to the shooter's right.
+    const across = (s: Placed) => s.goal_mouth_y;
     const frame: [number, number][] = [[44.8, 0], [44.8, 38], [55.2, 38], [55.2, 0]];
     return Plot.plot({
       ...plotDefaults(w),
@@ -392,7 +393,7 @@ function Odds({ markets, fixture, homeScore, awayScore }: {
   const happened = homeScore > awayScore ? 0 : homeScore === awayScore ? 1 : 2;
   const sources = [
     { name: "Market Odds", note: "Polymarket at the FPL deadline", p: [m.home_win, m.draw, m.away_win] as number[] },
-    { name: "Our Odds", note: "the model's club ratings", p: [m.ours_home_win, 1 - m.ours_home_win - m.ours_away_win, m.ours_away_win] as number[] },
+    { name: "Our Odds", note: "this model's club ratings", p: [m.ours_home_win, 1 - m.ours_home_win - m.ours_away_win, m.ours_away_win] as number[] },
   ].filter((s) => s.p.every((v) => typeof v === "number"));
   if (!sources.length) return null;
   const labels = ["Home win", "Draw", "Away win"];
@@ -454,7 +455,7 @@ function Players({ week, fixture, players, home }: {
     { key: "minutes", label: "Mins", numeric: true, value: (l) => l.minutes, group: "FPL" },
     { key: "points", label: "Points", numeric: true, value: (l) => l.total_points, group: "FPL" },
     { key: "xp", label: "xP", numeric: true, value: (l) => l.xp, render: (l) => pts(l.xp), group: "FPL",
-      title: double ? "The model's xP before the deadline, for the whole (double) gameweek" : "The model's xP before the deadline" },
+      title: double ? "This model's xP before the deadline, for the whole (double) gameweek" : "This model's xP before the deadline" },
     { key: "diff", label: "Points − xP", numeric: true, group: "FPL", value: (l) => (l.xp === null || double ? null : l.total_points - l.xp),
       render: (l) => (l.xp === null || double ? "–" : <span className={l.total_points >= l.xp ? "good" : "bad"}>{signed(l.total_points - l.xp)}</span>) },
     { key: "bonus", label: "Bonus", numeric: true, value: (l) => l.bonus, group: "FPL" },
