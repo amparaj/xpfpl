@@ -174,7 +174,7 @@ export default function MyTeamPage() {
       note: "every week added up, after any transfer hits" +
         (data.total.points ? `; likely ${band(data.total.points.p10, data.total.points.p90)}` : "") }] : []),
     ...(a ? [{ label: "The transfers", value: `${signed(a.xp, 0)} xP`,
-      note: `over ${span}, after hits, against keeping the GW${data.gw - 1} squad` +
+      note: `over ${span}, after transfer hits, against keeping the GW${data.gw - 1} squad` +
         (a.p_better != null ? `; ahead in ${pct(a.p_better)} of simulated weeks` : "") }] : []),
   ];
 
@@ -307,7 +307,7 @@ export default function MyTeamPage() {
 
       {a && (
         <p>
-          <strong>The transfers</strong> are worth {signed(a.xp, 1)} xP over {span} after hits, against keeping the GW{data.gw - 1} squad
+          <strong>The transfers</strong> are worth {signed(a.xp, 1)} xP over {span} after transfer hits, against keeping the GW{data.gw - 1} squad
           with its best XI and captain each week.
           {a.p_better != null && <> In the same simulated weeks (the same goals, injuries and clean sheets for both) the new team is ahead
             in {pct(a.p_better)} of them, by {signed(a.p10 ?? 0, 0)} to {signed(a.p90 ?? 0, 0)} points in the middle 80%.</>}

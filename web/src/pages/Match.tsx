@@ -24,6 +24,8 @@ interface Shot {
   minute: number; added_time: number | null; is_home: boolean; element: number | null; outcome: string;
   situation: string; body_part: string; xg: number; xgot: number | null;
   start_x: number; start_y: number; goal_mouth_y: number; goal_mouth_z: number;
+  /** The source left the shooter out; worked out from the players' match stats (matchstats.attribute). */
+  inferred?: boolean;
 }
 /** A shot placed for drawing: pitch metres (the home side attacks to the right), and the running xG. */
 interface Placed extends Shot {
@@ -75,7 +77,7 @@ export default function Match({ gw, fixture }: { gw: number; fixture: number }) 
       // The source measures x from the goal being attacked; the home side shoots at the right-hand goal.
       const along = LENGTH * (1 - s.start_x / 100), across = WIDTH * (s.start_y / 100);
       return {
-        ...s, side, club, name: p?.web_name ?? "Player not recorded", goal: s.outcome === "goal",
+        ...s, side, club, name: p?.web_name ?? "Player unknown", goal: s.outcome === "goal",
         x: side === "home" ? along : LENGTH - along, y: side === "home" ? across : WIDTH - across,
         ...clock(s), cumulative: running[side],
       };
@@ -124,8 +126,9 @@ export default function Match({ gw, fixture }: { gw: number; fixture: number }) 
       <Odds markets={markets} fixture={fixture} homeScore={fx.home_score} awayScore={fx.away_score} />
       {week && <Players week={week} fixture={fixture} players={data?.players} home={fx.home} />}
       {data && <Note>Match data: {file?.source}. Expected goals (xG) is the chance a shot like that is scored, from where and how it
-        was taken; xG on target (xGOT) is the same once it's on target, knowing where it was placed. About one shot in eight
-        has no player recorded by the source.</Note>}
+        was taken; xG on target (xGOT) is the same once it's on target, knowing where it was placed.
+        {" "}Where the source leaves a shooter out, it's taken from FotMob's own match page, or failing that worked out from the
+        players' match stats (their shots, goals, xG and xGOT), which the hover says.</Note>}
     </>
   );
 }
@@ -158,7 +161,7 @@ function pitchLines(): [number, number][][] {
 }
 
 const shotTitle = (s: Placed) =>
-  `${s.name} (${s.club}) · ${s.label}\n${OUTCOMES[s.outcome] ?? s.outcome} · xG ${dec(s.xg)}` +
+  `${s.name} (${s.club}) · ${s.label}${s.inferred ? " · worked out from match stats" : ""}\n${OUTCOMES[s.outcome] ?? s.outcome} · xG ${dec(s.xg)}` +
   (s.xgot !== null ? ` · xGOT ${dec(s.xgot)}` : "") +
   `\n${SITUATIONS[s.situation] ?? s.situation}, ${BODY[s.body_part] ?? s.body_part}`;
 
@@ -293,7 +296,7 @@ function Timeline({ shots, momentum, home, away }: {
       const mine = shots.filter((x) => x.side === s);
       return [{ t: 0, cumulative: 0, side: s }, ...mine, { t: end, cumulative: mine.at(-1)?.cumulative ?? 0, side: s }];
     };
-    const tip = (s: Placed) => `${s.name} (${s.club}) · ${s.label}\n${OUTCOMES[s.outcome] ?? s.outcome} · xG ${dec(s.xg)}\n${s.club} total ${dec(s.cumulative)} xG`;
+    const tip = (s: Placed) => `${s.name} (${s.club}) · ${s.label}${s.inferred ? " · worked out from match stats" : ""}\n${OUTCOMES[s.outcome] ?? s.outcome} · xG ${dec(s.xg)}\n${s.club} total ${dec(s.cumulative)} xG`;
     return Plot.plot({
       ...plotDefaults(width), height: 240,
       x: { domain: [0, end], label: "Minute", ticks: [0, 15, 30, 45, 60, 75, 90] },
@@ -414,8 +417,8 @@ function Odds({ markets, fixture, homeScore, awayScore }: {
         </table>
       </div>
       <p className="note">
-        The ✓ marks what happened. Log loss scores a forecast only on the chance it gave to that result (lower is better; a third
-        each scores 1.099). One match says little: see Markets for the season's scores.
+        The ✓ marks what happened. Log loss scores a forecast only on the chance it gave to that result (lower is better).
+        See Markets for the season's scores.
       </p>
     </div>
   );

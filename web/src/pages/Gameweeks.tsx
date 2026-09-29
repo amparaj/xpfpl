@@ -1,5 +1,5 @@
 import * as Plot from "@observablehq/plot";
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { color } from "../colors";
 import { Chart, Club, Note, Loading, Table, Tiles, plotDefaults, type Column } from "../components/ui";
 import { competition, side } from "../midweek";
@@ -63,10 +63,18 @@ function Week({ gw }: { gw: number }) {
     return byFixture;
   }, [data]);
 
+  const [highlight, setHighlight] = useState(0);        // a club id to pick out on the scatter (0: none)
+  const clubs = useMemo(() => [...new Set(scored.map((l) => l.team))]
+    .map((id) => site.team.get(id)).filter((t) => t !== undefined)
+    .sort((a, b) => a.name.localeCompare(b.name)), [scored, site]);
   const scatter = useCallback((width: number) => {
     const maxX = Math.ceil(Math.max(4, ...scored.map((l) => l.xp!)));
     const maxY = Math.ceil(Math.max(4, ...scored.map((l) => l.points)));
     const diag = Math.min(maxX, maxY);
+    const club = (l: Line) => site.meta.club_colours[site.team.get(l.team)?.short ?? ""]?.[0] ?? color.muted;
+    const picked = (l: Line) => !highlight || l.team === highlight;
+    // The picked club's dots drawn last, so they sit on top.
+    const ordered = [...scored].sort((a, b) => Number(picked(a)) - Number(picked(b)));
     return Plot.plot({
       ...plotDefaults(width),
       height: 340,
@@ -74,14 +82,19 @@ function Week({ gw }: { gw: number }) {
       y: { label: "Points scored", domain: [Math.min(-2, ...scored.map((l) => l.points)), maxY], grid: true },
       marks: [
         Plot.line([[0, 0], [diag, diag]], { stroke: color.muted, strokeDasharray: "4,4", strokeWidth: 1 }),
-        Plot.dot(scored, { x: "xp", y: "points", r: 4, fill: color.s1, fillOpacity: 0.75, stroke: color.surface, strokeWidth: 1 }),
+        // An outline in the text colour keeps the dark clubs (Fulham, Newcastle) visible in dark mode.
+        Plot.dot(ordered, {
+          x: "xp", y: "points", r: (l: Line) => (highlight && picked(l) ? 5.5 : 4.5), fill: club,
+          fillOpacity: (l: Line) => (picked(l) ? 0.9 : 0.12), stroke: color.ink,
+          strokeOpacity: (l: Line) => (picked(l) ? 0.45 : 0.1), strokeWidth: 0.75,
+        }),
         Plot.tip(scored, Plot.pointer({
           x: "xp", y: "points",
           title: (l: Line) => `${l.name} (${site.team.get(l.team)?.short ?? ""})\n${l.points} points · xP ${pts(l.xp)} · ${l.minutes} min`,
         })),
       ],
     });
-  }, [playedLines, scored, site]);
+  }, [scored, site, highlight]);
 
   if (!gw) return <p>No gameweek has been played yet.</p>;
 
@@ -151,7 +164,7 @@ function Week({ gw }: { gw: number }) {
             ...(forecast.length ? [{ label: "Forecast vs scored", value: `${int(xpSum)} → ${int(pointsSum)}`,
               note: `all ${forecast.length} players with a forecast, played or not: ${signed(pointsSum - xpSum, 0)} points` }] : []),
             ...(teamWeek?.forecast != null ? [{ label: "The Model's Team", value: `Scored ${teamWeek.gross ?? "–"}`,
-              note: <>against a forecast of {int(teamWeek.forecast)} (before hits); <a href="#model-team">see the team</a></> }] : []),
+              note: <>against a forecast of {int(teamWeek.forecast)} (before transfer hits); <a href="#model-team">see the team</a></> }] : []),
           ]} />
 
           <h3>Results</h3>
@@ -190,8 +203,16 @@ function Week({ gw }: { gw: number }) {
           <div className="card">
             <h3 style={{ marginTop: 0 }}>Points against xP</h3>
             <p className="note" style={{ marginTop: 0 }}>
-              One dot per player who played. Dots above the dashed line beat their xP. Hover for names.
+              One dot per player who played, in their club's colour. Dots above the dashed line beat their xP.
             </p>
+            <div className="toolbar">
+              <label>Highlight a club{" "}
+                <select value={highlight} onChange={(e) => setHighlight(Number(e.target.value))}>
+                  <option value={0}>None</option>
+                  {clubs.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+              </label>
+            </div>
             <Chart make={scatter} height={340} ariaLabel={`Points against xP for GW${gw}`} />
           </div>
 
