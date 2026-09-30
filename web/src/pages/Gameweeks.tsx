@@ -189,7 +189,7 @@ function Week({ gw, seasons }: { gw: number; seasons: string[] }) {
               { label: "Players who played", value: int(playedLines.length) },
             ] : []),
             ...(captained || !past ? [{ label: "Most captained", value: captained ? `${captained.web_name} ${captainPts ?? "–"}` : "–",
-              note: captainPts !== undefined ? `${captainPts * 2} with the armband` : undefined }] : []),
+              note: captained && <><Club id={captained.team} />{captainPts !== undefined && ` ${captainPts * 2} with the armband`}</> }] : []),
             ...(hasXp ? [{ label: "Model error", value: mae === null ? "–" : pts(mae),
               note: `average miss in points, ${scored.length} players who played` }] : []),
             ...(forecast.length ? [{ label: "Forecast vs scored", value: `${int(xpSum)} → ${int(pointsSum)}`,

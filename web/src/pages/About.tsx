@@ -201,7 +201,7 @@ export default function About() {
 
       <h3>What's on this site</h3>
       <ul>
-        <li><a href="#accuracy">Model Accuracy</a>: the full test results.</li>
+        <li><a href="#accuracy">This Model's Accuracy</a>: the full test results.</li>
         <li><a href="#gameweeks">Past Gameweeks</a>: every result, the cup and European matches before it, and each
           player's points against their forecast.</li>
         <li><a href="#next">Next Gameweek</a>: the forecast for the coming gameweek, captain picks, and each club's

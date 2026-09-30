@@ -18,7 +18,7 @@ export default function Accuracy() {
     <>
       <h2>How accurate is this model?</h2>
       <p className="lede">
-        This {site.meta.model} model predicts each player's points (xP) before every deadline. Here it is scored on a whole season it never
+        This {site.meta.model} model, which is the default model, predicts each player's points (xP) before every deadline. Here it is scored on a whole season it never
         saw in training{v ? ` (${v.season})` : ""}, and on this season's forecasts as the results come in.
       </p>
 

@@ -94,7 +94,7 @@ function Movement({ matches, end, histories }: { matches: MatchView[]; end: (m: 
       Plot.line(data ?? [], { x: "time", y: "p", stroke: "outcome", strokeWidth: 2, curve: "step-after" }),
       Plot.ruleX(data ?? [], Plot.pointerX({ x: "time", stroke: color.muted, strokeWidth: 1 })),
       Plot.tip(data ?? [], Plot.pointerX({ x: "time", y: "p",
-        title: (d: { time: Date; outcome: string; p: number }) => `${d.time.toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}\n${d.outcome}: ${pct(d.p, 1)}` })),
+        title: (d: { time: Date; outcome: string; p: number }) => `${d.time.toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })}\n${d.outcome}: ${pct(d.p, 1)}` })),
     ],
   }), [data]);
   if (!match) return null;
@@ -374,24 +374,49 @@ function PlayedScorers({ scorers }: { scorers: Row[] }) {
   );
 }
 
+/** One season's scores, the market's and this model's side by side. */
+interface AccuracyPair { season: string; matches: number; market?: Row; model?: Row }
+
+const ACCURACY_METRICS: { key: string; label: string; title: string }[] = [
+  { key: "result_log_loss", label: "Result log loss",
+    title: "Minus the log of the chance given to the result that happened (home win, draw or away win), averaged over matches" },
+  { key: "result_brier", label: "Result Brier", title: "Squared error over the three result chances, averaged over matches" },
+  { key: "goals_rmse", label: "Goals error", title: "RMSE of each side's expected goals against the goals scored" },
+  { key: "clean_sheet_brier", label: "Clean-sheet Brier", title: "Squared error of each side's clean-sheet chance" },
+];
+
 function MarketAccuracy({ data }: { data: Row[] }) {
-  if (!data.length) return null;
-  const columns: Column<Row>[] = [
+  const pairs = useMemo(() => {
+    const bySeason = new Map<string, AccuracyPair>();
+    for (const r of data) {
+      const pair: AccuracyPair = bySeason.get(r.season) ?? { season: r.season, matches: r.matches };
+      if (r.source === "Market") pair.market = r;
+      else pair.model = r;
+      bySeason.set(r.season, pair);
+    }
+    return [...bySeason.values()];
+  }, [data]);
+  if (!pairs.length) return null;
+  // The lower of the two scores is the better one: shown in bold, unless they tie to the digits shown.
+  const cell = (key: string, mine?: Row, other?: Row) => {
+    const text = dec(mine?.[key], 3), rival = dec(other?.[key], 3);
+    return mine?.[key] != null && other?.[key] != null && Number(text) < Number(rival) ? <strong>{text}</strong> : text;
+  };
+  const columns: Column<AccuracyPair>[] = [
     { key: "season", label: "Season", value: (r) => r.season },
-    { key: "source", label: "Source", value: (r) => r.source },
     { key: "matches", label: "Matches", numeric: true, value: (r) => r.matches },
-    { key: "goals", label: "Goals error", numeric: true, value: (r) => r.goals_rmse, render: (r) => dec(r.goals_rmse, 3),
-      title: "RMSE of each side's expected goals against the goals scored" },
-    { key: "cs", label: "Clean-sheet Brier", numeric: true, value: (r) => r.clean_sheet_brier, render: (r) => dec(r.clean_sheet_brier, 3) },
-    { key: "result", label: "Result log loss", numeric: true, value: (r) => r.result_log_loss, render: (r) => dec(r.result_log_loss, 3),
-      title: "Minus the log of the chance given to the result that happened (home win, draw or away win), averaged over matches" },
-    { key: "brier", label: "Result Brier", numeric: true, value: (r) => r.result_brier, render: (r) => dec(r.result_brier, 3),
-      title: "Squared error over the three result chances, averaged over matches" },
+    ...ACCURACY_METRICS.flatMap((m): Column<AccuracyPair>[] => [
+      { key: `${m.key}_market`, label: "Market", group: m.label, numeric: true, title: m.title,
+        value: (r) => r.market?.[m.key], render: (r) => cell(m.key, r.market, r.model) },
+      { key: `${m.key}_model`, label: "This model's ratings", group: m.label, numeric: true, title: m.title,
+        value: (r) => r.model?.[m.key], render: (r) => cell(m.key, r.model, r.market) },
+    ]),
   ];
   return (
     <>
-      <Table columns={columns} data={data} rowKey={(r) => `${r.season}-${r.source}`} />
-      <Note>Lower is better in every column. "Market" is Polymarket at each FPL deadline; "Our ratings" is this model's club-strength fit as it stood then.
+      <Table columns={columns} data={pairs} rowKey={(r) => r.season} />
+      <Note>Lower is better in every column, and the better of each pair is in bold. "Market" is Polymarket at each FPL deadline;
+        "This model's ratings" is this model's club-strength fit as it stood then.
         The result columns score the home win / draw / away win chances. Log loss is the one to go by: it counts only the chance
         given to what actually happened, so it separates a better forecast from a worse one in fewer matches than the ranked
         probability score. 1.099 is what "a third each" would score.</Note>
