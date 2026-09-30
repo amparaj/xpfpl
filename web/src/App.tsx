@@ -16,7 +16,7 @@ import { SiteContext, useHash, useSiteData, type Site } from "./site";
 // week ahead with this model's own team and the team I'm planning, research, and the raw data last.
 const PAGES = [
   { id: "about", label: "About", component: About },
-  { id: "accuracy", label: "Model Accuracy", component: Accuracy },
+  { id: "accuracy", label: "This Model's Accuracy", component: Accuracy },
   { id: "gameweeks", label: "Past Gameweeks", component: Gameweeks },
   { id: "next", label: "Next Gameweek", component: NextGameweek },
   { id: "model-team", label: "This Model's Team", component: ModelTeamPage },

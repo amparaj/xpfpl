@@ -533,7 +533,7 @@ season in the replay, so it was left out.
 One held-out season, and one replay of it, can flatter or hide almost anything. `xpfpl robustness`
 predicts 2020-21 to 2025-26, each season with an ensemble trained only on the seasons before it,
 then replays each season many ways (writes `data/robustness/report.json`; the Guide tab and the
-website's Model Accuracy page show it):
+website's This Model's Accuracy page show it):
 
 ```bash
 xpfpl robustness --stage forecasts --seasons 2024-25   # per season, so seasons can run in parallel
@@ -625,7 +625,7 @@ drops the old season's match-by-match history.
 A public, read-only look back at the season, served by GitHub Pages from the `gh-pages` branch
 (https://amparaj.github.io/xpfpl/). Its pages, in order: **About** (where it opens: the project and
 how the model forecasts, picks a team and is tested, in plain language, with the latest accuracy
-figures, the midweek factors and the Monte Carlo), **Model Accuracy** (including whether the simulated ranges came true), **Past Gameweeks** (every result, the cup and
+figures, the midweek factors and the Monte Carlo), **This Model's Accuracy** (including whether the simulated ranges came true), **Past Gameweeks** (every result, the cup and
 European results before it, each player's points against the xP forecast and his midweek minutes;
 each result opens a match page: a shot map with every shot on hover, where the shots on target went,
 expected goals and momentum through the match, the team stats, the odds before the deadline, and

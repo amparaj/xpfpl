@@ -537,21 +537,45 @@ def _render_outrights(bs: dict) -> None:
                "price history" + (f"; {missing} outcome(s) had no price yet then." if missing else "."))
 
 
+# (column in markets.accuracy(), heading), in the order shown: log loss first, the one to go by.
+_ACCURACY_METRICS = [("result_log_loss", "Result log loss"), ("result_brier", "Result Brier"),
+                     ("goals_rmse", "Goals RMSE"), ("clean_sheet_brier", "Clean-sheet Brier")]
+_ACCURACY_SOURCES = {"Market": "Market", "Our ratings": "This model's ratings"}
+
+
+def _accuracy_pairs(acc: pd.DataFrame):
+    """One row per season, the market and this model's ratings side by side for each measure, the
+    lower (better) of each pair in bold unless they tie to the three decimals shown."""
+    wide = acc.pivot(index="season", columns="source", values=[m for m, _ in _ACCURACY_METRICS]).round(3)
+    table = pd.DataFrame({"Season": wide.index,
+                          "Matches": acc.groupby("season")["matches"].max().reindex(wide.index).to_numpy()})
+    pairs = []
+    for metric, heading in _ACCURACY_METRICS:
+        names = [f"{heading}: {label}" for label in _ACCURACY_SOURCES.values()]
+        table = table.assign(**{name: wide[(metric, source)].to_numpy()
+                                for name, source in zip(names, _ACCURACY_SOURCES)})
+        pairs.append(names)
+
+    def bold(frame: pd.DataFrame) -> pd.DataFrame:
+        css = pd.DataFrame("", index=frame.index, columns=frame.columns)
+        for a, b in pairs:
+            css.loc[frame[a] < frame[b], a] = "font-weight: bold"
+            css.loc[frame[b] < frame[a], b] = "font-weight: bold"
+        return css
+
+    floats = [name for pair in pairs for name in pair]
+    return table.style.apply(bold, axis=None).format("{:.3f}", subset=floats, na_rep="–")
+
+
 def _render_accuracy() -> None:
     acc = _accuracy(markets.MATCHES_PATH.stat().st_mtime if markets.MATCHES_PATH.exists() else 0.0)
     if acc.empty:
         return
-    with st.expander("How good are the odds? Market Odds vs Our Odds, season by season"):
-        shown = acc.assign(source=acc["source"].map({"Market": "Market Odds", "Our ratings": "Our Odds"}))
-        st.dataframe(shown.rename(columns={"season": "Season", "source": "Source", "matches": "Matches",
-                                           "goals_rmse": "Goals RMSE", "clean_sheet_brier": "Clean-sheet Brier",
-                                           "result_log_loss": "Result log loss", "result_brier": "Result Brier"}),
-                     hide_index=True, width="stretch",
-                     column_config={c: st.column_config.NumberColumn(format=DECIMAL)
-                                    for c in ("Goals RMSE", "Clean-sheet Brier", "Result log loss", "Result Brier")})
-        st.caption("Lower is better in every column; each uses the odds as they stood at the FPL deadline. The "
-                   "result columns score the home win / draw / away win chances: log loss counts only the chance "
+    with st.expander("How good are the odds? Market vs This model's ratings, season by season"):
+        st.dataframe(_accuracy_pairs(acc), hide_index=True, width="stretch")
+        st.caption("Lower is better in every column, and the better of each pair is in bold; each uses the odds "
+                   "as they stood at the FPL deadline. The result columns score the home win / draw / away win chances: log loss counts only the chance "
                    "given to what happened (the fairest single number for comparing forecasts), Brier all three. The "
-                   "market and our own ratings are close on all of them (the market a little ahead on 2025-26's "
+                   "market and this model's ratings are close on all of them (the market a little ahead on 2025-26's "
                    "results). This model uses both; so far that's close to neutral for accuracy. 2024-25 only "
                    "had result markets; goal markets started in 2025-26.")
