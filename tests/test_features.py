@@ -90,3 +90,42 @@ def test_stale_features_are_the_previous_matchs_features():
     expected = fresh.groupby("code")[col].shift(1).dropna()
     assert np.allclose(stale.loc[expected.index, col], expected)
     assert (stale["horizon"] == 2).all()
+
+
+def test_rest_days_count_every_competition_and_cap():
+    t = lambda d: pd.Timestamp("2099-09-01", tz="UTC") + pd.Timedelta(days=d)
+    schedule = features.club_schedule(
+        pd.DataFrame({"team_code": [1, 1, 2, 2], "kickoff_time": [t(0), t(10), t(0), t(40)]}),
+        cup_fixtures=pd.DataFrame({"team_code": [1, 1], "kickoff_time": [t(7), t(13)],
+                                   "tournament": ["champions-league", "friendlies"]}))
+    rows = pd.DataFrame({"season": ["2099-00", "2099-00"], "team_code": [1, 2], "opp_code": [2, 1],
+                         "kickoff_time": [t(10), t(40)]})
+    got = features.rest_features(rows, schedule, cup_seasons=["2099-00"])
+    assert got.loc[0, "rest_days"] == pytest.approx(3.0)            # the cup match, not the league one
+    assert got.loc[0, "next_days"] == pytest.approx(features.REST_CAP)   # friendlies don't count
+    assert got.loc[0, "opp_rest_days"] == pytest.approx(10.0)
+    assert got.loc[1, "rest_days"] == features.REST_CAP              # 40 days is capped
+    assert (got["cup_era"] == 1).all()
+
+
+def test_luck_ignores_matches_without_xg_and_the_match_itself():
+    m = pd.DataFrame({"code": [1] * 4, "season": ["2021-22", "2022-23", "2022-23", "2022-23"],
+                      "kickoff_time": pd.date_range("2022-05-01", periods=4, freq="7D", tz="UTC"),
+                      "goals_scored": [3, 1, 0, 2], "expected_goals": [0.0, 0.4, 0.5, 0.1],
+                      "assists": [0, 0, 1, 0], "expected_assists": [0.0, 0.2, 0.2, 0.0], "minutes": [90] * 4})
+    luck = features._luck(m, shift=1)
+    assert luck.loc[0, "goal_luck_r10"] == 0.0            # nothing before it
+    assert luck.loc[1, "goal_luck_r10"] == 0.0            # only the pre-xG match before it: not counted
+    assert luck.loc[2, "goal_luck_r10"] == pytest.approx(0.6)
+    assert luck.loc[3, "goal_luck_r10"] == pytest.approx((0.6 - 0.5) / 2)
+
+
+def test_price_moves_are_per_gameweek_and_stale_shifts_them():
+    m = pd.DataFrame({"code": [1] * 4, "season": ["2099-00"] * 4, "gw": [1, 2, 2, 3],
+                      "kickoff_time": pd.date_range("2099-08-01", periods=4, freq="3D", tz="UTC"),
+                      "value": [50, 51, 51, 53]})
+    now = features._price_moves(m, shift=1)
+    assert now["price_change_gw"].tolist() == pytest.approx([0.0, 0.1, 0.1, 0.2])   # a double GW shares its move
+    assert now["price_change_start"].tolist() == pytest.approx([0.0, 0.1, 0.1, 0.3])
+    ahead = features._price_moves(m, shift=2)
+    assert ahead["price_change_gw"].tolist() == pytest.approx([0.0, 0.0, 0.0, 0.1])   # as known a gameweek earlier

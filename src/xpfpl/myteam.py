@@ -3,7 +3,7 @@ chips), and the team you're planning for the next gameweek (saved from the dashb
 Ahead) with its outlook over the next few weeks (xP and the Monte Carlo)."""
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 import numpy as np
@@ -22,6 +22,7 @@ class MyTeam:
     free_transfers: int
     chips_used: list[dict]             # [{"name": "wildcard", "event": 3}, ...]
     pending_transfers: int             # transfers already made for the upcoming GW
+    purchase: dict[int, int] = field(default_factory=dict)   # element id -> purchase price (tenths)
 
 
 def selling_price(now: int, purchase: int) -> float:
@@ -72,11 +73,11 @@ def load_my_team(team_id: int, bs: dict) -> MyTeam:
     bought = {}
     for t in sorted(transfers, key=lambda t: t["time"]):
         bought[t["element_in"]] = t["element_in_cost"]
-    selling = {}
+    selling, purchases = {}, {}
     for pid in squad:
         now = prices[pid]["now_cost"]
-        purchase = bought.get(pid, now - prices[pid]["cost_change_start"])
-        selling[pid] = selling_price(now, purchase)
+        purchases[pid] = bought.get(pid, now - prices[pid]["cost_change_start"])
+        selling[pid] = selling_price(now, purchases[pid])
 
     ft = estimate_free_transfers(history, info["started_event"], next_gw)
     return MyTeam(
@@ -87,6 +88,7 @@ def load_my_team(team_id: int, bs: dict) -> MyTeam:
         free_transfers=max(ft - len(pending), 0),
         chips_used=[{"name": c["name"], "event": c["event"]} for c in history["chips"]],
         pending_transfers=len(pending),
+        purchase=purchases,
     )
 
 

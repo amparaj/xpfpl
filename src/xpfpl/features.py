@@ -28,6 +28,11 @@ What is in here, and why:
     0.002 or less); only 2024-25 had odds to learn from. The anytime-goalscorer odds are *not*
     used: on 2025-26 they ranked scorers barely better than chance (AUC 0.58 vs our model's
     0.73) and priced them ~60% too high, so they are shown in the dashboard only.
+
+Also built but not in FEATURES (no out-of-sample gain yet; see NEW_FEATURES): finishing luck
+(goals - xG, assists - xA), fixture congestion (days of rest before and after, cups included),
+price moves since the last deadline and the season's start, and where a player plays (touches,
+box touches, final-third passes, chances, shots per 90 and box-shot share, 2025-26 on).
 """
 
 import numpy as np
@@ -62,6 +67,29 @@ VENUE_WINDOW = 10
 VENUE_STATE = ["pts_home_r10", "pts_away_r10"]     # carried by the player; the fixture picks one
 CROWD_FEATURES = ["transfer_flow", "ownership"]
 
+# Finishing luck: goals (assists) minus xG (xA), over the last 10 matches and per 90 over 38. A
+# player scoring well above his xG tends to come back down; one below it, up. Only matches with xG
+# (2022-23 on) count, so a window reaching back before then isn't read as pure "luck".
+LUCK_WINDOW, LUCK_LONG = 10, 38
+LUCK_FEATURES = [f"goal_luck_r{LUCK_WINDOW}", f"assist_luck_r{LUCK_WINDOW}",
+                 f"goal_luck_p90_{LUCK_LONG}", f"assist_luck_p90_{LUCK_LONG}"]
+# Fixture congestion: days since the club's previous match and until its next one in any
+# competition it plays (cup and European matches from data/cups.py, 2025-26 on; earlier seasons
+# only know the Premier League, which `cup_era` tells the model), and the opponent's rest.
+REST_CAP = 14.0
+REST_FEATURES = ["rest_days", "next_days", "opp_rest_days", "cup_era"]
+# Price moves (£m): since the last deadline (the week's rises and falls, i.e. the crowd's verdict
+# in full) and since the season started. Both are known at the deadline.
+PRICE_FEATURES = ["price_change_gw", "price_change_start"]
+# Where a player plays (data/matchstats.py, 2025-26 on): per 90 over his last 10 matches with
+# match data, and the share of his shots taken inside the box. `spatial_era` is 0 before then.
+SPATIAL_WINDOW = 10
+SPATIAL_STATS = {"touches": "touches", "touches_opposition_box": "box_touches",
+                 "final_third_passes": "final_third_passes", "chances_created": "chances_created",
+                 "total_shots": "shots"}
+SPATIAL_FEATURES = ([f"{n}_p90_m{SPATIAL_WINDOW}" for n in SPATIAL_STATS.values()]
+                    + [f"box_shot_share_m{SPATIAL_WINDOW}", "spatial_era"])
+
 ROLLING_FEATURES = [f"{s}_r{w}" for w in WINDOWS for s in PLAYER_STATS]
 TEAM_FEATURES = ["team_gf", "team_ga", "opp_gf", "opp_ga",
                  "team_xgf", "team_xga", "opp_xgf", "opp_xga",
@@ -74,13 +102,22 @@ OTHER_FEATURES = [
     "pos_1", "pos_2", "pos_3", "pos_4",
     "xg_era", "dc_era",
 ]
-FEATURES = (ROLLING_FEATURES + LONG_FEATURES + TEAM_FEATURES + FIXTURE_FEATURES + MARKET_FEATURES
-            + CROWD_FEATURES + OTHER_FEATURES)
+BASE_FEATURES = (ROLLING_FEATURES + LONG_FEATURES + TEAM_FEATURES + FIXTURE_FEATURES + MARKET_FEATURES
+                 + CROWD_FEATURES + OTHER_FEATURES)
+# Built for every row, but not fed to the models (2026-10-02): out of sample, each group moved RMSE
+# by less than the noise between seeds (LightGBM, 3 seeds x 2022-23 to 2026-27 GW1-5; the ensemble,
+# 2024-25 to 2026-27). LightGBM: luck +0.001, rest days +0.001, price moves -0.001, spatial
+# -0.003 on 2026-27 GW1-5, the only season it can be tested on (matchstats start in 2025-26).
+# Ensemble: luck +0.002 in all three seasons, rest +0.001 to +0.003, price -0.002 to +0.009,
+# spatial +0.002 on 2026-27. Add a group to FEATURES to retry it; spatial is the one worth retrying when 2026-27 is complete.
+NEW_FEATURES = LUCK_FEATURES + REST_FEATURES + PRICE_FEATURES + SPATIAL_FEATURES
+FEATURES = BASE_FEATURES
 TARGET = "total_points"
 
 # What a player / a club carries from one match to the next. The backtest overwrites these
 # from a pre-deadline snapshot; everything else about a row is known from the fixture list.
-PLAYER_STATE = ROLLING_FEATURES + LONG_FEATURES + LAG_FEATURES + VENUE_STATE + CROWD_FEATURES + ["experience"]
+PLAYER_STATE = (ROLLING_FEATURES + LONG_FEATURES + LAG_FEATURES + VENUE_STATE + CROWD_FEATURES + ["experience"]
+                + LUCK_FEATURES + PRICE_FEATURES + SPATIAL_FEATURES)
 TEAM_STATE = ["gf", "ga", "xgf", "xga", "gf38", "ga38"]
 LEAGUE_AVG_GOALS = 1.35
 
@@ -169,6 +206,128 @@ def _crowd(df: pd.DataFrame, shift: int) -> pd.DataFrame:
     if shift > 1:
         out = out.groupby(df["code"]).shift(shift - 1)
     return out
+
+
+def _luck(df: pd.DataFrame, shift: int) -> pd.DataFrame:
+    """Goals minus xG and assists minus xA: the mean over LUCK_WINDOW matches and per 90 over
+    LUCK_LONG, counting only matches with xG (2022-23 on). 0 where there are none."""
+    df = df.sort_values("kickoff_time")
+    known = df["season"].str[:4].astype(int) >= 2022
+    diff = pd.DataFrame({"g": (df["goals_scored"] - df["expected_goals"]).where(known),
+                         "a": (df["assists"] - df["expected_assists"]).where(known),
+                         "min": df["minutes"].where(known)}, index=df.index)
+    base = diff.groupby(df["code"]).shift(shift) if shift else diff
+    grouped = base.assign(code=df["code"]).groupby("code")
+    short = grouped[["g", "a"]].rolling(LUCK_WINDOW, min_periods=1).mean().reset_index(level=0, drop=True)
+    sums = grouped[["g", "a", "min"]].rolling(LUCK_LONG, min_periods=1).sum().reset_index(level=0, drop=True)
+    minutes = np.maximum(sums["min"], 90.0)
+    return pd.DataFrame({
+        f"goal_luck_r{LUCK_WINDOW}": short["g"], f"assist_luck_r{LUCK_WINDOW}": short["a"],
+        f"goal_luck_p90_{LUCK_LONG}": sums["g"] / minutes * 90.0,
+        f"assist_luck_p90_{LUCK_LONG}": sums["a"] / minutes * 90.0,
+    }, index=df.index).reindex(df.index).fillna(0.0)
+
+
+def _price_moves(df: pd.DataFrame, shift: int) -> pd.DataFrame:
+    """Price change (£m) since the previous gameweek's deadline and since the season's start.
+
+    A row's `value` is the price at its gameweek's deadline, so both are known then; `stale=k`
+    takes them from k-1 gameweeks back. A double gameweek's two rows share one price."""
+    per_gw = (df[["code", "season", "gw", "value", "kickoff_time"]].sort_values("kickoff_time")
+              .drop_duplicates(["code", "season", "gw"]))
+    season = per_gw.groupby(["code", "season"])["value"]
+    moves = pd.DataFrame({"price_change_gw": season.diff().fillna(0) / 10.0,
+                          "price_change_start": (per_gw["value"] - season.transform("first")) / 10.0},
+                         index=per_gw.index)
+    if shift > 1:
+        moves = moves.groupby(per_gw["code"]).shift(shift - 1).fillna(0.0)
+    moves[["code", "season", "gw"]] = per_gw[["code", "season", "gw"]]
+    keys = df[["code", "season", "gw"]].reset_index()
+    return keys.merge(moves, on=["code", "season", "gw"], how="left").set_index("index")[PRICE_FEATURES].reindex(df.index)
+
+
+def club_schedule(matches: pd.DataFrame, upcoming: pd.DataFrame | None = None,
+                  cup_fixtures: pd.DataFrame | None = None) -> pd.DataFrame:
+    """Every kick-off of every club (`team_code`, `kickoff_time`): Premier League matches played
+    (`matches`) and to come (`upcoming`, same two columns), and cup/European ones (data/cups.py)."""
+    parts = [matches[["team_code", "kickoff_time"]]]
+    if upcoming is not None:
+        parts.append(upcoming[["team_code", "kickoff_time"]])
+    if cup_fixtures is not None and len(cup_fixtures):
+        real = cup_fixtures[cup_fixtures["tournament"] != "friendlies"]
+        parts.append(real[["team_code", "kickoff_time"]])
+    s = pd.concat(parts, ignore_index=True).dropna()
+    s["team_code"] = s["team_code"].astype(int)
+    s["kickoff_time"] = pd.to_datetime(s["kickoff_time"], utc=True).astype("datetime64[ns, UTC]")
+    return s.drop_duplicates().sort_values("kickoff_time", ignore_index=True)
+
+
+def rest_features(rows: pd.DataFrame, schedule: pd.DataFrame, cup_seasons) -> pd.DataFrame:
+    """Days since the club's previous match and until its next (any competition in `schedule`),
+    and the opponent's days since its previous one, each capped at REST_CAP; plus `cup_era`."""
+    out = {}
+    times = pd.to_datetime(rows["kickoff_time"], utc=True).astype("datetime64[ns, UTC]")
+    for name, key, direction in (("rest_days", "team_code", "backward"), ("next_days", "team_code", "forward"),
+                                 ("opp_rest_days", "opp_code", "backward")):
+        left = pd.DataFrame({"team_code": rows[key].fillna(-1).astype(int).to_numpy(), "t": times.to_numpy(),
+                             "i": np.arange(len(rows))}).sort_values("t")
+        got = pd.merge_asof(left, schedule.rename(columns={"kickoff_time": "other"}), left_on="t",
+                            right_on="other", by="team_code", direction=direction, allow_exact_matches=False)
+        days = (got["t"] - got["other"]).abs().dt.total_seconds() / 86400
+        out[name] = pd.Series(days.clip(upper=REST_CAP).fillna(REST_CAP).to_numpy(), index=got["i"]).sort_index().to_numpy()
+    out["cup_era"] = rows["season"].isin(set(cup_seasons)).astype(float).to_numpy()
+    return pd.DataFrame(out, index=rows.index)
+
+
+def _rest(m: pd.DataFrame, upcoming: pd.DataFrame | None = None) -> pd.DataFrame:
+    from xpfpl.data import cups
+    fixtures, _ = cups.load()
+    schedule = club_schedule(m, upcoming, fixtures)
+    return rest_features(m, schedule, fixtures["season"].unique() if len(fixtures) else [])
+
+
+def spatial_matches() -> pd.DataFrame:
+    """Per player per match with match data: minutes, the SPATIAL_STATS and shots inside the box."""
+    from xpfpl import spatial
+    from xpfpl.data import matchstats
+    parts = []
+    for season in matchstats.seasons():
+        p = matchstats.load(season, "players")
+        if p is None or p.empty:
+            continue
+        p = p.dropna(subset=["code"]).astype({"code": int})
+        stats = p.groupby(["fixture", "code"])[["minutes_played", *SPATIAL_STATS]].sum()
+        s = spatial.shots(season)
+        box = s[s["in_box"]].groupby(["fixture", "code"]).size() if len(s) else pd.Series(dtype=float)
+        stats["box_shots"] = box.reindex(stats.index).fillna(0)
+        parts.append(stats.reset_index().assign(season=season))
+    if not parts:
+        return pd.DataFrame(columns=["season", "fixture", "code", "minutes_played", *SPATIAL_STATS, "box_shots"])
+    return pd.concat(parts, ignore_index=True)
+
+
+def _spatial(df: pd.DataFrame, shift: int, stats: pd.DataFrame | None = None) -> pd.DataFrame:
+    """SPATIAL_FEATURES for each row, from the player's last SPATIAL_WINDOW matches (shifted by
+    `shift`). A player missing from a match's data with 0 FPL minutes didn't play (zeros); seasons
+    without match data are NaN, so a window reaching back before 2025-26 only counts what's known."""
+    stats = spatial_matches() if stats is None else stats
+    df = df.sort_values("kickoff_time")
+    cols = ["minutes_played", *SPATIAL_STATS, "box_shots"]
+    joined = df[["season", "fixture", "code", "minutes"]].reset_index().merge(
+        stats, on=["season", "fixture", "code"], how="left").set_index("index").reindex(df.index)
+    era = df["season"].isin(set(stats["season"]))
+    for c in cols:
+        joined[c] = joined[c].where(joined[c].notna() | ~era | (df["minutes"] > 0), 0.0)
+    base = joined[cols].groupby(df["code"]).shift(shift) if shift else joined[cols]
+    sums = (base.assign(code=df["code"]).groupby("code")[cols]
+            .rolling(SPATIAL_WINDOW, min_periods=1).sum().reset_index(level=0, drop=True)).reindex(df.index)
+    minutes = np.maximum(sums["minutes_played"].fillna(0), 90.0)
+    out = {f"{name}_p90_m{SPATIAL_WINDOW}": sums[c].fillna(0) / minutes * 90.0 for c, name in SPATIAL_STATS.items()}
+    # The shot list sometimes has a shot more than the player's stats line: capped at 1.
+    out[f"box_shot_share_m{SPATIAL_WINDOW}"] = ((sums["box_shots"].fillna(0) + 1)
+                                                 / (sums["total_shots"].fillna(0) + 2)).clip(upper=1.0)
+    out["spatial_era"] = era.astype(float)
+    return pd.DataFrame(out, index=df.index)
 
 
 def _lags(df: pd.DataFrame, key: str, cols: list[str], n: int, shift: int) -> pd.DataFrame:
@@ -347,6 +506,10 @@ def build_training_frame(matches: pd.DataFrame, stale: int = 1, market: pd.DataF
     m = m.join(_lags(m, "code", SEQ_STATS, SEQ_LEN, shift=stale))
     m = m.join(_venue(m, shift=stale))
     m = m.join(_crowd(m, shift=stale))
+    m = m.join(_luck(m, shift=stale))
+    m = m.join(_price_moves(m, shift=stale))
+    m = m.join(_spatial(m, shift=stale))
+    m = m.join(_rest(m))
     m["experience"] = (m.sort_values("kickoff_time").groupby("code").cumcount() - (stale - 1)).clip(lower=0)
     # FPL's own xP for the previous match is the fairest reading of "FPL's forecast" for this
     # one (the value on a row is recorded after that match). A benchmark only, not a feature.
@@ -374,6 +537,8 @@ def latest_player_state(matches: pd.DataFrame) -> pd.DataFrame:
     rolled = rolled.join(_rates(m, shift=0))
     rolled = rolled.join(_lags(m, "code", SEQ_STATS, SEQ_LEN, shift=0))
     rolled = rolled.join(_venue(m, shift=0))
+    rolled = rolled.join(_luck(m, shift=0))
+    rolled = rolled.join(_spatial(m, shift=0))
     rolled["code"] = m["code"]
     state = rolled.groupby("code").tail(1).set_index("code")  # rows are time-sorted
     state["experience"] = m.groupby("code").size()
@@ -396,6 +561,13 @@ def crowd_now(bs: dict) -> pd.DataFrame:
     balance = (players["transfers_in_event"] - players["transfers_out_event"]).astype(float)
     flow = np.log((selected + 5e3) / (selected - balance + 5e3).clip(lower=5e3))
     return pd.DataFrame({"transfer_flow": flow, "ownership": np.log10(selected + 1.0) / 7.0})
+
+
+def prices_now(bs: dict) -> pd.DataFrame:
+    """Each player's price change (£m) since the last deadline and since the season started (by element)."""
+    players = pd.DataFrame(bs["elements"]).set_index("id")
+    return pd.DataFrame({"price_change_gw": pd.to_numeric(players["cost_change_event"], errors="coerce").fillna(0) / 10.0,
+                         "price_change_start": pd.to_numeric(players["cost_change_start"], errors="coerce").fillna(0) / 10.0})
 
 
 def build_future_frame(matches: pd.DataFrame, bs: dict, fixtures: list[dict], gameweeks: list[int],
@@ -423,6 +595,16 @@ def build_future_frame(matches: pd.DataFrame, bs: dict, fixtures: list[dict], ga
     player_state = latest_player_state(matches)
     df = df.merge(player_state, left_on="code", right_index=True, how="left")
     df = df.join(crowd_now(bs), on="element")
+    df = df.join(prices_now(bs), on="element")
+    df["spatial_era"] = float(season >= "2025-26")
+    # Every Premier League kick-off still to come (not just the horizon's), so `next_days` sees
+    # the match after the last week forecast.
+    upcoming = pd.DataFrame([{"team_code": team_code.get(f[side]), "kickoff_time": f["kickoff_time"]}
+                             for f in fixtures for side in ("team_h", "team_a") if f.get("kickoff_time")])
+    from xpfpl.data import cups
+    cup_fixtures, _ = cups.load()
+    schedule = club_schedule(matches, upcoming if len(upcoming) else None, cup_fixtures)
+    df = df.join(rest_features(df, schedule, set(cup_fixtures["season"]) if len(cup_fixtures) else []))
 
     team_state = latest_team_state(matches)
     df = df.merge(team_state.add_prefix("team_"), left_on="team_code", right_index=True, how="left")

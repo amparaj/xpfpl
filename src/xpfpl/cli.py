@@ -15,6 +15,11 @@ def _pull_snapshots() -> None:
     if got:
         print(f"Copied {len(got)} deadline snapshot(s) from the {archive.SNAPSHOT_BRANCH} branch into archive/ "
               "(commit them with your next pull request).")
+    from xpfpl.data import pricewatch
+    got = pricewatch.pull()
+    if got:
+        print(f"Copied the price change log and {len(got) - 1} daily price snapshot(s) from the "
+              f"{pricewatch.BRANCH} branch into archive/prices/.")
 
 
 def cmd_fetch(args) -> None:

@@ -497,6 +497,17 @@ def _accuracy(season: str, model: str) -> dict:
             "rotation": rotation.get(model)}
 
 
+def _prices(bs: dict) -> dict:
+    """The price tracker (data/pricewatch.py): the hourly Action's log if it can be read, else
+    today's prices and this gameweek's moves from `bs`. On github.io the page reads the Action's
+    file from the `prices` branch directly; this copy is the fallback, and what a local build shows."""
+    from xpfpl.data import pricewatch
+    state = pricewatch.remote()
+    if state and state.get("season") == api.current_season(bs):
+        return state
+    return pricewatch.update(None, bs)[0]
+
+
 def export(model: str = config.MODEL, out: Path = config.SITE_DATA_DIR) -> list[Path]:
     from xpfpl.data import markets
     from xpfpl.data.history import load_matches
@@ -552,6 +563,7 @@ def export(model: str = config.MODEL, out: Path = config.SITE_DATA_DIR) -> list[
         for (market_season, gw), histories in _market_histories(saved).items():
             written.append(_write(histories, out / "market_history" / market_season / f"gw{gw:02d}.json"))
     written.append(_write(_accuracy(season, model), out / "accuracy.json"))
+    written.append(_write(_prices(bs), out / "prices.json"))
     for past in browsable_seasons(season)[:-1]:
         written += _past_season(past, model, out)
     return written

@@ -1,0 +1,67 @@
+# Keeps the live price tracker: every player's price and FPL's progress towards his next price
+# change (bootstrap-static), and every change seen this season, as prices.json on the `prices`
+# branch (src/xpfpl/data/pricewatch.py). The website's Prices page and the dashboard read it.
+#
+# FPL's API only shows the present, so the hourly runs are what turn it into a history: a change
+# is dated by the run that first saw it, and one full snapshot a day (daily/<date>.parquet) is
+# kept so FPL's projections can be scored against what happened. `xpfpl fetch` copies the change
+# log and the daily snapshots into archive/prices/.
+#
+# The branch is one commit, replaced each run (like `odds`), holding prices.json (~200 KB) and the
+# daily files (~30 KB each). Each run starts from the branch's current files, so the log carries
+# on; a run that can't read them fails rather than starting the season's log again.
+# Scheduled workflows only run from the default branch.
+name: Price snapshot
+
+on:
+  schedule:
+    - cron: "7 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: price-snapshot
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      # Only what pricewatch.py needs: installing the package's own dependencies would pull in torch.
+      - name: Install
+        run: |
+          pip install --quiet pandas pyarrow requests
+          pip install --quiet --no-deps -e .
+
+      - name: Start from the branch's files
+        run: |
+          mkdir -p "$RUNNER_TEMP/prices"
+          if git ls-remote --exit-code --heads origin prices >/dev/null; then
+            git fetch --quiet --depth=1 origin prices
+            git --work-tree="$RUNNER_TEMP/prices" checkout FETCH_HEAD -- .
+            test -s "$RUNNER_TEMP/prices/prices.json"
+          fi
+
+      - name: Update
+        run: python -m xpfpl.data.pricewatch update "$RUNNER_TEMP/prices"
+
+      - name: Replace the prices branch
+        working-directory: ${{ runner.temp }}/prices
+        run: |
+          git init --quiet -b prices
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit --quiet -m "Prices $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push --quiet --force "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" HEAD:prices
+        env:
+          GH_TOKEN: ${{ github.token }}

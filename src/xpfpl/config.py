@@ -64,10 +64,12 @@ MARKET_OUT_XP_FACTOR = 0.1
 # 0 switches it off.
 SIM_RUNS = 5000
 
-# Chip thresholds (xP gained vs. not playing the chip). These four are still the original
-# guesses: the chip stages of `xpfpl tune` have not been run to completion yet, so treat the
-# chip advice as weaker than the rest. `xpfpl tune --stages wildcard` tunes one of them.
-TRIPLE_CAPTAIN_MIN_XP = 9.0
-BENCH_BOOST_MIN_XP = 12.0
-FREE_HIT_MIN_GAIN = 12.0
-WILDCARD_MIN_GAIN = 20.0
+# Chip thresholds (xP gained vs. not playing the chip), tuned 2026-10-02 with the ensemble on top
+# of the settings above (`xpfpl tune` chip stages, 2020-21 to 2023-24, 4 replays each; report in
+# data/backtests/tuning_2026-10-02_chips.json). Were 9 / 12 / 12 / 20 (guesses). In-sample +30
+# points a season, mostly the wildcard; on the unseen 2024-25 and 2025-26 +16 and +5 (2252 vs 2241
+# a season, ± ~30): better in both but within the noise, so the chip advice stays the weakest part.
+TRIPLE_CAPTAIN_MIN_XP = 6.0
+BENCH_BOOST_MIN_XP = 8.0
+FREE_HIT_MIN_GAIN = 18.0
+WILDCARD_MIN_GAIN = 30.0

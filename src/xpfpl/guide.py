@@ -843,6 +843,7 @@ def render() -> None:
         "get re-planned every week.\n"
         "- Free transfers are estimated by replaying your season. Override them if they look wrong.\n"
         "- This model doesn't read team news, press conferences or predicted line-ups: only FPL's injury flag.\n"
-        "- Price changes are predicted from form and transfer momentum rather than the precise criteria "
-        "used by FPL, so treat them as a tie-breaker.\n"
+        "- Price changes are predicted from form and transfer momentum, not FPL's own progress figures "
+        "(the Prices tab shows those, and they're being logged so they can be used once there's enough "
+        "history), so treat them as a tie-breaker.\n"
         "- Blank and double gameweek handling still hasn't been tested against a real one.")

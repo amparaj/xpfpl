@@ -21,6 +21,14 @@ to pick a worse player - and it is tuned with the backtest like every other para
 
 Live, `momentum_delta()` refines this with the one thing the API tells us and history doesn't:
 how many managers transferred each player in or out this week.
+
+Tried and not adopted (2026-10-02): a table by the week's transfer flow (net transfers before the
+deadline over ownership) and price predicts next week's move much better (RMSE 0.257 tenths vs
+0.273 for this table and 0.281 for "no change", on each of 2022-23 to 2025-26 fitted on earlier
+seasons: price moves lag the transfers). But replaying 2020-21 to 2025-26 (ensemble, 4 replays)
+it won fewer points: 2197 vs 2201 at weight 1, 2189 vs 2222 at weight 3 (no prices: 2194). It
+steers the optimiser towards bandwagon players; this table's tilt towards form is what pays.
+FPL's own progress figures (data/pricewatch.py, new in 2026-27) are logged for a later try.
 """
 
 import json
