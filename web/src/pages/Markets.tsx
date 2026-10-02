@@ -375,7 +375,14 @@ function PlayedScorers({ scorers }: { scorers: Row[] }) {
 }
 
 /** One season's scores, the market's and this model's side by side. */
-interface AccuracyPair { season: string; matches: number; market?: Row; model?: Row }
+interface AccuracyRow { season: string; matches: number; sources: Record<string, Row> }
+
+/** markets.accuracy()'s sources, in the order shown, and their column labels. */
+const ACCURACY_SOURCES: { key: string; label: string; title: string }[] = [
+  { key: "Polymarket", label: "Polymarket", title: "Polymarket at each FPL deadline (from 2024-25)" },
+  { key: "Bookmakers", label: "Bookmakers", title: "The average bookmaker price shortly before each round, from Football-Data.co.uk" },
+  { key: "Our ratings", label: "This model's ratings", title: "This model's club-strength fit as it stood before each gameweek" },
+];
 
 const ACCURACY_METRICS: { key: string; label: string; title: string }[] = [
   { key: "result_log_loss", label: "Result log loss",
@@ -386,37 +393,39 @@ const ACCURACY_METRICS: { key: string; label: string; title: string }[] = [
 ];
 
 function MarketAccuracy({ data }: { data: Row[] }) {
-  const pairs = useMemo(() => {
-    const bySeason = new Map<string, AccuracyPair>();
+  const seasons = useMemo(() => {
+    const bySeason = new Map<string, AccuracyRow>();
     for (const r of data) {
-      const pair: AccuracyPair = bySeason.get(r.season) ?? { season: r.season, matches: r.matches };
-      if (r.source === "Market") pair.market = r;
-      else pair.model = r;
-      bySeason.set(r.season, pair);
+      const row: AccuracyRow = bySeason.get(r.season) ?? { season: r.season, matches: r.matches, sources: {} };
+      row.sources[r.source] = r;
+      bySeason.set(r.season, row);
     }
     return [...bySeason.values()];
   }, [data]);
-  if (!pairs.length) return null;
-  // The lower of the two scores is the better one: shown in bold, unless they tie to the digits shown.
-  const cell = (key: string, mine?: Row, other?: Row) => {
-    const text = dec(mine?.[key], 3), rival = dec(other?.[key], 3);
-    return mine?.[key] != null && other?.[key] != null && Number(text) < Number(rival) ? <strong>{text}</strong> : text;
+  if (!seasons.length) return null;
+  const sources = ACCURACY_SOURCES.filter((s) => seasons.some((r) => r.sources[s.key]));
+  // The lowest score of a group is the best one: shown in bold, unless it ties to the digits shown.
+  const cell = (key: string, row: AccuracyRow, source: string) => {
+    const text = dec(row.sources[source]?.[key], 3);
+    const scores = Object.values(row.sources).map((r) => r[key]).filter((v) => v != null).map((v) => Number(dec(v, 3)));
+    const best = Math.min(...scores);
+    return scores.length > 1 && Number(text) === best && scores.filter((v) => v === best).length === 1 ? <strong>{text}</strong> : text;
   };
-  const columns: Column<AccuracyPair>[] = [
+  const columns: Column<AccuracyRow>[] = [
     { key: "season", label: "Season", value: (r) => r.season },
     { key: "matches", label: "Matches", numeric: true, value: (r) => r.matches },
-    ...ACCURACY_METRICS.flatMap((m): Column<AccuracyPair>[] => [
-      { key: `${m.key}_market`, label: "Market", group: m.label, numeric: true, title: m.title,
-        value: (r) => r.market?.[m.key], render: (r) => cell(m.key, r.market, r.model) },
-      { key: `${m.key}_model`, label: "This model's ratings", group: m.label, numeric: true, title: m.title,
-        value: (r) => r.model?.[m.key], render: (r) => cell(m.key, r.model, r.market) },
-    ]),
+    ...ACCURACY_METRICS.flatMap((m): Column<AccuracyRow>[] => sources.map((s) => ({
+      key: `${m.key}_${s.key}`, label: s.label, group: m.label, numeric: true, title: `${m.title}. ${s.title}`,
+      value: (r: AccuracyRow) => r.sources[s.key]?.[m.key], render: (r: AccuracyRow) => cell(m.key, r, s.key),
+    }))),
   ];
   return (
     <>
-      <Table columns={columns} data={pairs} rowKey={(r) => r.season} />
-      <Note>Lower is better in every column, and the better of each pair is in bold. "Market" is Polymarket at each FPL deadline;
-        "This model's ratings" is this model's club-strength fit as it stood then.
+      <Table columns={columns} data={seasons} rowKey={(r) => r.season} />
+      <Note>Lower is better in every column, and the best of each group is in bold. "Polymarket" is Polymarket at each FPL deadline
+        (from 2024-25); "Bookmakers" is the average bookmaker price shortly before each round (Friday afternoon for a weekend,
+        Tuesday for midweek), from <a href="https://football-data.co.uk/">Football-Data.co.uk</a>; "This model's ratings" is this
+        model's club-strength fit as it stood then. Each season scores every source on the same matches.
         The result columns score the home win / draw / away win chances. Log loss is the one to go by: it counts only the chance
         given to what actually happened, so it separates a better forecast from a worse one in fewer matches than the ranked
         probability score. 1.099 is what "a third each" would score.</Note>

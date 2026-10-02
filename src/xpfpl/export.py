@@ -439,7 +439,9 @@ def _markets(matches: pd.DataFrame) -> dict | None:
                               ours_away_win=_poisson_win(ga, gf)))
     m = pd.concat(parts).sort_values("kickoff")
 
-    out = {"matches": table(m, digits=4), "accuracy": table(markets.accuracy(market, matches), digits=4)}
+    from xpfpl.data import bookmakers
+    accuracy = markets.accuracy(market, matches, bookmakers.market(matches))
+    out = {"matches": table(m, digits=4), "accuracy": table(accuracy, digits=4)}
     if scorers is not None and len(scorers) and "code" in scorers:
         actual = matches.groupby(["season", "fixture", "code"], as_index=False).agg(
             goals=("goals_scored", "sum"), minutes=("minutes", "sum"))
