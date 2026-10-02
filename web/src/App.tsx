@@ -10,6 +10,7 @@ import ModelTeamPage from "./pages/ModelTeam";
 import MyTeamPage from "./pages/MyTeam";
 import NextGameweek from "./pages/NextGameweek";
 import Players from "./pages/Players";
+import Prices from "./pages/Prices";
 import { SiteContext, useHash, useSiteData, type Site } from "./site";
 
 // About first (where the site opens), then how far to trust the model, the weeks played and the
@@ -22,6 +23,7 @@ const PAGES = [
   { id: "model-team", label: "This Model's Team", component: ModelTeamPage },
   { id: "my-team", label: "My Team", component: MyTeamPage },
   { id: "players", label: "Players", component: Players },
+  { id: "prices", label: "Prices", component: Prices },
   { id: "markets", label: "Markets", component: MarketsPage },
   { id: "data", label: "Data", component: DataPage },
 ] as const;

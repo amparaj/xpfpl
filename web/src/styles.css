@@ -175,6 +175,15 @@ button.link { background: none; border: 0; padding: 0; color: var(--s1); text-de
 .tag.warn { background: color-mix(in srgb, var(--bad) 16%, transparent); color: var(--bad); }
 .tag.cup { background: color-mix(in srgb, var(--s1) 14%, transparent); color: var(--ink); margin-right: 4px; }
 
+/* FPL's progress to a price change: a bar from the middle, right towards a rise, left towards a fall. */
+.progress { display: inline-flex; align-items: center; gap: 6px; justify-content: flex-end; }
+.progress-track { position: relative; width: 72px; height: 8px; border-radius: 4px; background: var(--chip); }
+.progress-track::after { content: ""; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--muted); }
+.progress-fill { position: absolute; top: 0; bottom: 0; }
+.progress-fill.up { background: var(--good); border-radius: 0 4px 4px 0; }
+.progress-fill.down { background: var(--bad); border-radius: 4px 0 0 4px; }
+.progress-num { min-width: 42px; text-align: right; font-variant-numeric: tabular-nums; }
+
 /* ---------------------------------------------------------------- tables */
 
 .table-wrap { overflow-x: auto; }

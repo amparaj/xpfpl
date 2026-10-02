@@ -73,6 +73,11 @@ Everything in one place, no command line needed. The tabs follow the Guide's wee
 - **Players & Fixtures** (with each player's spatial profile under "A player's season": shot zones, every shot, per-90 zone metrics against his position, and similar profiles): xP for every player with filters (and the midweek factor on next week's
   xP, when there is one, and his simulated range and chances of 10+ and of 2 or fewer), and a fixture difficulty ticker that marks each club's cup and European
   matches ("[UCL Tue]").
+- **Prices**: FPL's own progress towards each player's next price change (new in 2026-27: +100
+  rises, -100 falls), how fast it's moving and FPL's likelihood of a move at the next updates; the
+  players closest to a rise and to a fall; your squad's purchase and selling prices and what a rise
+  or fall would do to them; every price change logged this season; and one player's progress over
+  the last three days.
 - **Markets**: what the betting markets think ("Market Odds") next to the model's own team
   ratings ("Our Odds"). For the next gameweek: win/draw/loss odds, each side's expected goals and
   clean-sheet chance, how the odds moved, the biggest moves over the 90 minutes or 1, 3, 7 or 14 days before the deadline (team news
@@ -430,7 +435,13 @@ it never saw it didn't hold up:
 | the original guesses | 2348 | 2110 | 2229 ± 31 |
 
 All three are within luck of each other, so `config.py` stayed as it is: these settings matter much less
-than the forecasts. The findings that held up in both searches:
+than the forecasts.
+
+A third run (2026-10-02) tuned only the chip thresholds, on top of today's settings (same seasons and
+replays). It picked Triple Captain at 6 xP, Bench Boost at 8, Free Hit at 18 and Wildcard at 30 (were 9,
+12, 12 and 20). On the unseen seasons that scored 2402 and 2101 against 2386 and 2096: better in both, by
+about 11 points a season, well within luck, but at least as good as the guesses it replaced, so
+`config.py` uses them. The findings that held up in both searches:
 
 - **Planning transfers week by week doesn't pay** - it is implemented and available (`--plan`, or
   `PLAN_TRANSFERS = True`), but it never beat holding one squad over the horizon, and with planning
@@ -634,6 +645,8 @@ drops the old season's match-by-match history.
 | `main` | The code and the archive. Protected: changes only through pull requests | Work on a branch, merge by pull request |
 | `gh-pages` | The built website that GitHub Pages serves. `xpfpl publish` replaces it with one fresh commit each time | Never edit or merge it |
 | `deadline-snapshots` | Where the scheduled Action pushes each pre-deadline snapshot | Never merge it: `xpfpl fetch` copies the snapshots into `archive/` |
+| `odds` | `odds.json`, replaced by the odds Action | Never merge or edit it |
+| `prices` | `prices.json` and a daily snapshot per day, replaced every hour by the price Action | Never merge or edit it: `xpfpl fetch` copies the change log and daily snapshots into `archive/prices/` |
 
 ## Website
 
@@ -650,7 +663,8 @@ seasons, exported to `seasons/<season>/` with their own clubs, players and fixtu
 the horizon with any midweek factor on their xP, each club's fixtures with our win chances and a
 badge for its cup or European matches, and anyone the betting markets have ruled out), **My Team** (the team I'm
 playing in the coming gameweek, as on the dashboard's My Team tab, with its simulated score this week and over the
-horizon, captain odds and what the transfers are worth; see below), **Players**, **Markets** (the betting odds at each deadline against what happened),
+horizon, captain odds and what the transfers are worth; see below), **Players**, **Prices** (who's closest to a price rise or
+fall by FPL's own progress figure, and every move logged this season; refreshed hourly from the `prices` branch), **Markets** (the betting odds at each deadline against what happened),
 **The Model's Team** (its pitch marks a club's midweek match; each live week shows its simulated score, captain odds and chip odds, and whether the score landed in its likely range) and **Data** (the archive). It
 doesn't train or plan.
 
@@ -682,6 +696,14 @@ about 10 builds an hour). Played matches' price charts come from the export (`ma
 built from the archive). To see live odds locally, run
 `node web/scripts/odds-snapshot.ts web/public/data/meta.json web/public/data/odds.json`
 (Node 23.6+) after `xpfpl export`.
+
+The Prices page reads `prices.json` from the `prices` branch the same way. A scheduled Action
+(`.github/workflows/price-snapshot.yml`) runs `python -m xpfpl.data.pricewatch update` every hour:
+it reads bootstrap-static, logs any player whose price changed since the last run, keeps the last
+three days of each player's progress and one full snapshot a day (`daily/<date>.parquet`), and
+replaces the branch with one commit. FPL's API only shows the present, so these runs are the only
+record of when prices moved and how FPL's projections did; `xpfpl fetch` copies them into
+`archive/prices/<season>/`.
 
 ```bash
 xpfpl publish          # export -> build web/ -> push web/dist to gh-pages
@@ -737,6 +759,8 @@ src/xpfpl/
   models/ensemble.py the average of mlp, gbm and xmins
   predict.py         xP per player per upcoming gameweek
   prices.py          expected price changes (form table + live transfer momentum)
+  data/pricewatch.py the live price tracker (FPL's progress to each move, the change log)
+  price_view.py      the dashboard's Prices tab
   optimise.py        squad / transfer / lineup optimiser (PuLP), week by week
   simulate.py        Monte Carlo: thousands of simulated gameweeks per forecast (ranges, team/captain/chip odds)
   myteam.py          your squad, selling prices, bank, free transfers, chips used
