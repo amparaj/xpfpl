@@ -42,6 +42,29 @@ def available_chips(bs: dict, chips_used: list[dict], gw: int) -> dict[str, dict
     return out
 
 
+def window_warning(available: dict[str, dict], gw: int, spare: int | None = None) -> str | None:
+    """A warning when the unused chips are running out of gameweeks to be played in (one per GW),
+    or None while there's still room. `available` comes from `available_chips`."""
+    spare = config.CHIP_SPARE_WEEKS if spare is None else spare
+    if not available:
+        return None
+    stop = min(c["stop_event"] for c in available.values())
+    left = [n for n, c in available.items() if c["stop_event"] == stop]
+    weeks = stop - gw + 1
+    if weeks > len(left) + spare:
+        return None
+    names = ", ".join(CHIP_NAMES.get(n, n) for n in left)
+    chips_ = f"{len(left)} chip{'s' if len(left) > 1 else ''} left ({names})"
+    gws = f"GW{gw}" if weeks == 1 else f"GW{gw}-{stop}"
+    if weeks < len(left):
+        return (f"{chips_} but only {weeks} GW{'s' if weeks > 1 else ''} ({gws}) to play them, one per GW: "
+                f"{len(left) - weeks} will expire unused. Play the best one every week.")
+    if weeks == len(left):
+        return f"{chips_} and exactly {weeks} GW{'s' if weeks > 1 else ''} ({gws}): play one every week from now."
+    return (f"{chips_} and {weeks} GWs ({gws}) to play them, one per GW: pick their weeks now, "
+            f"they expire after GW{stop}.")
+
+
 def fixture_counts(fixtures: list[dict], gameweeks: list[int], team_ids: list[int]) -> pd.DataFrame:
     """Teams x gameweeks matrix of fixture counts (0 = blank, 2 = double)."""
     counts = pd.DataFrame(0, index=team_ids, columns=gameweeks)
