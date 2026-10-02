@@ -645,10 +645,20 @@ def match_history(slug: str, days: float = 7, end: pd.Timestamp | None = None) -
     return pd.DataFrame(rows, columns=["time", "outcome", "probability"])
 
 
-def accuracy(market: pd.DataFrame, matches: pd.DataFrame) -> pd.DataFrame:
+SOURCES = ("Polymarket", "Bookmakers", "Our ratings")      # accuracy()'s rows, in the order shown
+
+
+def accuracy(market: pd.DataFrame | None, matches: pd.DataFrame,
+             bookmakers: pd.DataFrame | None = None) -> pd.DataFrame:
     """How well the deadline odds predicted each season, next to our own team ratings: goals
     RMSE per side, clean-sheet Brier score, and the result's log loss and Brier score over home
     win / draw / away win (lower is better for all).
+
+    `market` is Polymarket (market_matches) and `bookmakers` the Football-Data odds in the same
+    shape (`bookmakers.market`); either may be None. Each season scores every source it has on
+    the same matches: those all of them priced (2024-25: the 304 Polymarket priced), so the rows
+    of a season compare like with like. A source with only result and over/under 2.5 prices
+    (the bookmakers) gets its clean-sheet chance from the fitted rate, exp(-goals against).
 
     The result is scored with log loss (the chance given to what happened, nothing else) rather
     than the ranked probability score: RPS gives credit for being "near" (a draw when the home
@@ -662,25 +672,35 @@ def accuracy(market: pd.DataFrame, matches: pd.DataFrame) -> pd.DataFrame:
     side["gf"] = np.where(side["was_home"], side["team_h_score"], side["team_a_score"])
     side["ga"] = np.where(side["was_home"], side["team_a_score"], side["team_h_score"])
     side = side.join(_historical_strength(side, teams.ratings(matches), 1))
-    d = side.merge(market_side(market), on=["season", "fixture", "team_code"])
-    d = d.merge(market[["season", "fixture", "draw"]].rename(columns={"draw": "mkt_draw"}), on=["season", "fixture"])
+    key = ["season", "fixture", "team_code"]
+    d = side[[*key, "gf", "ga", "fx_gf", "fx_ga", "fx_cs"]].dropna(subset=["gf", "ga"])
     fx_win, fx_loss = _poisson_win(d["fx_gf"], d["fx_ga"]), _poisson_win(d["fx_ga"], d["fx_gf"])
-    d = d.assign(cs=(d["ga"] == 0).astype(float), fx_win=fx_win, fx_draw=1 - fx_win - fx_loss, fx_loss=fx_loss,
-                 mkt_loss=1 - d["mkt_win"] - d["mkt_draw"])
-    d = d.dropna(subset=["mkt_win", "mkt_draw"])
-    outcome = np.sign(d["gf"] - d["ga"]).to_numpy()          # 1 won, 0 drew, -1 lost
-    actual = np.stack([outcome == 1, outcome == 0, outcome == -1], axis=1).astype(float)
+    d = d.assign(cs=(d["ga"] == 0).astype(float), fx_win=fx_win, fx_draw=1 - fx_win - fx_loss, fx_loss=fx_loss)
+    priced = []
+    for name, odds in (("Polymarket", market), ("Bookmakers", bookmakers)):
+        if odds is None or odds.empty:
+            continue
+        sides = market_side(odds).merge(odds[["season", "fixture", "draw"]], on=["season", "fixture"])
+        sides = sides.dropna(subset=["mkt_win", "draw"])
+        cols = {"mkt_gf": f"{name}_gf", "mkt_cs": f"{name}_cs", "mkt_win": f"{name}_win", "draw": f"{name}_draw"}
+        d = d.merge(sides[[*key, *cols]].rename(columns=cols), on=key, how="left")
+        d[f"{name}_loss"] = 1 - d[f"{name}_win"] - d[f"{name}_draw"]
+        priced.append(name)
     rows = []
-    for season in sorted(d["season"].unique()):
-        sel = (d["season"] == season).to_numpy()
-        g = d[sel]
-        for source, gf, cs, p in (("Market", g["mkt_gf"], g["mkt_cs"], g[["mkt_win", "mkt_draw", "mkt_loss"]]),
-                                  ("Our ratings", g["fx_gf"], g["fx_cs"], g[["fx_win", "fx_draw", "fx_loss"]])):
-            p = p.to_numpy(dtype=float).clip(1e-3, 1)
+    for season, g in d.groupby("season"):
+        have = [n for n in priced if g[f"{n}_win"].notna().any()]
+        if not have:
+            continue
+        g = g.dropna(subset=[f"{n}_win" for n in have])
+        outcome = np.sign(g["gf"] - g["ga"]).to_numpy()          # 1 won, 0 drew, -1 lost
+        actual = np.stack([outcome == 1, outcome == 0, outcome == -1], axis=1).astype(float)
+        for source in [*have, "Our ratings"]:
+            pre = "fx" if source == "Our ratings" else source
+            p = g[[f"{pre}_win", f"{pre}_draw", f"{pre}_loss"]].to_numpy(dtype=float).clip(1e-3, 1)
             p = p / p.sum(axis=1, keepdims=True)
             rows.append({"season": season, "source": source, "matches": len(g) // 2,
-                         "goals_rmse": float(np.sqrt(np.mean((gf - g["gf"]) ** 2))),
-                         "clean_sheet_brier": float(np.mean((cs - g["cs"]) ** 2)),
-                         "result_log_loss": float(-np.mean(np.log((p * actual[sel]).sum(axis=1)))),
-                         "result_brier": float(np.mean(((p - actual[sel]) ** 2).sum(axis=1)))})
+                         "goals_rmse": float(np.sqrt(np.mean((g[f"{pre}_gf"] - g["gf"]) ** 2))),
+                         "clean_sheet_brier": float(np.mean((g[f"{pre}_cs"] - g["cs"]) ** 2)),
+                         "result_log_loss": float(-np.mean(np.log((p * actual).sum(axis=1)))),
+                         "result_brier": float(np.mean(((p - actual) ** 2).sum(axis=1)))})
     return pd.DataFrame(rows)

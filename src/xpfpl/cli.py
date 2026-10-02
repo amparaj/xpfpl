@@ -22,6 +22,7 @@ def cmd_fetch(args) -> None:
     _pull_snapshots()
     build_matches(refresh=args.refresh)
     _fetch_cups()
+    _fetch_bookmakers()
 
 
 def _fetch_cups() -> None:
@@ -35,6 +36,16 @@ def _fetch_cups() -> None:
         print(f"Shots and match stats: {matchstats.fetch(season)} archive file(s) written for {season}.")
     except Exception as exc:          # a missing source shouldn't stop the FPL fetch
         print(f"  (cup and European matches / match stats not updated: {exc})")
+
+
+def _fetch_bookmakers() -> None:
+    """Bookmaker odds per match from Football-Data.co.uk (data/bookmakers.py): earlier seasons
+    once, this season's file every time."""
+    from xpfpl.data import bookmakers
+    try:
+        print(f"Bookmaker odds: {bookmakers.fetch()} archive file(s) written.")
+    except Exception as exc:          # a missing source shouldn't stop the FPL fetch
+        print(f"  (bookmaker odds not updated: {exc})")
 
 
 def _metrics(y_true: np.ndarray, y_pred: np.ndarray) -> str:

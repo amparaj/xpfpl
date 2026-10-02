@@ -126,6 +126,38 @@ def run_solve(horizon: int, model: str, gameweeks: tuple[int, ...], data_stamp, 
     return solve(players, list(gameweeks), **kwargs)
 
 
+@st.cache_data(show_spinner="Solving for 0, 1, 2 and 3 transfers...")
+def run_transfer_options(horizon: int, model: str, gameweeks: tuple[int, ...], data_stamp, **kwargs) -> pd.DataFrame:
+    from xpfpl.optimise import transfer_options
+    players, _ = predictions(horizon, model, data_stamp)
+    return transfer_options(players, list(gameweeks), **kwargs).drop(columns="plan", errors="ignore")
+
+
+def show_transfer_options(options: pd.DataFrame, players: pd.DataFrame, chosen: int) -> None:
+    """The best plan with exactly 0-3 transfers this week, and what each one is worth."""
+    if options.empty:
+        return
+    names = lambda ids: ", ".join(players.at[p, "name"] for p in sorted(ids, key=lambda p: players.at[p, "position"]))  # noqa: E731
+    table = pd.DataFrame({
+        "Transfers": options["transfers"],
+        "Out": [names(o) or "-" for o in options["out"]],
+        "In": [names(i) or "-" for i in options["in"]],
+        "Penalty": [f"-{config.HIT_COST * h}" if h else "" for h in options["hits"]],
+        "xP after penalties": options["xp"],
+        "Gain": options["gain"],
+        "Net": options["net"],
+        "": ["this plan" if t == chosen else "" for t in options["transfers"]],
+    })
+    st.dataframe(table, hide_index=True, width="stretch",
+                 column_config={c: st.column_config.NumberColumn(format=POINTS)
+                                for c in ("xP after penalties", "Gain", "Net")})
+    st.caption(f"Each row is the best plan with exactly that many transfers this week, the same squad held after it. "
+               f"**xP after penalties** is the horizon's discounted xP, -{config.HIT_COST} per extra transfer; "
+               "**Gain** is that over making none. **Net** is what the optimiser ranks by: the gain less the "
+               f"value of a free transfer rolled to next week ({config.FT_VALUE:g} xP, `config.FT_VALUE`) and "
+               "plus or minus expected price changes. The highest Net wins when the penalty limit allows it.")
+
+
 @st.cache_data(show_spinner="Checking chips...")
 def run_chip_advice(horizon: int, model: str, data_stamp, team_id: int, available: tuple[str, ...], **kwargs):
     players, gameweeks = predictions(horizon, model, data_stamp)
@@ -741,6 +773,11 @@ with tab_plan:
         } for g, moves in sorted(plan.future_transfers.items())]), hide_index=True, width="stretch")
     for note in plan.notes:
         st.caption(note)
+    if not active and not weekly:
+        with st.expander("How many transfers? The best plan with 0, 1, 2 or 3 this week"):
+            show_transfer_options(run_transfer_options(horizon, model, plan_gws, stamp(), **kwargs, **planning,
+                                                       free_transfers=ft, max_hits=int(max_hits)),
+                                  players, len(plan.transfers_in))
 
     view_gw = st.segmented_control("Show team for", [f"GW{g}" for g in plan_gws], default=f"GW{gw}")
     view_gw = int((view_gw or f"GW{gw}")[2:])

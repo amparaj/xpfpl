@@ -232,17 +232,32 @@ markets. `predict` and `recommend` fetch the live odds for the next gameweek the
   there are no odds (before 2024-25, and any gameweek after the next one) they fall back to the
   model's own team ratings, with a flag saying which is which.
 
-How good are the odds? At the deadline, the market and the model's team ratings are close: the
-market a little better on 2025-26's results, level on 2024-25's, and about the same on goals and
-clean sheets. Results are scored over home win / draw / away win with log loss, which counts only
-the chance given to what happened (a third each would score 1.099). It separates a better
-forecast from a worse one in fewer matches than the ranked probability score, which gives credit
-for being "near" ([Penalty Blog](https://pena.lt/y/2025/05/01/better-metrics-for-football-forecasts-moving-beyond-the-ranked-probability-score/)):
+How good are the odds? Bookmaker odds from [Football-Data.co.uk](https://football-data.co.uk/englandm.php)
+(`data/bookmakers.py`, archived in `archive/bookmakers/`: the average price shortly before each round, from
+2016-17) give ten seasons to compare. The bookmakers beat the model's team ratings on results in
+nine of ten seasons, and Polymarket and the bookmakers are level where both exist. Results are
+scored over home win / draw / away win with log loss, which counts only the chance given to what
+happened (a third each would score 1.099). It separates a better forecast from a worse one in
+fewer matches than the ranked probability score, which gives credit for being "near"
+([Penalty Blog](https://pena.lt/y/2025/05/01/better-metrics-for-football-forecasts-moving-beyond-the-ranked-probability-score/)).
+Result log loss, each season on the matches every source priced (the dashboard and site also show
+Brier, goals and clean sheets):
 
-| Season | Goals RMSE (market / ours) | Clean-sheet Brier (market / ours) | Result log loss (market / ours) |
-| --- | --- | --- | --- |
-| 2024-25 (result markets only) | 1.195 / 1.187 | 0.176 / 0.173 | 0.981 / 0.981 |
-| 2025-26 | **1.083** / 1.094 | **0.178** / 0.180 | **1.016** / 1.027 |
+| Season | Matches | Polymarket | Bookmakers | This model's ratings |
+| --- | --- | --- | --- | --- |
+| 2016-17 | 380 | – | **0.909** | 0.955 |
+| 2017-18 | 380 | – | **0.944** | 0.958 |
+| 2018-19 | 380 | – | 0.894 | **0.892** |
+| 2019-20 | 379 | – | **0.974** | 0.976 |
+| 2020-21 | 380 | – | **1.004** | 1.013 |
+| 2021-22 | 380 | – | **0.936** | 0.956 |
+| 2022-23 | 380 | – | **0.966** | 0.997 |
+| 2023-24 | 380 | – | **0.909** | 0.927 |
+| 2024-25 | 304 | 0.981 | 0.982 | 0.981 |
+| 2025-26 | 380 | 1.016 | **1.015** | 1.027 |
+
+The bookmaker odds aren't model features: filling the seasons before Polymarket with them improved
+held-out RMSE by about 0.002 over three seeds, but didn't show up in replayed seasons.
 
 **No margin to remove.** A bookmaker's odds carry a margin (the implied chances add up to more
 than 100%), and there are several ways to take it out: multiplicative, additive, power, Shin...
@@ -707,6 +722,7 @@ src/xpfpl/
   features.py        feature engineering (training rows and upcoming fixtures)
   teams.py           team attack/defence ratings (a Poisson model refitted every gameweek)
   data/markets.py    betting-market odds (Polymarket), priced at FPL deadlines
+  data/bookmakers.py bookmaker odds per match since 2016-17 (Football-Data.co.uk)
   market_view.py     the dashboard's Markets tab
   scoring.py         FPL's scoring rules, applied to real or predicted stats
   models/__init__.py the model registry: fit / load / save, one interface
@@ -754,6 +770,7 @@ tests/               scoring rules, features, every model, optimiser rules, pric
 - [FPL API](https://fantasy.premierleague.com/api/bootstrap-static/): live and current-season data
 - [vaastav/Fantasy-Premier-League](https://github.com/vaastav/Fantasy-Premier-League): historical gameweek data
 - [Polymarket](https://polymarket.com) (Gamma and CLOB APIs): betting odds
+- [Football-Data.co.uk](https://football-data.co.uk/englandm.php): bookmaker odds and results per match, 2016-17 on
 - [fantasynutmeg.com/history](https://www.fantasynutmeg.com/history): handy for sanity-checking past seasons
 
 Reading: Ramezani & Dinh (2026), [A data-driven framework for team selection in Fantasy Premier

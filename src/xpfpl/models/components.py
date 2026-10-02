@@ -145,9 +145,13 @@ class Predictor:
         out["goals"] = pos.map(scoring.GOAL_POINTS).fillna(0) * c["goals_scored"]
         out["assists"] = scoring.ASSIST_POINTS * c["assists"]
         out["clean_sheet"] = pos.map(scoring.CLEAN_SHEET_POINTS).fillna(0) * c["clean_sheets"]
-        out["saves"] = c["saves"] / scoring.SAVES_PER_POINT * (pos == 1)
-        out["conceded"] = -(pos.isin((1, 2)) * c["played60"] * c["goals_conceded"]
-                            / scoring.CONCEDED_PER_PENALTY)
+        # One point per 3 saves and -1 per 2 goals conceded, in expectation over a Poisson count
+        # (not saves / 3 or conceded / 2: a single goal conceded costs nothing). The saves head
+        # includes the matches a keeper misses, so its count is taken given that he plays.
+        played = c["played"].to_numpy().clip(1e-3, None)
+        out["saves"] = played * scoring.saves_points(c["saves"].to_numpy() / played) * (pos == 1)
+        out["conceded"] = -(pos.isin((1, 2)) * c["played60"]
+                            * scoring._conceded_penalty(c["goals_conceded"].to_numpy()))
         out["bonus"] = c["bonus"]
         out["defensive"] = scoring.DC_POINTS * c["dc"] * c["dc_era"]
         out["other"] = c["residual"]

@@ -41,8 +41,10 @@ def _history(slug: str, days: float, end: pd.Timestamp) -> pd.DataFrame:
 
 @st.cache_data(show_spinner=False)
 def _accuracy(stamp: float) -> pd.DataFrame:
+    from xpfpl.data import bookmakers
     market, _ = markets.load()
-    return markets.accuracy(market, load_matches()) if market is not None else pd.DataFrame()
+    matches = load_matches()
+    return markets.accuracy(market, matches, bookmakers.market(matches))
 
 
 @st.cache_data(show_spinner=False)
@@ -540,42 +542,48 @@ def _render_outrights(bs: dict) -> None:
 # (column in markets.accuracy(), heading), in the order shown: log loss first, the one to go by.
 _ACCURACY_METRICS = [("result_log_loss", "Result log loss"), ("result_brier", "Result Brier"),
                      ("goals_rmse", "Goals RMSE"), ("clean_sheet_brier", "Clean-sheet Brier")]
-_ACCURACY_SOURCES = {"Market": "Market", "Our ratings": "This model's ratings"}
+_ACCURACY_SOURCES = {"Polymarket": "Polymarket", "Bookmakers": "Bookmakers", "Our ratings": "This model's ratings"}
 
 
 def _accuracy_pairs(acc: pd.DataFrame):
-    """One row per season, the market and this model's ratings side by side for each measure, the
-    lower (better) of each pair in bold unless they tie to the three decimals shown."""
+    """One row per season, the sources side by side for each measure (Polymarket only from
+    2024-25), the lowest (best) of each group in bold unless it ties to the three decimals shown."""
     wide = acc.pivot(index="season", columns="source", values=[m for m, _ in _ACCURACY_METRICS]).round(3)
     table = pd.DataFrame({"Season": wide.index,
                           "Matches": acc.groupby("season")["matches"].max().reindex(wide.index).to_numpy()})
-    pairs = []
+    groups = []
     for metric, heading in _ACCURACY_METRICS:
-        names = [f"{heading}: {label}" for label in _ACCURACY_SOURCES.values()]
-        table = table.assign(**{name: wide[(metric, source)].to_numpy()
-                                for name, source in zip(names, _ACCURACY_SOURCES)})
-        pairs.append(names)
+        names = {f"{heading}: {label}": source for source, label in _ACCURACY_SOURCES.items()
+                 if (metric, source) in wide}
+        table = table.assign(**{name: wide[(metric, source)].to_numpy() for name, source in names.items()})
+        groups.append(list(names))
 
     def bold(frame: pd.DataFrame) -> pd.DataFrame:
         css = pd.DataFrame("", index=frame.index, columns=frame.columns)
-        for a, b in pairs:
-            css.loc[frame[a] < frame[b], a] = "font-weight: bold"
-            css.loc[frame[b] < frame[a], b] = "font-weight: bold"
+        for names in groups:
+            values = frame[names]
+            best = values.eq(values.min(axis=1), axis=0)
+            clear = (best.sum(axis=1) == 1) & (values.notna().sum(axis=1) > 1)    # one winner, two or more sources
+            css[names] = css[names].mask(best & clear.to_numpy()[:, None], "font-weight: bold")
         return css
 
-    floats = [name for pair in pairs for name in pair]
+    floats = [name for names in groups for name in names]
     return table.style.apply(bold, axis=None).format("{:.3f}", subset=floats, na_rep="–")
 
 
 def _render_accuracy() -> None:
-    acc = _accuracy(markets.MATCHES_PATH.stat().st_mtime if markets.MATCHES_PATH.exists() else 0.0)
+    from xpfpl.data import bookmakers
+    stamps = [p.stat().st_mtime for p in (markets.MATCHES_PATH, *bookmakers.ARCHIVE.glob("*.parquet")) if p.exists()]
+    acc = _accuracy(max(stamps, default=0.0))
     if acc.empty:
         return
-    with st.expander("How good are the odds? Market vs This model's ratings, season by season"):
+    with st.expander("How good are the odds? Polymarket, bookmakers and This model's ratings, season by season"):
         st.dataframe(_accuracy_pairs(acc), hide_index=True, width="stretch")
-        st.caption("Lower is better in every column, and the better of each pair is in bold; each uses the odds "
-                   "as they stood at the FPL deadline. The result columns score the home win / draw / away win chances: log loss counts only the chance "
-                   "given to what happened (the fairest single number for comparing forecasts), Brier all three. The "
-                   "market and this model's ratings are close on all of them (the market a little ahead on 2025-26's "
-                   "results). This model uses both; so far that's close to neutral for accuracy. 2024-25 only "
-                   "had result markets; goal markets started in 2025-26.")
+        st.caption("Lower is better in every column, and the best of each group is in bold. Polymarket is priced "
+                   "at the FPL deadline (from 2024-25); Bookmakers is the average bookmaker price shortly before "
+                   "each round, from Football-Data.co.uk (Friday afternoon for a weekend, Tuesday for midweek); "
+                   "This model's ratings is its club-strength fit as it stood then. Each season scores every source "
+                   "on the same matches. The result columns score the home win / draw / away win chances: log loss "
+                   "counts only the chance given to what happened (the fairest single number for comparing "
+                   "forecasts), Brier all three; 1.099 is what \"a third each\" scores. The bookmakers beat this "
+                   "model's ratings on results in all but one season; Polymarket and the bookmakers are level.")

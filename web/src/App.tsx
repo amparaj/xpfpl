@@ -73,7 +73,7 @@ export default function App() {
       </main>
       <footer>
         Expected points (xP) from a model trained on every Premier League season since 2016-17. Betting odds
-        from Polymarket. Not affiliated with the Premier League or Fantasy Premier League.
+        from Polymarket and Football-Data.co.uk. Not affiliated with the Premier League or Fantasy Premier League.
       </footer>
     </>
   );

@@ -3,7 +3,7 @@ import pandas as pd
 
 from xpfpl import config
 from xpfpl.myteam import selling_price
-from xpfpl.optimise import shortlist, solve
+from xpfpl.optimise import shortlist, solve, transfer_options
 
 GWS = [6, 7]
 LONG_GWS = [6, 7, 8, 9]
@@ -68,6 +68,25 @@ def test_transfers_respect_free_transfers_and_hits():
                  free_transfers=1, max_hits=2)
     assert len(plan.transfers_in) <= 3
     assert plan.hits == max(len(plan.transfers_in) - 1, 0)
+
+
+def test_transfer_options_compare_each_count_and_agree_with_solve():
+    players = make_players()
+    start = solve(players, GWS, bank=100.0)
+    shuffled = make_players(seed=1)
+    owned = {p: players.at[p, "price"] for p in start.squad}
+    kwargs = dict(current_squad=owned, bank=start.budget_left, free_transfers=1)
+    options = transfer_options(shuffled, GWS, **kwargs)
+    assert list(options["transfers"]) == [0, 1, 2, 3]
+    assert list(options["hits"]) == [0, 0, 1, 2]
+    assert all(len(r["in"]) == len(r["out"]) == r["transfers"] for _, r in options.iterrows())
+    assert options.at[0, "gain"] == 0 and options.at[0, "net"] == 0
+    # The best net is what solve picks when it may take that many hits.
+    best = options.loc[options["net"].idxmax()]
+    plan = solve(shuffled, GWS, max_hits=3, **kwargs)
+    assert sorted(plan.transfers_in) == sorted(best["in"])
+    # Rolling the free transfer is worth FT_VALUE, so a single move's net is its gain minus that.
+    assert abs(options.at[1, "net"] - (options.at[1, "gain"] - config.FT_VALUE)) < 1e-6
 
 
 def test_selling_price_keeps_half_of_rises():

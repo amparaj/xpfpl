@@ -118,6 +118,7 @@ def solve(players: pd.DataFrame, gameweeks: list[int], *,
           pool_size: int | None = None,
           must_have: list[int] | tuple[int, ...] = (),
           banned: list[int] | tuple[int, ...] = (),
+          transfers: int | None = None,
           time_limit: int = 60) -> Plan:
     """
     players:       indexed by element id with columns position, team, price, xp_<gw>
@@ -127,6 +128,8 @@ def solve(players: pd.DataFrame, gameweeks: list[int], *,
     unlimited_transfers: wildcard / free hit (no hits, free transfers not consumed).
     plan_transfers: plan a separate squad for every gameweek in the horizon (see the module docstring).
     must_have / banned: element ids forced into / kept out of the squad (your own judgement on news).
+    transfers:     make exactly this many transfers this week (one-week mode only), taking the hits
+                   that needs even beyond `max_hits`: what `transfer_options` compares.
     """
     owned = current_squad or {}
     # Prune players who can't matter, to keep the problem small.
@@ -197,7 +200,9 @@ def solve(players: pd.DataFrame, gameweeks: list[int], *,
             prob += saved_ft == 0
         else:
             prob += hits_first >= transfers_in - free_transfers
-            prob += hits_first <= max_hits
+            prob += hits_first <= max(max_hits, (transfers or 0) - free_transfers)
+            if transfers is not None:
+                prob += transfers_in == transfers
             # Rolling an unused free transfer has some value, unless already at the cap.
             prob += saved_ft <= free_transfers - transfers_in
             if free_transfers >= config.MAX_FREE_TRANSFERS:
@@ -311,6 +316,39 @@ def _weekly_transfers(prob, df, ids, gameweeks, squad_vars, owned, cost, buy_cos
         prob += nxt <= ft - (moves - week_hits) + 1
         ft = nxt
     return hits, ft
+
+
+def transfer_options(players: pd.DataFrame, gameweeks: list[int], counts=(0, 1, 2, 3),
+                     **solve_kwargs) -> pd.DataFrame:
+    """The best plan with exactly 0, 1, 2 or 3 transfers this week, side by side.
+
+    One row per count: the moves, the hits they need, `xp` (`Plan.value`: discounted xP after
+    hits), `gain` over making none, and `net`, the solver's own score (`Plan.objective`: xP after
+    hits plus the value of a rolled free transfer and the price term) relative to making none.
+    The highest `net` is the move `solve` recommends with the same settings and enough
+    `max_hits`; `gain` minus `net` is what the extra transfers gave up in free-transfer value
+    and price changes. A count the squad can't make (a club limit, the budget) is left out.
+    """
+    if solve_kwargs.get("current_squad") is None or solve_kwargs.get("plan_transfers"):
+        raise ValueError("transfer_options needs a current squad and one-week transfers.")
+    discount = solve_kwargs.get("discount", config.DISCOUNT)
+    bench_weight = solve_kwargs.get("bench_weight", config.BENCH_WEIGHT)
+    rows = []
+    for k in counts:
+        try:
+            plan = solve(players, gameweeks, transfers=k, **solve_kwargs)
+        except RuntimeError:
+            continue
+        rows.append({"transfers": k, "out": plan.transfers_out, "in": plan.transfers_in, "hits": plan.hits,
+                     "xp": plan.value(gameweeks, discount, bench_weight), "objective": plan.objective,
+                     "plan": plan})
+    out = pd.DataFrame(rows)
+    if out.empty:
+        return out
+    base = out.iloc[0]
+    out["gain"] = out["xp"] - base["xp"]
+    out["net"] = out["objective"] - base["objective"]
+    return out.drop(columns="objective")
 
 
 def sensitivity(players: pd.DataFrame, gameweeks: list[int], sims: int = 20, noise: float = 0.25,

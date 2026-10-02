@@ -22,6 +22,7 @@ or any Parquet reader.
 | `polymarket/<season>/events/gwNN.parquet` | Every Polymarket event for each played match (result, goal totals, both teams to score, anytime scorer), as trimmed JSON | [Polymarket Gamma API](https://gamma-api.polymarket.com) |
 | `polymarket/<season>/prices/gwNN.parquet` | Price histories for those markets up to the FPL deadline: `window` is `history_14d` (hourly, 14 days) or `history_3h_5m` (every 5 minutes, 3 hours). `t` is a Unix time; `p` is the probability of "Yes". A row with `t = -1` means no trades. | Polymarket CLOB API |
 | `polymarket/outrights/<date>.parquet` | Season-long markets (title, top four, relegation, top scorer...) as priced that day | Polymarket |
+| `bookmakers/<season>.parquet` | Bookmaker odds per Premier League match, 2016-17 on: home/draw/away and over/under 2.5 goals (market and BetBrain averages, Bet365, Pinnacle), pre-closing (collected shortly before the round) and closing, with the result. Only the columns xP-FPL reads | [Football-Data.co.uk](https://football-data.co.uk/englandm.php) `mmz4281/<yyyy>/E0.csv` |
 
 Past seasons never change. The current season gains a few files every week, written by
 `xpfpl fetch`, `xpfpl markets`, `xpfpl predict` and `xpfpl recommend`. The deadline snapshots are taken by a
@@ -31,4 +32,4 @@ scheduled GitHub Action (`.github/workflows/deadline-snapshot.yml`, which pushes
 
 Data before 2026-27 comes from vaastav's repository; please credit it if you use it. Cup and European
 matches come from olbauday's FPL-Core-Insights. FPL data
-belongs to the Premier League, and the odds belong to Polymarket.
+belongs to the Premier League and the Polymarket odds to Polymarket. Bookmaker odds come from Football-Data.co.uk.
