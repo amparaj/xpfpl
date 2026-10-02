@@ -63,6 +63,13 @@ MARKET_OUT_XP_FACTOR = 0.1
 # xP a range and the chances behind it. It only describes risk: the optimiser still maximises xP.
 # 0 switches it off.
 SIM_RUNS = 5000
+# Confidence in a player's next-gameweek xP (predict.py): how far the ensemble's members disagree,
+# as their standard deviation over the xP (floored at 1). At or below the first cut "High", above
+# the second "Low". Fixed 2026-10-02 on the robustness run's held-out 2020-21..2022-23 forecasts
+# (players on 2+ xP: half High, 15% Low); on 2023-24..2025-26 the Low tier's squared misses were
+# 1.19x the usual for the same xP, High's 0.97x. The members' spread beat the chance of playing,
+# the player's history and seed-to-seed spread as a signal.
+CONFIDENCE_CUTS = (0.09, 0.164)
 
 # Chip thresholds (xP gained vs. not playing the chip), tuned 2026-10-02 with the ensemble on top
 # of the settings above (`xpfpl tune` chip stages, 2020-21 to 2023-24, 4 replays each; report in

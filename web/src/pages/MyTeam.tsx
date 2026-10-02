@@ -57,7 +57,7 @@ function Transfers({ moves, hits }: { moves: { out: number; in: number }[]; hits
   };
   return (
     <>
-      <h4>{moves.length} transfer{moves.length === 1 ? "" : "s"}{hits ? `, −${4 * hits} in penalties` : ""}</h4>
+      <p style={{ margin: "0 0 8px" }}>{moves.length} transfer{moves.length === 1 ? "" : "s"}{hits ? `, −${4 * hits} in penalties` : ", no penalties"}</p>
       <ol className="transfers">
         {moves.map((t) => (
           <li key={`${t.out}-${t.in}`} className="transfer">
@@ -91,7 +91,7 @@ function Settings({ settings, locked }: { settings: PlanSettings; locked: boolea
   ];
   return (
     <>
-      <h4>{locked ? "Last saved in Plan Ahead with" : "Planned in Plan Ahead with"}</h4>
+      <h3 style={{ marginTop: 0 }}>{locked ? "Last saved in Plan Ahead with" : "Planned in Plan Ahead with"}</h3>
       <dl className="settings">
         {items.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}
       </dl>
@@ -230,19 +230,14 @@ export default function MyTeamPage() {
               team before the deadline, and stays until the gameweek is finished.</>}
       </p>
       {team && (
-        <div className="card">
-          <p style={{ marginTop: 0 }}>
-            {team.source === "saved" && <>Picked {when(team.saved_at)}.</>}
-            {team.source === "locked" && <>Locked in at the deadline.</>}
-            {team.source === "carried" && <>No new team picked for GW{data.gw} yet, so this is the GW{data.gw - 1} team carried
-              over: the same XI, captain and bench, no transfers.</>}
-            {team.source !== "carried" && !team.transfers.length && " No transfers."}
-            {chip && <> <span className="tag">{CHIP_NAMES[chip] ?? chip}</span></>}
-            {unlocked && <> <button className="link" onClick={lock}>Hide the team again</button></>}
-          </p>
-          {team.transfers.length > 0 && <Transfers moves={team.transfers} hits={team.hits} />}
-          {team.settings && <Settings settings={team.settings} locked={team.source === "locked"} />}
-        </div>
+        <p className="note team-source">
+          {team.source === "saved" && <>Picked {when(team.saved_at)}.</>}
+          {team.source === "locked" && <>Locked in at the deadline.</>}
+          {team.source === "carried" && <>No new team picked for GW{data.gw} yet, so this is the GW{data.gw - 1} team carried
+            over: the same XI, captain and bench, no transfers.</>}
+          {chip && <> <span className="tag">{CHIP_NAMES[chip] ?? chip}</span></>}
+          {unlocked && <> <button className="link" onClick={lock}>Hide the team again</button></>}
+        </p>
       )}
       <Tiles tiles={tiles} />
 
@@ -272,6 +267,30 @@ export default function MyTeamPage() {
         data.sealed
           ? <Unlock gw={data.gw} busy={state === "busy"} wrong={state === "wrong"} onUnlock={(word) => void unlock(word, true)} />
           : <div className="card"><p style={{ margin: 0 }}>The players, captain, chip and transfers are hidden until the GW{data.gw} deadline.</p></div>
+      )}
+
+      {(team || a) && (
+        <div className="card">
+          <h3 style={{ marginTop: 0 }}>Transfers</h3>
+          {!team ? <p className="muted" style={{ margin: 0 }}>Who comes in and out is hidden until the deadline.</p>
+            : team.transfers.length > 0
+            ? <Transfers moves={team.transfers} hits={team.hits} />
+            : <p className="muted" style={{ margin: 0 }}>{team.source === "carried" ? "None: last week's team carried over." : "No transfers this week."}</p>}
+          {a && (
+            <p style={{ marginBottom: 0 }}>
+              {!team || team.transfers.length > 0 ? <>Worth <strong>{signed(a.xp, 1)} xP</strong></> : <>Against last week's squad: {signed(a.xp, 1)} xP</>} over {span} after
+              transfer hits, against keeping the GW{data.gw - 1} squad with its best XI and captain each week.
+              {a.p_better != null && <> In the same simulated weeks (the same goals, injuries and clean sheets for both) the new team is ahead
+                in {pct(a.p_better)} of them, by {signed(a.p10 ?? 0, 0)} to {signed(a.p90 ?? 0, 0)} points in the middle 80%.</>}
+            </p>
+          )}
+        </div>
+      )}
+
+      {team?.settings && (
+        <div className="card">
+          <Settings settings={team.settings} locked={team.source === "locked"} />
+        </div>
       )}
 
       {numbers.points && (
@@ -305,14 +324,6 @@ export default function MyTeamPage() {
         </p>
       </>}
 
-      {a && (
-        <p>
-          <strong>The transfers</strong> are worth {signed(a.xp, 1)} xP over {span} after transfer hits, against keeping the GW{data.gw - 1} squad
-          with its best XI and captain each week.
-          {a.p_better != null && <> In the same simulated weeks (the same goals, injuries and clean sheets for both) the new team is ahead
-            in {pct(a.p_better)} of them, by {signed(a.p10 ?? 0, 0)} to {signed(a.p90 ?? 0, 0)} points in the middle 80%.</>}
-        </p>
-      )}
 
       {team && <>
         <h3>The squad</h3>

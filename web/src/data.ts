@@ -146,6 +146,14 @@ export interface Forecast {
   rotation?: string | null; rotation_factor?: number | null;
   /** The next gameweek's Monte Carlo: 10th/50th/90th percentile of his simulated points, chance of 10+ and of 2 or fewer. */
   pts_p10?: number | null; pts_p50?: number | null; pts_p90?: number | null; p_haul?: number | null; p_blank?: number | null;
+  /** The other two outcome bands of the next gameweek (with p_blank and p_haul they add to 1). */
+  p_3_5?: number | null; p_6_9?: number | null;
+  /** The whole horizon's simulated total: floor (10th percentile), middle and ceiling (90th). */
+  total_p10?: number | null; total_p50?: number | null; total_p90?: number | null;
+  /** His chance of 60+ minutes in the next gameweek (p_play less this is a cameo). */
+  p_full?: number | null;
+  /** How far the ensemble's members disagree on his next-gameweek xP, and the confidence that gives. */
+  xp_sd?: number | null; confidence?: "High" | "Medium" | "Low" | null;
   [xp: `xp_${number}`]: number;
 }
 /** The forecast saved for the next gameweek: xP per player for each gameweek of its horizon. */

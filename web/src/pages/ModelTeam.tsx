@@ -20,6 +20,13 @@ type Week = ModelWeek & { average: number | null; highest: number | null };
 const inside = (w: ModelWeek) => w.simulation && w.gross !== undefined
   ? w.gross >= w.simulation.points.p10 && w.gross <= w.simulation.points.p90 : undefined;
 
+/** "GW1–5" for a run of gameweeks, "GW1, GW3" otherwise. */
+const gwList = (gws: number[]) => {
+  const sorted = [...gws].sort((a, b) => a - b);
+  const run = sorted.every((g, i) => i === 0 || g === sorted[i - 1] + 1);
+  return run && sorted.length > 1 ? `GW${sorted[0]}–${sorted[sorted.length - 1]}` : sorted.map((g) => `GW${g}`).join(", ");
+};
+
 export default function ModelTeamPage() {
   const site = useSite();
   const data = useData<ModelTeam>("modelteam.json");
@@ -106,6 +113,10 @@ export default function ModelTeamPage() {
       title: "The best XI and captain from the same 15 players, knowing the points" },
   ];
 
+  // Weeks decided by another model (the replay that fills the weeks before the live record trains mlp).
+  const otherModels = [...new Set(weeks.filter((w) => w.model && w.model !== data.model).map((w) => w.model))]
+    .map((model) => ({ model, gws: weeks.filter((w) => w.model === model).map((w) => w.gw) }));
+
   return (
     <>
       <h2>This Model's Team</h2>
@@ -113,6 +124,8 @@ export default function ModelTeamPage() {
         An FPL team run entirely by this {data.model} model. Before every deadline it chooses the transfers, starting XI, bench order,
         captain and chips, and the decision is saved. After the gameweek it's scored like any other FPL team, with auto-subs,
         the vice-captain, chips and transfer hits all counted.
+        {otherModels.length > 0 && <> {otherModels.map((o) => `${gwList(o.gws)} ${o.gws.length === 1 ? "was" : "were"} replayed with the ${o.model} model`).join("; ")},
+          from before the live record began.</>}
       </p>
       {weeks.length > 0 && (
         <Tiles tiles={[

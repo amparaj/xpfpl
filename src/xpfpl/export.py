@@ -350,9 +350,18 @@ def _next_gameweek(bs: dict, season: str, model: str) -> dict | None:
     if found is None:
         return None
     key, t, gws = found
+    # Outcome bands and the horizon's range came later than the saved forecasts' first runs: an
+    # older forecast takes them from its simulations, where they're still on disk (simulate.py).
+    if "p_3_5" not in t:
+        from xpfpl import simulate
+        draws = simulate.load(season, gw, key.split("_", 1)[1])
+        if draws is not None and gw in draws.gameweeks:
+            extra = simulate.summary(draws, gw).drop(columns=[c for c in t if c != "element"], errors="ignore")
+            t = t.merge(extra, left_on="element", right_index=True, how="left")
     keep = ["element", *[f"xp_{g}" for g in gws], "xp_total",
-            *[c for c in ("xmins", "p_play", "mkt_anytime", "market_out", "rotation", "rotation_factor",
-                          "pts_p10", "pts_p50", "pts_p90", "p_haul", "p_blank") if c in t]]
+            *[c for c in ("xmins", "p_play", "p_full", "mkt_anytime", "market_out", "rotation", "rotation_factor",
+                          "pts_p10", "pts_p50", "pts_p90", "p_haul", "p_6_9", "p_3_5", "p_blank",
+                          "total_p10", "total_p50", "total_p90", "xp_sd", "confidence") if c in t]]
     return {"gw": gw, "deadline": upcoming["deadline_time"], "model": key.split("_", 1)[1], "gameweeks": gws,
             "players": table(t[keep], digits=3)}
 

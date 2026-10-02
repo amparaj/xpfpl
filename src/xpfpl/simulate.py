@@ -294,11 +294,16 @@ def by_gameweek(draws: np.ndarray, inp: pd.DataFrame, elements=None) -> Draws:
 
 def summary(d: Draws, gw: int) -> pd.DataFrame:
     """Per element for one gameweek: the 10th/50th/90th percentile of his simulated points,
-    the chance of 10+ (`p_haul`) and of 2 or fewer (`p_blank`, not playing included)."""
+    the chance of 10+ (`p_haul`), 6-9 (`p_6_9`), 3-5 (`p_3_5`) and 2 or fewer (`p_blank`, not
+    playing included); and over every gameweek of the forecast, the 10th/50th/90th percentile of
+    his total (`total_p10`...: the floor, middle and ceiling of the whole horizon)."""
     pts = scored(d.points[d.gameweeks.index(gw)])
     q = np.percentile(pts, [10, 50, 90], axis=0, method="lower")
+    total = np.percentile(scored(d.points).sum(axis=0), [10, 50, 90], axis=0, method="lower")
     return pd.DataFrame({"pts_p10": q[0], "pts_p50": q[1], "pts_p90": q[2],
-                         "p_haul": (pts >= HAUL).mean(axis=0), "p_blank": (pts <= BLANK).mean(axis=0)},
+                         "p_haul": (pts >= HAUL).mean(axis=0), "p_6_9": ((pts >= 6) & (pts < HAUL)).mean(axis=0),
+                         "p_3_5": ((pts > BLANK) & (pts < 6)).mean(axis=0), "p_blank": (pts <= BLANK).mean(axis=0),
+                         "total_p10": total[0], "total_p50": total[1], "total_p90": total[2]},
                         index=pd.Index(d.elements, name="element"))
 
 

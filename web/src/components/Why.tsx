@@ -5,7 +5,7 @@
 
 import { useMemo, type ReactNode } from "react";
 import type { Forecast, Player } from "../data";
-import { POSITIONS, STATUS, dec, money, pct, pts, signed } from "../format";
+import { POSITIONS, STATUS, dec, money, pct, pts, risk, signed } from "../format";
 import { ROTATION } from "../midweek";
 import { fairResult, oddsUrl, type OddsSnapshot } from "../polymarket";
 import { matchPlayer, ours } from "../ratings";
@@ -27,6 +27,69 @@ function Meter({ value, label }: { value: number; label: string }) {
   return (
     <div className="meter" role="meter" aria-valuemin={0} aria-valuemax={1} aria-valuenow={value} aria-label={label}>
       <span style={{ width: `${Math.round(Math.max(0, Math.min(1, value)) * 100)}%` }} />
+    </div>
+  );
+}
+
+const CONFIDENCE_TEXT = {
+  High: "this model's three parts agree on him",
+  Medium: "this model's three parts differ a little on him",
+  Low: "this model's three parts disagree on him: forecasts like this have missed by more than usual",
+};
+
+/** "High confidence": how far this model's members agree on his next-gameweek xP (predict.py). */
+export function ConfidenceBadge({ level, sd }: { level?: Forecast["confidence"]; sd?: number | null }) {
+  if (!level) return null;
+  return (
+    <span className={`badge conf-${level.toLowerCase()}`}
+          title={`${level} confidence: ${CONFIDENCE_TEXT[level]}${sd != null ? ` (their spread: ±${dec(sd)} points)` : ""}`}>
+      {level} confidence
+    </span>
+  );
+}
+
+/** "Medium risk": how often the pick scores 2 or fewer (format.risk). */
+export function RiskBadge({ pBlank }: { pBlank?: number | null }) {
+  const level = risk(pBlank);
+  if (!level) return null;
+  return <span className="badge risk" title={`${pct(pBlank)} chance of 2 points or fewer`}>{level} risk</span>;
+}
+
+function Tile({ label, value, note }: { label: string; value: ReactNode; note?: ReactNode }) {
+  return (
+    <div className="why-tile">
+      <div className="why-tile-label">{label}</div>
+      <div className="why-tile-value">{value}</div>
+      {note && <div className="why-tile-note">{note}</div>}
+    </div>
+  );
+}
+
+/** The next gameweek's four outcome bands as one bar: 0-2, 3-5, 6-9 and 10+ points. */
+function OutcomeBands({ f, gw }: { f: Forecast; gw: number }) {
+  const bands = [
+    { label: "0–2 bust", p: f.p_blank, step: 25 },
+    { label: "3–5 floor", p: f.p_3_5, step: 45 },
+    { label: "6–9 middle", p: f.p_6_9, step: 70 },
+    { label: "10+ haul", p: f.p_haul, step: 100 },
+  ];
+  if (bands.some((b) => b.p == null)) return null;
+  const fill = (step: number) => `color-mix(in srgb, var(--s1) ${step}%, var(--chip))`;
+  return (
+    <div className="bands" role="group" aria-label={`GW${gw} outcome chances`}>
+      <div className="why-tile-label" style={{ marginBottom: 4 }}>GW{gw} outcome chances</div>
+      <div className="bands-bar" aria-hidden>
+        {bands.map((b) => <span key={b.label} style={{ flexGrow: b.p!, background: fill(b.step) }} />)}
+      </div>
+      <div className="bands-labels">
+        {bands.map((b) => (
+          <div key={b.label}>
+            <span className="key key-rect" style={{ background: fill(b.step) }} />
+            <small>{b.label}</small>
+            <b>{pct(b.p)}</b>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -68,28 +131,60 @@ export function WhyProjection({ player, forecast, gw, gameweeks }: {
   const status = STATUS[player.status];
   const total = forecast && gameweeks && gameweeks.length > 1 ? forecast.xp_total : null;
   const defender = player.element_type <= 2;
+  const n = gameweeks?.length ?? 1;
+  const first3 = forecast && gameweeks && n > 3 ? gameweeks.slice(0, 3).reduce((a, g) => a + (forecast[`xp_${g}`] ?? 0), 0) : null;
+  const level = risk(forecast?.p_blank);
 
   return (
     <div className="why">
-      <div>
-        <div className="why-xp">
-          <b>{pts(xp)}</b>
-          <span>xP in GW{gw}</span>
-          {total !== null && <span>· {pts(total)} over GW{gameweeks![0]}–{gameweeks![gameweeks!.length - 1]}</span>}
-        </div>
-        {forecast?.pts_p90 != null && (
-          <p className="note" style={{ marginTop: 0 }}>
-            Simulated thousands of times: {band(forecast.pts_p10, forecast.pts_p90)} points in 4 weeks out of 5,{" "}
-            {pct(forecast.p_haul)} chance of 10+, {pct(forecast.p_blank)} of 2 or fewer.
-          </p>
-        )}
+      <div className="why-badges">
+        <ConfidenceBadge level={forecast?.confidence} sd={forecast?.xp_sd} />
+        <RiskBadge pBlank={forecast?.p_blank} />
+        <span className="muted">{site.team.get(player.team)?.name} · {POSITIONS[player.element_type]} · {money(player.now_cost)}
+          {status ? <> · <span className="bad">{status}</span></> : " · Available"}</span>
       </div>
 
-      <Group title="Minutes" hint="will he play, and for how long?">
+      <div className="why-tiles why-tiles-xp">
+        <Tile label="1 GW" value={pts(xp)} note={`xP in GW${gw}`} />
+        {first3 !== null && <Tile label="3 GW" value={pts(first3)} note={`GW${gameweeks![0]}–${gameweeks![2]}`} />}
+        {total !== null && <Tile label={`${n} GW`} value={pts(total)} note={`GW${gameweeks![0]}–${gameweeks![n - 1]}`} />}
+        {level && <Tile label="Risk" value={level} note={`${pct(forecast?.p_blank)} chance of 2 or fewer`} />}
+      </div>
+
+      {forecast?.pts_p90 != null && (
+        <div className="why-tiles">
+          <Tile label="1 GW range" value={band(forecast.pts_p10, forecast.pts_p90)} note="the middle 80% of simulated weeks" />
+          {forecast.total_p90 != null && n > 1 && <>
+            <Tile label={`${n} GW floor`} value={dec(forecast.total_p10, 0)} note={`1 in 10 simulated runs of GW${gw}–${gameweeks![n - 1]} end below this`} />
+            <Tile label={`${n} GW median`} value={dec(forecast.total_p50, 0)} note="the middle outcome" />
+            <Tile label={`${n} GW ceiling`} value={dec(forecast.total_p90, 0)} note="1 in 10 runs end above this" />
+          </>}
+        </div>
+      )}
+
+      {forecast?.xmins != null && (
+        <div className="why-tiles">
+          <Tile label="Expected minutes" value={dec(forecast.xmins, 0)} note={`in GW${gw}, flags and rotation included`} />
+          {forecast.p_play != null && <Tile label="Plays" value={pct(forecast.p_play)} note="any minutes" />}
+          {forecast.p_full != null && <Tile label="60+ minutes" value={pct(forecast.p_full)} note="roughly: starts" />}
+          {forecast.p_full != null && forecast.p_play != null &&
+            <Tile label="Cameo" value={pct(Math.max(0, forecast.p_play - forecast.p_full))} note="on for under an hour" />}
+        </div>
+      )}
+
+      {forecast && <OutcomeBands f={forecast} gw={gw} />}
+      {forecast?.confidence && (
+        <p className="note" style={{ marginTop: 0 }}>
+          <strong>{forecast.confidence} confidence:</strong> {CONFIDENCE_TEXT[forecast.confidence]}
+          {forecast.xp_sd != null && <> (their forecasts spread by ±{dec(forecast.xp_sd)} points)</>}. Tested on six past seasons
+          (<a href="#about/report/accuracy">how</a>). Risk is about the range of outcomes; confidence is about the forecast itself.
+        </p>
+      )}
+
+      <Group title="Minutes and role" hint="his place in the team">
         {forecast?.p_play != null && <Meter value={forecast.p_play} label="Chance he plays" />}
         <Stats items={[
-          ...(forecast?.p_play != null ? [{ label: "Chance he plays", value: pct(forecast.p_play) }] : []),
-          ...(forecast?.xmins != null ? [{ label: "Expected minutes", value: dec(forecast.xmins, 0) }] : []),
+          ...(forecast?.p_play != null && forecast.xmins == null ? [{ label: "Chance he plays", value: pct(forecast.p_play) }] : []),
           { label: "Starts this season", value: `${player.starts} of ${site.meta.played.length}` },
           ...(last5.length ? [{ label: `Minutes, last ${last5.length}`, value: dec(mean(last5.map((g) => g.minutes)), 0) + " a game" }] : []),
           { label: "FPL flag", value: status ? <span className="bad">{status}{player.chance_of_playing_next_round != null && ` ${player.chance_of_playing_next_round}%`}</span> : "None" },
