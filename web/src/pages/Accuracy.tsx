@@ -197,8 +197,8 @@ function Ranges({ sim, season, live }: { sim: any; season: string; live: Row[] }
       <Note>
         Players grouped by their simulated chance; on the dashed line a 20% chance came true 20% of the time. The simulation is
         only as right as the xP it's built around: where this model over-forecast the top players that season, their chance of 10+
-        runs high too. Club totals come out a little wide because each player's minutes are drawn on their own, while a club
-        always fields eleven. The simulations show risk and leave the picks alone: the team with the most expected points is the
+        runs high too. Each club's line-up is drawn as a whole, so a club fields as many players as their chances of playing
+        add up to (drawn player by player, club totals came out a little wide). The simulations show risk and leave the picks alone: the team with the most expected points is the
         same either way, as <a href={PAPER}>Ramezani &amp; Dinh (2026)</a> also found for simulated forecasts.
       </Note>
     </>

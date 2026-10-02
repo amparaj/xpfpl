@@ -26,8 +26,8 @@ def predict_upcoming(horizon: int = config.HORIZON, model: str = config.MODEL,
 
     Also carries `price_delta`, the expected price change per gameweek; for the component
     model, one column per scoring component, so the dashboard can show where an xP comes from;
-    and for a model with a minutes head (xmins, ensemble), `xmins`, `p_play` and `p_full` (60+
-    minutes) for the next GW; for the ensemble, how far its members disagree on the next GW
+    `pen_order`/`pen_xp` for the penalty takers (setpieces.py); and for a model with a minutes
+    head (xmins, ensemble), `xmins`, `p_play` and `p_full` (60+ minutes) for the next GW; for the ensemble, how far its members disagree on the next GW
     (`xp_sd`) and the `confidence` that gives (config.CONFIDENCE_CUTS).
     With config.SIM_RUNS > 0, the next GW's simulated range (simulate.py): `pts_p10`/`pts_p50`/
     `pts_p90` and the chances of 10+ (`p_haul`) and of 2 or fewer (`p_blank`); every simulation
@@ -63,6 +63,10 @@ def predict_upcoming(horizon: int = config.HORIZON, model: str = config.MODEL,
     from xpfpl.data import markets
     cut = (frame["gw"] == next_gw) & frame["code"].isin(markets.ruled_out(scorers).index)
     frame.loc[cut, "xp"] = frame.loc[cut, "xp"] * config.MARKET_OUT_XP_FACTOR
+    # Penalty takers (setpieces.py): FPL's order against who took them lately. Recorded every
+    # run; it only moves xP if config.PENALTY_WEIGHT is above 0.
+    from xpfpl import setpieces
+    frame = setpieces.apply(frame, pd.DataFrame(bs["elements"]), matches)
 
     ranges = _simulate(frame, raw, predictor, matches, api.current_season(bs), next_gw, model)
 
@@ -90,6 +94,7 @@ def predict_upcoming(horizon: int = config.HORIZON, model: str = config.MODEL,
     out = out.join(_confidence(predictor, frame, next_gw))
     out = out.join(_scorer_odds(scorers, players))
     out = out.join(_rotation(frame, next_gw, gameweeks))
+    out = out.join(_penalties(frame, next_gw))
     out = out.join(ranges)
     out.index.name = "element"
 
@@ -130,6 +135,16 @@ def _rotation(frame: pd.DataFrame, next_gw: int, gameweeks: list[int]) -> pd.Dat
     level.columns = [f"cup_{gw}" for gw in gameweeks]
     rows = frame[frame["gw"] == next_gw].drop_duplicates("element").set_index("element")
     return level.join(rows[["rotation", "rotation_factor"]], how="outer")
+
+
+def _penalties(frame: pd.DataFrame, next_gw: int) -> pd.DataFrame:
+    """Next gameweek's `pen_order` (FPL's) and `pen_xp` (setpieces.py, at full weight; a double
+    gameweek's matches summed)."""
+    rows = frame[frame["gw"] == next_gw]
+    if "pen_xp" not in rows:
+        return pd.DataFrame(index=pd.Index([], name="element"))
+    g = rows.groupby("element")
+    return pd.DataFrame({"pen_order": g["pen_order"].first(), "pen_xp": g["pen_xp"].sum()})
 
 
 def _scorer_odds(scorers: pd.DataFrame | None, players: pd.DataFrame) -> pd.DataFrame:

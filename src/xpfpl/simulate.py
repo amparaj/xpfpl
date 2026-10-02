@@ -11,7 +11,8 @@ Each simulated gameweek, for every fixture (batched in PyTorch, like `fit_goal_r
     1. each side's goals ~ Poisson(the fixture's expected goals: the market's where it has odds,
        else our club ratings, teams.py);
     2. each player: no minutes / a cameo / 60+, from the minutes model (models/minutes.py) where
-       the model has one, else his recent appearance rates;
+       the model has one, else his recent appearance rates, drawn for the whole side at once so
+       a club fields as many players as its chances add up to (`_select`);
     3. each of his side's goals is his with probability (his per-90 rate x minutes on the pitch
        / the side's expected goals), and likewise the assists, so teammates' returns rise and
        fall with the side's goals and a club's total stays its Poisson draw;
@@ -56,6 +57,9 @@ HAUL, BLANK = 10, 2        # "10+" and "2 or fewer" points, the two chances show
 ATTACK_FLOOR = 0.25       # matching to xP never cuts a player's attacking rates below a quarter
 DNP = -128                 # int8 marker for "didn't play" (scores otherwise fit in -127..127)
 BONUS_SEASONS = "2025-26"  # bonus and residual tables for live forecasts: the current scoring era
+# Draw each side's line-up together (`_select`), not player by player. Club totals inside their
+# simulated 10th-90th band, 80% ideal: 83.6% -> 81.6% (2024-25), 83.8% -> 81.6% (2025-26).
+JOINT_LINEUPS = True
 
 
 # ---------------------------------------------------------------- inputs
@@ -149,6 +153,28 @@ def _tensor(values, dtype=torch.float32) -> torch.Tensor:
     return torch.as_tensor(np.array(values), dtype=dtype)
 
 
+def _select(p: torch.Tensor, side: torch.Tensor, n_sides: int, sims: int, gen: torch.Generator) -> torch.Tensor:
+    """(sims, n) booleans: who is picked, each row with chance `p` (n or (sims, n)), drawn
+    together within each side so a side always picks the number its chances add up to.
+
+    Drawn one player at a time, a club's 30-odd players with a 40% chance each might field 8 one
+    week and 17 the next; a real club fields 11 and uses up to five subs. Systematic sampling
+    keeps every player's chance exactly as given and the side's count within one of the sum:
+    shuffle the side's players, lay their chances end to end on a line, and pick whoever covers
+    u, u + 1, u + 2, ... for one uniform u per side."""
+    p = (p.expand(sims, -1) if p.dim() == 1 else p).double().clamp(0, 1)
+    order = torch.argsort(side.double() + torch.rand(sims, p.shape[1], generator=gen, dtype=torch.float64), dim=1)
+    ps = p.gather(1, order)
+    cum = ps.cumsum(1)
+    prev = cum - ps
+    side_sorted = torch.sort(side).values
+    start = torch.searchsorted(side_sorted, side_sorted)          # each row's first row of its side
+    offset = prev[:, start]
+    u = torch.rand(sims, n_sides, generator=gen, dtype=torch.float64)[:, side_sorted]
+    pick = torch.floor(cum - offset + u) > torch.floor(prev - offset + u)
+    return torch.zeros_like(pick).scatter_(1, order, pick)
+
+
 def _simulate(inp: pd.DataFrame, sims: int, seed: int, tables: dict, attack: np.ndarray,
               play: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """(points, attacking points) per simulation and row, before matching to xP. Points are
@@ -181,9 +207,14 @@ def _simulate(inp: pd.DataFrame, sims: int, seed: int, tables: dict, attack: np.
         s = min(BATCH, sims - start)
         goals_side = torch.poisson(lam.expand(s, n_sides), generator=gen)
         scored, conceded = goals_side[:, side], goals_side[:, opp]
-        u = torch.rand(s, n, generator=gen)
-        full = u < p_full
-        cameo = ~full & (u < p_full + p_cameo)
+        if JOINT_LINEUPS:
+            full = _select(p_full, side, n_sides, s, gen)
+            rest = (p_cameo / (1 - p_full).clamp(min=1e-6)).clamp(max=1.0)
+            cameo = _select(rest * ~full, side, n_sides, s, gen)
+        else:
+            u = torch.rand(s, n, generator=gen)
+            full = u < p_full
+            cameo = ~full & (u < p_full + p_cameo)
         played = full | cameo
         share = full * FULL_SHARE + cameo * CAMEO_SHARE
         # Each of the side's goals is his with probability (his expected goals / the side's), so

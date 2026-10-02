@@ -236,6 +236,11 @@ markets. `predict` and `recommend` fetch the live odds for the next gameweek the
 - **In the model:** the market's expected goals, clean-sheet and win chances are features. Where
   there are no odds (before 2024-25, and any gameweek after the next one) they fall back to the
   model's own team ratings, with a flag saying which is which.
+- **In the component model, directly:** where a match has odds, its clean-sheet and
+  goals-conceded heads are moved halfway to the market's (`MARKET_DEFENCE_WEIGHT`). Out of sample
+  that cut RMSE by 0.0011 (2024-25, result markets only) and 0.0041 (2025-26, totals too).
+  Scaling goals and assists by the market's goals was worse in both seasons, so they stay the
+  model's own.
 
 How good are the odds? Bookmaker odds from [Football-Data.co.uk](https://football-data.co.uk/englandm.php)
 (`data/bookmakers.py`, archived in `archive/bookmakers/`: the average price shortly before each round, from
@@ -340,6 +345,20 @@ each player's club plays in the week before (`cup_<gw>`: 3 Champions League, 2 E
 another, 0 none), for planning by hand. There is one season and a bit of data, so treat the
 factors as a first estimate.
 
+### Penalty takers
+
+FPL lists each club's penalty order (`penalties_order`), and the FotMob shots in `archive/matchstats/`
+say who actually took each penalty from 2025-26 on. `xpfpl/setpieces.py` sets one against the other:
+a first-choice taker gains his club's penalties per match, a player who took them lately but isn't
+first choice now loses his, each worth conversion x goal points x his chance of being on the
+pitch. Established takers barely move; a new first choice after a transfer or an injury does,
+which is what the model, learning from past goals and xG, is slow to see.
+
+Tested on 2025-26 (out-of-sample forecasts, the club's latest taker standing in for the order), the
+best weight on it was 0.29 ± 0.28 and RMSE didn't move, so `PENALTY_WEIGHT` is 0: every forecast
+records `pen_order` and `pen_xp` (the adjustment at full weight), and `xpfpl scorecard` reports
+the weight this season's real penalty orders support.
+
 ## What could happen? (Monte Carlo)
 
 An xP is an average. "Salah 7.1 xP" could be a steady 6-8 or a coin flip between 2 and 15, and a
@@ -350,7 +369,9 @@ batched in PyTorch:
 1. each side's goals ~ Poisson(the fixture's expected goals: the betting odds where there are
    some, else the club ratings in `teams.py`);
 2. each player: no minutes, a cameo or 60+, from the minutes model (`xmins`, in the ensemble) and
-   scaled by the injury flag, midweek rotation and the market's "ruled out";
+   scaled by the injury flag, midweek rotation and the market's "ruled out"; drawn for the whole
+   side at once (systematic sampling), so every player keeps his chance but a club fields as many
+   players as those chances add up to, not 8 one week and 17 the next;
 3. each of his side's goals is his with probability (his per-90 rate x time on the pitch / the
    side's expected goals), and the same for assists, so teammates rise and fall together;
 4. clean sheets and goals conceded from the opponents' draw, saves, defensive contributions, and
@@ -378,7 +399,7 @@ model that never saw it:
 | Check | Result | Right if |
 | --- | --- | --- |
 | real scores inside the simulated 10th-90th percentile | 79.3% | 80% |
-| club totals per match inside their range | 83.4% | 80% (a little wide: minutes are drawn per player, a club always fields 11) |
+| club totals per match inside their range | 81.6% (83.8% when minutes were drawn player by player) | 80% |
 | chance of 2 or fewer, by group | within ~3 points | on the diagonal |
 | chance of 10+, players given 10-20% | 9-13% came true | on the diagonal |
 
@@ -553,6 +574,28 @@ end up in the squad is not; and the way to choose between models here is to play
 not to rank error metrics. A club rotation feature (starters changed per match) is a case in
 point: it improved every model's RMSE (the ensemble's 2.601 -> 2.597) and cost 54 points a
 season in the replay, so it was left out.
+
+#### Paired comparisons: less luck, more answer
+
+Two full replays drift apart at their first different transfer, and from then on most of the gap
+between their totals is luck about which squad each path happened to reach. `--paired` replays
+the base settings once, then at every gameweek hands the candidate the base's exact squad, bank,
+free transfers and chips for `--weeks` gameweeks (default: the horizon) and scores it against
+what the base scored over the same weeks:
+
+```bash
+xpfpl backtest --season 2023-24,2024-25 --paired bench_weight=0.1           # 3-week windows
+xpfpl backtest --season 2024-25 --paired model=gbm --weeks 1 --verbose       # week by week
+```
+
+It prints the gain per season with a 90% interval (a block bootstrap over gameweeks). Tested with
+the same 10% keyed xP noise `tune` uses (price weight 0 against 1, four noisy replays per season),
+the estimated gain moved by 33 / 61 points (2023-24 / 2024-25, sd) with two full replays and by
+12 / 4.5 with paired 3-week windows: roughly the precision of 25 replays from one. The catch:
+a window only sees what pays off within it. The price term's benefit is squad value built up over
+a season, so the full replays put it at ~+40 a season and the paired windows at ~0. Use paired
+comparisons for what pays off within a few weeks (captaincy, bench, chips, horizon, models) and
+full replays for what compounds (price rises, banking transfers).
 
 ### Does it hold up? Six seasons out of sample
 
@@ -758,6 +801,7 @@ src/xpfpl/
   models/minutes.py  xmins: expected minutes, then points given the minutes
   models/ensemble.py the average of mlp, gbm and xmins
   predict.py         xP per player per upcoming gameweek
+  setpieces.py       penalty takers: FPL's order against who took them lately (recorded, off by default)
   prices.py          expected price changes (form table + live transfer momentum)
   data/pricewatch.py the live price tracker (FPL's progress to each move, the change log)
   price_view.py      the dashboard's Prices tab

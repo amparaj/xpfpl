@@ -363,6 +363,34 @@ def _parse_grid(values: list[str]) -> dict[str, list]:
     return grid
 
 
+def _paired(base, args, frame) -> None:
+    """`backtest --paired`: the candidate settings against the base, week by week from the base's
+    own state (backtest.paired), over each season in --season (comma-separated)."""
+    from dataclasses import replace
+
+    from xpfpl import backtest, prices
+    changes = {k: v[0] for k, v in _parse_grid(args.paired).items()}
+    weeks = args.weeks or base.horizon
+    rows = []
+    for season_name in args.season.split(","):
+        b = replace(base, season=season_name)
+        c = replace(b, **changes)
+        table = prices.fit(frame, before_season=season_name)
+        season = backtest.Season.prepare(b, frame, price_table=table)
+        other = None
+        if c.model != b.model:
+            other = backtest.Season.prepare(c, frame, price_table=table)
+        print(f"\n{season_name}: {', '.join(f'{k}={v}' for k, v in changes.items())} vs base, {weeks}-week windows")
+        rows.append(backtest.paired(b, c, season, weeks=weeks, candidate_season=other,
+                                    verbose=args.verbose).summary())
+        r = rows[-1]
+        print(f"  gain {r['gain']:+.0f} points (90% {r['low']:+.0f} to {r['high']:+.0f}); "
+              f"better in {r['better_weeks']} weeks, worse in {r['worse_weeks']}")
+    if len(rows) > 1:
+        mean = sum(r["gain"] for r in rows) / len(rows)
+        print(f"\nMean gain per season: {mean:+.0f} ({sum(r['gain'] > 0 for r in rows)}/{len(rows)} seasons better)")
+
+
 def cmd_backtest(args) -> None:
     from xpfpl import backtest
     from xpfpl.data.history import load_matches
@@ -377,6 +405,9 @@ def cmd_backtest(args) -> None:
     print("Building features...")
     frame = build_training_frame(load_matches())
 
+    if args.paired:
+        _paired(base, args, frame)
+        return
     if args.sweep:
         table = backtest.sweep(base, _parse_grid(args.sweep), frame=frame)
         cols = ["points", "points_per_gw", "hits", "transfers", "captain_points", "bench_points",
@@ -849,6 +880,12 @@ def main(argv: list[str] | None = None) -> None:
                    help="candidates per position given to the optimiser (lower = faster)")
     p.add_argument("--sweep", nargs="+", metavar="KEY=V1,V2",
                    help="run one backtest per combination, e.g. --sweep horizon=3,5,8 discount=0.8,0.9")
+    p.add_argument("--paired", nargs="+", metavar="KEY=VALUE",
+                   help="score these settings against the base week by week from the base's own squad "
+                        "(much less noisy than two replays), e.g. --paired horizon=5; --season may list several")
+    p.add_argument("--weeks", type=int, default=0,
+                   help="with --paired: weeks each comparison runs for (default: the horizon)")
+    p.add_argument("--verbose", action="store_true", help="with --paired: print every gameweek")
     p.set_defaults(func=cmd_backtest)
 
     p = sub.add_parser("markets", help="fetch betting-market odds (Polymarket) for every match since 2024-25")

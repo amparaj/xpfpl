@@ -220,7 +220,8 @@ function Overview() {
         {" "}The settings, such as how many weeks to look ahead and how much a free transfer is worth, were tested the same
         way. They matter much less than the forecasts
         {noise !== undefined && <>: a replayed season moves by about {int(noise)} points on luck alone, more than most of
-          them are worth</>}.
+          them are worth</>}. So settings are also compared from the same squad: at every deadline both start from the same team
+        and are scored over the same few weeks, which takes most of the luck out.
       </p>
 
       <h3>What's on this site</h3>
