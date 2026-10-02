@@ -14,6 +14,8 @@ Every function takes one row per player-match with the columns FPL reports, plus
 expected goals/assists/minutes instead of actual ones is exactly how expected points are built.
 """
 
+import math
+
 import numpy as np
 import pandas as pd
 
@@ -38,11 +40,37 @@ def _col(df: pd.DataFrame, name: str) -> np.ndarray:
     return df[name].fillna(0).to_numpy(dtype="float64") if name in df else np.zeros(len(df))
 
 
+_GRID = np.arange(61)
+_LOG_FACTORIAL = np.array([math.lgamma(k + 1) for k in _GRID])
+
+
+def expected_floor(mean: np.ndarray, per: int) -> np.ndarray:
+    """E[floor(X / per)] for X ~ Poisson(mean): the expected points from a rule that pays one
+    point per `per` of something (saves, goals conceded).
+
+    Not mean / per: 1.3 expected goals conceded cost 0.42 points (-1 at the 2nd goal, the 4th...),
+    not 0.65, because a single goal conceded costs nothing. Summed over 0-60, exact to well
+    below a thousandth for any realistic mean."""
+    mean = np.clip(np.asarray(mean, dtype="float64"), 1e-12, None)
+    log_pmf = _GRID * np.log(mean[..., None]) - mean[..., None] - _LOG_FACTORIAL
+    return (np.exp(log_pmf) * (_GRID // per)).sum(axis=-1)
+
+
+def _per_point(counts: np.ndarray, per: int) -> np.ndarray:
+    """floor(count / per) for real (whole-number) stats, its Poisson expectation for predicted ones."""
+    if len(counts) and np.allclose(counts, np.round(counts)):
+        return np.floor(np.round(counts) / per)
+    return expected_floor(counts, per)
+
+
 def _conceded_penalty(conceded: np.ndarray) -> np.ndarray:
-    """Points docked for goals conceded: floor(c/2) for a real scoreline, c/2 in expectation."""
-    if len(conceded) and np.allclose(conceded, np.round(conceded)):
-        return np.floor(conceded / CONCEDED_PER_PENALTY)
-    return conceded / CONCEDED_PER_PENALTY
+    """Points docked for goals conceded: floor(c/2) for a real scoreline, its expectation for a forecast."""
+    return _per_point(conceded, CONCEDED_PER_PENALTY)
+
+
+def saves_points(saves: np.ndarray) -> np.ndarray:
+    """Points for saves: floor(s/3) for real saves, its expectation for a forecast."""
+    return _per_point(saves, SAVES_PER_POINT)
 
 
 def dc_awarded(df: pd.DataFrame) -> np.ndarray:
@@ -65,7 +93,7 @@ def points_from_stats(df: pd.DataFrame) -> np.ndarray:
     pts += _by_position(position, GOAL_POINTS) * _col(df, "goals_scored")
     pts += ASSIST_POINTS * _col(df, "assists")
     pts += _by_position(position, CLEAN_SHEET_POINTS) * _col(df, "clean_sheets")
-    pts += _col(df, "saves") / SAVES_PER_POINT * (position == 1).to_numpy()
+    pts += saves_points(_col(df, "saves")) * (position == 1).to_numpy()
     pts -= (position.isin((1, 2)).to_numpy() * started
             * _conceded_penalty(_col(df, "goals_conceded")))
     pts += _col(df, "bonus")

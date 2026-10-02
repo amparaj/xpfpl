@@ -33,12 +33,26 @@ def test_goals_and_clean_sheets_depend_on_position():
 
 def test_keeper_saves_and_goals_conceded():
     assert points(position=1, saves=3) == 2 + 1                 # a point per three saves
-    assert points(position=1, saves=2) == 2 + 2 / 3             # fractions are kept for expectations
+    assert points(position=1, saves=2) == 2                     # two saves score nothing
     assert points(position=1, goals_conceded=2) == 2 - 1
     assert points(position=2, goals_conceded=3) == 2 - 1        # floor(3/2)
     assert points(position=3, goals_conceded=4) == 2            # midfielders aren't docked
     # A substitute who didn't reach 60 minutes isn't docked either.
     assert points(position=2, played=1.0, played60=0.0, goals_conceded=4) == 1
+
+
+def test_expected_saves_and_conceded_follow_the_poisson_count():
+    import math
+
+    lam = 1.3
+    exact = sum(math.exp(-lam) * lam ** k / math.factorial(k) * (k // 2) for k in range(40))
+    assert abs(scoring.expected_floor(np.array([lam]), 2)[0] - exact) < 1e-9
+    # Closed form for the -1 per 2 goals rule: (lam - P(odd)) / 2, with P(odd) = (1 - e^-2lam) / 2.
+    assert abs(exact - (lam - (1 - math.exp(-2 * lam)) / 2) / 2) < 1e-9
+    assert exact < lam / 2 - 0.2                                  # 0.42, not 0.65
+    # A forecast (a non-whole number) is scored in expectation, a real stat exactly.
+    assert abs(points(position=2, goals_conceded=lam) - (2 - exact)) < 1e-9
+    assert abs(points(position=1, saves=3.5) - (2 + scoring.expected_floor(np.array([3.5]), 3)[0])) < 1e-9
 
 
 def test_defensive_contribution_only_counts_from_2025_26():
