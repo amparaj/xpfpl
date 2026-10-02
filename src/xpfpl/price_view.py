@@ -103,12 +103,19 @@ def render(bs: dict, team_short: dict, me=None, xp: pd.Series | None = None) -> 
     if me is not None:
         st.markdown("**Your squad**")
         squad = t[t["id"].isin(list(me.squad))].copy()
-        squad["bought"] = squad["id"].map(me.purchase) / 10
         squad["selling"] = squad["id"].map(me.squad)
-        squad["if_rise"] = [selling_price(c + 1, me.purchase.get(i, c)) - s
-                            for i, c, s in zip(squad["id"], squad["cost"], squad["selling"])]
-        squad["if_fall"] = [selling_price(c - 1, me.purchase.get(i, c)) - s
-                            for i, c, s in zip(squad["id"], squad["cost"], squad["selling"])]
+        # A team loaded by an older copy of myteam.py (a dashboard started before the update keeps
+        # it in memory) has no purchase prices: show the squad without the columns that need them.
+        purchase = getattr(me, "purchase", None) or {}
+        if purchase:
+            squad["bought"] = squad["id"].map(purchase) / 10
+            squad["if_rise"] = [selling_price(c + 1, purchase.get(i, c)) - s
+                                for i, c, s in zip(squad["id"], squad["cost"], squad["selling"])]
+            squad["if_fall"] = [selling_price(c - 1, purchase.get(i, c)) - s
+                                for i, c, s in zip(squad["id"], squad["cost"], squad["selling"])]
+        else:
+            st.caption("Restart the dashboard (`xpfpl app`) to see what you paid and what a rise or fall would do "
+                       "to your selling prices.")
         squad = squad.sort_values("pct", ascending=False)
         shown = _shown(squad, ["name", "Team", "Pos", "price", "bought", "selling", "if_rise", "if_fall", "pct", "rate",
                                "next_update", "after_that", "net_event", "selected", "gw_change"]).rename(
