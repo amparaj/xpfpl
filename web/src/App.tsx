@@ -1,5 +1,5 @@
-import { Component, useEffect, useState, type ReactNode } from "react";
-import { Loading } from "./components/ui";
+import { Component, useEffect, useRef, useState, type ReactNode } from "react";
+import { Loading, usePhone } from "./components/ui";
 import { when } from "./format";
 import About from "./pages/About";
 import Accuracy from "./pages/Accuracy";
@@ -39,16 +39,36 @@ export default function App() {
     document.title = `${page.label} · xP-FPL: Expected Points for Fantasy Premier League`;
   }, [page]);
 
+  // On a phone the header scrolls away but the page tabs stay pinned: the header sticks at minus
+  // the height above the tabs. On a wide screen the whole header stays.
+  const phone = usePhone();
+  const header = useRef<HTMLElement>(null);
+  const nav = useRef<HTMLElement>(null);
+  const [offset, setOffset] = useState(0);
+  useEffect(() => {
+    const h = header.current, n = nav.current;
+    if (!h || !n || !phone) { setOffset(0); return; }
+    const measure = () => setOffset(n.offsetTop);
+    const observer = new ResizeObserver(measure);
+    observer.observe(h);
+    measure();
+    return () => observer.disconnect();
+  }, [phone, site]);
+  // Keep the current page's tab in view in the scrolling tab row.
+  useEffect(() => {
+    nav.current?.querySelector<HTMLElement>("a.on")?.scrollIntoView({ block: "nearest", inline: "center" });
+  }, [page]);
+
   return (
     <>
-      <header className="top">
+      <header className="top" ref={header} style={offset ? { top: -offset } : undefined}>
         <div className="top-inner">
           <div className="brand">
             <h1>xP-FPL<span className="brand-sub">: Expected Points for Fantasy Premier League</span></h1>
             <span className="byline">Created by Ayush Parajuli</span>
           </div>
           {site && <Status site={site} />}
-          <nav aria-label="Pages">
+          <nav aria-label="Pages" ref={nav}>
             {PAGES.map((p) => (
               <a key={p.id} href={`#${p.id}`} className={p === page ? "on" : undefined}
                  aria-current={p === page ? "page" : undefined}>

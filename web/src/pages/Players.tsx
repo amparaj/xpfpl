@@ -2,16 +2,25 @@ import * as Plot from "@observablehq/plot";
 import { useCallback, useMemo, useState } from "react";
 import { color } from "../colors";
 import { Profile } from "../components/Profile";
-import { Chart, barPadding, Club, Legend, Loading, Note, Segmented, Table, plotDefaults, type Column } from "../components/ui";
-import type { Player } from "../data";
-import { POSITIONS, dec, money, pts, signed } from "../format";
+import { Chart, barPadding, Club, Legend, Loading, Note, Segmented, Sheet, Table, plotDefaults, usePhone, type Column } from "../components/ui";
+import { WhyProjection } from "../components/Why";
+import { rows, type Forecast, type NextGw, type Player } from "../data";
+import { POSITIONS, STATUS, dec, money, pts, signed } from "../format";
 import { history, useAllGameweeks, type PlayerGw } from "../season";
-import { useSite } from "../site";
+import { useData, useSite } from "../site";
 
-const STATUS: Record<string, string> = { d: "Doubtful", i: "Injured", s: "Suspended", u: "Unavailable", n: "Not in squad" };
+/** The forecast saved for the next gameweek, his row of it: for "Why this projection?". */
+function useForecastRow(id: number) {
+  const next = useData<NextGw>("next.json");
+  return useMemo(() => {
+    const row = rows<Forecast>(next?.players).find((f) => f.element === id);
+    return next && row ? { row, gw: next.gw, gameweeks: next.gameweeks } : null;
+  }, [next, id]);
+}
 
-function PlayerDetail({ player }: { player: Player }) {
+function PlayerDetail({ player, inSheet = false }: { player: Player; inSheet?: boolean }) {
   const site = useSite();
+  const forecast = useForecastRow(player.id);
   const all = useAllGameweeks(site.meta.played);
   const games = useMemo(() => history(all, player.id), [all, player.id]);
   const xpTotal = games.reduce((s, g) => s + (g.xp ?? 0), 0);
@@ -35,15 +44,24 @@ function PlayerDetail({ player }: { player: Player }) {
   }), [games]);
 
   const status = STATUS[player.status];
+  const why = (forecast || player.forecast !== null) && site.meta.next_gw && (
+    <details className="why-details" open={inSheet}>
+      <summary>Why this projection? <span className="muted">GW{forecast?.gw ?? site.meta.next_gw}: {pts(forecast ? forecast.row[`xp_${forecast.gw}`] : player.forecast)} xP</span></summary>
+      <WhyProjection player={player} forecast={forecast?.row} gw={forecast?.gw ?? site.meta.next_gw} gameweeks={forecast?.gameweeks} />
+    </details>
+  );
   return (
-    <div className="card">
-      <div className="toolbar" style={{ justifyContent: "space-between" }}>
-        <div>
-          <strong style={{ fontSize: 17 }}>{player.first_name} {player.second_name}</strong>{" "}
-          <Club id={player.team} /> <span className="muted">{POSITIONS[player.element_type]} · {money(player.now_cost)}</span>
+    <div className={inSheet ? undefined : "card"}>
+      {!inSheet && (
+        <div className="toolbar" style={{ justifyContent: "space-between" }}>
+          <div>
+            <strong style={{ fontSize: 17 }}>{player.first_name} {player.second_name}</strong>{" "}
+            <Club id={player.team} /> <span className="muted">{POSITIONS[player.element_type]} · {money(player.now_cost)}</span>
+          </div>
+          <a href="#players" className="link">Close</a>
         </div>
-        <a href="#players" className="link">Close</a>
-      </div>
+      )}
+      {inSheet && why}
       {(status || player.news) && (
         <p className="note" style={{ marginTop: 0 }}>
           <span className="tag warn">{status ?? "News"}</span> {player.news}
@@ -60,6 +78,7 @@ function PlayerDetail({ player }: { player: Player }) {
         </>
       )}
       <Profile player={player} />
+      {!inSheet && why}
     </div>
   );
 }
@@ -72,6 +91,7 @@ export default function Players() {
   const [playedOnly, setPlayedOnly] = useState(true);
   const selectedId = Number(window.location.hash.split("/")[1]) || null;
   const selected = selectedId ? site.player.get(selectedId) : undefined;
+  const phone = usePhone();
 
   const list = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -100,7 +120,7 @@ export default function Players() {
     { key: "xa", label: "xA", numeric: true, value: (p) => p.expected_assists, render: (p) => dec(p.expected_assists) },
     { key: "dc", label: "DC", numeric: true, value: (p) => p.defensive_contribution, title: "Defensive contribution" },
     { key: "form", label: "Form", numeric: true, value: (p) => p.form, render: (p) => dec(p.form, 1), title: "FPL's form: points per match over the last 30 days" },
-    { key: "forecast", label: next ? `xP GW${next}` : "xP next", numeric: true, value: (p) => p.forecast,
+    { key: "forecast", label: next ? `xP GW${next}` : "xP next", short: "Next xP", numeric: true, value: (p) => p.forecast,
       render: (p) => pts(p.forecast), title: "This model's forecast for the next gameweek, saved before its deadline" },
   ];
 
@@ -109,7 +129,13 @@ export default function Players() {
       <h2>Players</h2>
       <p className="lede">Every player's season so far. Click a player to see their points against xP week by week, where they
         play and shoot from, and the players with the most similar profile.</p>
-      {selected && <PlayerDetail player={selected} />}
+      {selected && !phone && <PlayerDetail player={selected} />}
+      {phone && (
+        <Sheet open={!!selected} onClose={() => { window.location.hash = "players"; }}
+               title={selected && <>{selected.web_name} <Club id={selected.team} /> <span className="muted">{POSITIONS[selected.element_type]} · {money(selected.now_cost)}</span></>}>
+          {selected && <PlayerDetail player={selected} inSheet />}
+        </Sheet>
+      )}
       <div className="toolbar" style={{ marginTop: 14 }}>
         <Segmented label="Position" value={pos} onChange={setPos}
                    options={[{ value: 0, label: "All" }, ...Object.entries(POSITIONS).map(([k, v]) => ({ value: Number(k), label: v }))]} />
@@ -122,7 +148,8 @@ export default function Players() {
         <span className="muted">{list.length} players</span>
       </div>
       <Table columns={columns} data={list} sort="points" rowKey={(p) => p.id} limit={60} selected={selectedId}
-             onRow={(p) => { window.location.hash = `players/${p.id}`; window.scrollTo({ top: 0, behavior: "smooth" }); }} />
+             cardSub={["team", "pos"]} cardStats={["points", "forecast"]}
+             onRow={(p) => { window.location.hash = `players/${p.id}`; if (!phone) window.scrollTo({ top: 0, behavior: "smooth" }); }} />
       <Note>Prices, ownership, form and news are as FPL showed them when the site was last updated. A red % tag is FPL's chance of playing next round.</Note>
     </>
   );

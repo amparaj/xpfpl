@@ -776,6 +776,43 @@ def render_simulation() -> None:
                "while a club always fields eleven.")
 
 
+def _flow_diagram() -> str:
+    """The system from data to team as Graphviz DOT: the same boxes as the website's flow diagram
+    (web/src/components/Flow.tsx). Filled boxes with dark text read the same in light and dark mode."""
+    members = (["Neural network\n(PyTorch MLP)", "Gradient boosting\n(LightGBM)", "Minutes model\n(PyTorch)"]
+               if config.MODEL == "ensemble" else [config.MODEL])
+    stages = [
+        ("Data", "#d6efe5", ["FPL API\n(this season)", "Past seasons\n(since 2016-17)", "Betting odds\n(Polymarket)",
+                             "Cups and Europe"]),
+        ("Features", "#f4f3ef", ["Minutes and role", "Underlying numbers\n(form, xG/xA per 90)",
+                                 "Fixture\n(club ratings, market goals)", "Crowd\n(transfers, ownership)"]),
+        ("Models", "#dbe8f8", members),
+        ("Adjust", "#f4f3ef", ["Injury flags", "Midweek factor", "Ruled out\n(scorer odds <= 6%)"]),
+        ("xP", "#2a78d6", [f"xP per player\nnext {config.HORIZON} GWs"]),
+        ("Use", "#f4f3ef", ["Monte Carlo\n(ranges, captain and chip odds)", "Optimiser\n(squad, transfers, XI, captain, chips)"]),
+        ("Out", "#fbe1d6", ["Recommendation\nand This Model's Team", "Scorecard\n(forecasts scored after the GW)"]),
+    ]
+    dot_text = lambda text: text.replace("\n", "\\n")   # noqa: E731  (a line break inside a DOT label)
+    lines = ["digraph {", "rankdir=TB; nodesep=0.25; ranksep=0.35; bgcolor=transparent;",
+             'node [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=11, color="#c3c2b7", '
+             'fontcolor="#0b0b0b"];', 'edge [color="#898781", arrowsize=0.6];']
+    for i, (name, fill, nodes) in enumerate(stages):
+        font = "#ffffff" if name == "xP" else "#0b0b0b"
+        ids = [f"s{i}n{j}" for j in range(len(nodes))]
+        lines.append("{ rank=same; " + " ".join(
+            f'{n} [label="{dot_text(label)}", fillcolor="{fill}", fontcolor="{font}"];' for n, label in zip(ids, nodes)) + " }")
+        if i:
+            prev = [f"s{i - 1}n{j}" for j in range(len(stages[i - 1][2]))]
+            # Every box of a stage joins at a point, which fans out to the next stage: fewer lines than all-to-all.
+            lines.append(f"j{i} [shape=point, width=0.06, color=\"#898781\"];")
+            lines.extend(f"{p} -> j{i} [arrowhead=none];" for p in prev)
+            lines.extend(f"j{i} -> {n};" for n in ids)
+    lines.append('s6n1 -> s2n0 [style=dashed, constraint=false, label=" picks the model", fontname="Helvetica", '
+                 'fontsize=9, fontcolor="#898781"];')
+    lines.append("}")
+    return "\n".join(lines)
+
+
 def render() -> None:
     st.header("How xP-FPL works")
     st.markdown(
@@ -799,6 +836,8 @@ def render() -> None:
     for slot, (title, body) in zip(c, steps):
         with slot.container(border=True):
             st.markdown(f"**{title}**  \n{body}")
+    with st.expander("How the parts fit together (the website's About page has the same diagram)"):
+        st.graphviz_chart(_flow_diagram(), width="stretch")
 
     st.subheader("Weekly routine")
     st.markdown(

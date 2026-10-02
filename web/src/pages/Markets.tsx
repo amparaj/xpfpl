@@ -287,7 +287,7 @@ export default function MarketsPage() {
             <WinOdds matches={matches} />
           </div>
           <h3>Match by match</h3>
-          <Table columns={matchColumns} data={matches} rowKey={(m) => m.slug} />
+          <Table columns={matchColumns} data={matches} rowKey={(m) => m.slug} cardSub={["ko"]} cardStats={["home", "draw", "away"]} />
           <Note>
             The market's goals are the expected goals for each side that best fit all of a match's goal markets at once
             (result, totals, team totals, both teams to score). "This model" and "Ours" come from this model's own club
@@ -342,7 +342,7 @@ function LiveScorers({ scorers }: { scorers: LiveScorer[] }) {
   ];
   return (
     <>
-      <Table columns={columns} data={list} sort="p" rowKey={(s) => `${s.slug}-${s.player}`} limit={30} />
+      <Table columns={columns} data={list} sort="p" rowKey={(s) => `${s.slug}-${s.player}`} limit={30} cardSub={["club", "out"]} cardStats={["p", "xp"]} />
       <Note>
         Odds of {pct(site.meta.out_threshold)} or less almost always mean the player has been ruled out: in 2025-26, 3 of the 62 players
         priced that low played. This model cuts that week's xP to 10% for them.
@@ -368,7 +368,7 @@ function PlayedScorers({ scorers }: { scorers: Row[] }) {
   ];
   return (
     <>
-      <Table columns={columns} data={scorers} sort="p" rowKey={(s) => `${s.slug}-${s.player}`} limit={30} />
+      <Table columns={columns} data={scorers} sort="p" rowKey={(s) => `${s.slug}-${s.player}`} limit={30} cardSub={["club", "goals"]} cardStats={["p", "move"]} />
       <Note>Scorer markets open at about 50% and drift to a real price once traded, so an untraded one shows no odds.</Note>
     </>
   );
@@ -378,10 +378,10 @@ function PlayedScorers({ scorers }: { scorers: Row[] }) {
 interface AccuracyRow { season: string; matches: number; sources: Record<string, Row> }
 
 /** markets.accuracy()'s sources, in the order shown, and their column labels. */
-const ACCURACY_SOURCES: { key: string; label: string; title: string }[] = [
-  { key: "Polymarket", label: "Polymarket", title: "Polymarket at each FPL deadline (from 2024-25)" },
-  { key: "Bookmakers", label: "Bookmakers", title: "The average bookmaker price shortly before each round, from Football-Data.co.uk" },
-  { key: "Our ratings", label: "This model's ratings", title: "This model's club-strength fit as it stood before each gameweek" },
+const ACCURACY_SOURCES: { key: string; label: string; short: string; title: string }[] = [
+  { key: "Polymarket", label: "Polymarket", short: "Polymarket", title: "Polymarket at each FPL deadline (from 2024-25)" },
+  { key: "Bookmakers", label: "Bookmakers", short: "Books", title: "The average bookmaker price shortly before each round, from Football-Data.co.uk" },
+  { key: "Our ratings", label: "This model's ratings", short: "Ratings", title: "This model's club-strength fit as it stood before each gameweek" },
 ];
 
 const ACCURACY_METRICS: { key: string; label: string; title: string }[] = [
@@ -415,13 +415,14 @@ function MarketAccuracy({ data }: { data: Row[] }) {
     { key: "season", label: "Season", value: (r) => r.season },
     { key: "matches", label: "Matches", numeric: true, value: (r) => r.matches },
     ...ACCURACY_METRICS.flatMap((m): Column<AccuracyRow>[] => sources.map((s) => ({
-      key: `${m.key}_${s.key}`, label: s.label, group: m.label, numeric: true, title: `${m.title}. ${s.title}`,
+      key: `${m.key}_${s.key}`, label: s.label, short: s.short, group: m.label, numeric: true, title: `${m.title}. ${s.title}`,
       value: (r: AccuracyRow) => r.sources[s.key]?.[m.key], render: (r: AccuracyRow) => cell(m.key, r, s.key),
     }))),
   ];
   return (
     <>
-      <Table columns={columns} data={seasons} rowKey={(r) => r.season} />
+      <Table columns={columns} data={seasons} rowKey={(r) => r.season} cardSub={["matches"]}
+             cardStats={sources.map((s) => `result_log_loss_${s.key}`)} />
       <Note>Lower is better in every column, and the best of each group is in bold. "Polymarket" is Polymarket at each FPL deadline
         (from 2024-25); "Bookmakers" is the average bookmaker price shortly before each round (Friday afternoon for a weekend,
         Tuesday for midweek), from <a href="https://football-data.co.uk/">Football-Data.co.uk</a>; "This model's ratings" is this

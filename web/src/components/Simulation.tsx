@@ -66,7 +66,7 @@ export function CaptainOddsTable({ sim, captain }: { sim: Simulation; captain: n
     { key: "best", label: "Best pick", numeric: true, value: (c) => c.p_best, render: (c) => <strong>{pct(c.p_best)}</strong>,
       title: "How often he outscores every other option in the same simulated week" },
   ];
-  return <Table columns={columns} data={sim.captains} sort="mean" rowKey={(c) => c.element} />;
+  return <Table columns={columns} data={sim.captains} sort="mean" rowKey={(c) => c.element} cardSub={["range"]} cardStats={["mean", "best"]} />;
 }
 
 const CHIP_LABELS: Record<string, string> = { "3xc": "Triple Captain", bboost: "Bench Boost" };

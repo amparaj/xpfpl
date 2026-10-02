@@ -63,7 +63,8 @@ function LiveRecord({ scorecard }: { scorecard: any }) {
     { key: "spearman", label: "Rank corr.", numeric: true, value: (r) => r.spearman, render: (r) => dec(r.spearman), title: "How well it ordered the players (1 = perfectly)" },
     { key: "bias", label: "Bias", numeric: true, value: (r) => r.bias, render: (r) => signed(r.bias), title: "Average of xP minus points: positive means too high" },
   ];
-  return <Table columns={columns} data={gws} sort="gw" rowKey={(r) => `${r.gw}-${r.model}`} />;
+  return <Table columns={columns} data={gws} sort="gw" rowKey={(r) => `${r.gw}-${r.model}`} cardTitle={(r) => `GW${r.gw} · ${r.model}`}
+                cardStats={["mae", "spearman", "bias"]} />;
 }
 
 function Comparison({ comparison }: { comparison: any }) {
@@ -82,7 +83,7 @@ function Comparison({ comparison }: { comparison: any }) {
   return (
     <>
       <h3>Every model on {comparison.season}</h3>
-      <Table columns={columns} data={models} sort="rmse" desc={false} rowKey={(r) => r.model} />
+      <Table columns={columns} data={models} sort="rmse" desc={false} rowKey={(r) => r.model} cardStats={["rmse", "mae", "spearman"]} />
       <Note>
         {comparison.rows?.toLocaleString()} player-matches where the player got minutes.
         {ceiling && <> Perfect-model ceiling: RMSE {dec(ceiling.rmse_median, 2)} ({dec(ceiling.rmse_p5, 2)}–{dec(ceiling.rmse_p95, 2)}), R² {dec(ceiling.r2_median, 2)}.</>}
@@ -137,7 +138,7 @@ RMSE ${pts(r.rmse)} · MAE ${pts(r.mae)}` })),
   );
 }
 
-function Calibration({ validation }: { validation: any }) {
+export function Calibration({ validation }: { validation: any }) {
   const data: Row[] = validation.calibration ?? [];
   const max = Math.max(1, ...data.map((d) => Math.max(d.predicted, d.actual + 2 * d.se)));
   const make = useCallback((width: number) => Plot.plot({

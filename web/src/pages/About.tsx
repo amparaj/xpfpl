@@ -1,8 +1,11 @@
+import { Flow } from "../components/Flow";
 import { PAPER } from "../components/Simulation";
+import { Segmented } from "../components/ui";
 import type { Accuracy } from "../data";
 import { dec, int, pct } from "../format";
 import { ROTATION } from "../midweek";
-import { useData, useSite } from "../site";
+import { useData, useHash, useSite } from "../site";
+import Report from "./Report";
 
 // The landing page: what the project is and how it works, in plain language. Every number comes
 // from the exported reports, so it stays current each time the site is published.
@@ -14,7 +17,22 @@ const STEPS = [
   { title: "Check", text: "After every gameweek, the forecasts are scored against what really happened." },
 ];
 
+/** About: the plain-language overview (#about) or the technical report (#about/report). */
 export default function About() {
+  const view = useHash().split("/")[1] === "report" ? "report" : "overview";
+  return (
+    <>
+      <h2>About</h2>
+      <div className="about-switch">
+        <Segmented label="About" value={view} onChange={(v) => { window.location.hash = v === "report" ? "about/report" : "about"; }}
+                   options={[{ value: "overview", label: "Overview" }, { value: "report", label: "Technical report" }]} />
+      </div>
+      {view === "report" ? <Report /> : <Overview />}
+    </>
+  );
+}
+
+function Overview() {
   const site = useSite();
   const report = useData<Accuracy>("accuracy.json");
   const comparison = report?.comparison;
@@ -42,7 +60,6 @@ export default function About() {
 
   return (
     <article className="about">
-      <h2>About</h2>
       <p className="lede">
         xP-FPL (Expected Points for FPL) is a personal project that predicts how many points every Fantasy Premier
         League player is likely to score in the coming gameweeks. This machine-learning model, trained on every Premier
@@ -68,6 +85,13 @@ export default function About() {
           </div>
         ))}
       </div>
+
+      <h3>How it fits together</h3>
+      <p>
+        Data comes in at the top and a team comes out at the bottom. Tap a box for the details, or read the{" "}
+        <a href="#about/report">technical report</a> for how each part is built and tested, with charts.
+      </p>
+      <Flow horizon={report?.tuning?.chosen?.horizon ?? 3} />
 
       <h3>1. The data</h3>
       <p>

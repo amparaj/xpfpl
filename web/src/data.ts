@@ -139,6 +139,15 @@ export interface MyTeam {
   private: MyTeamPrivate | null;
   sealed: Sealed | null;
 }
+/** One player's row of the saved forecast: xP for each gameweek of the horizon (`xp_<gw>`), and
+ * for the next gameweek his minutes, midweek factor and simulated range where the model gives them. */
+export interface Forecast {
+  element: number; xp_total: number; p_play?: number | null; xmins?: number | null;
+  rotation?: string | null; rotation_factor?: number | null;
+  /** The next gameweek's Monte Carlo: 10th/50th/90th percentile of his simulated points, chance of 10+ and of 2 or fewer. */
+  pts_p10?: number | null; pts_p50?: number | null; pts_p90?: number | null; p_haul?: number | null; p_blank?: number | null;
+  [xp: `xp_${number}`]: number;
+}
 /** The forecast saved for the next gameweek: xP per player for each gameweek of its horizon. */
 export interface NextGw { gw: number; deadline: string; model: string; gameweeks: number[]; players: Columns }
 export interface Markets {

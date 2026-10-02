@@ -293,7 +293,7 @@ export default function MyTeamPage() {
 
       {later && <>
         <h3>Week by week</h3>
-        <Table columns={weekColumns} data={data.weeks} rowKey={(w) => w.gw} />
+        <Table columns={weekColumns} data={data.weeks} rowKey={(w) => w.gw} cardTitle={(w) => `GW${w.gw}`} cardStats={["xp", "range"]} />
       </>}
 
       {team && team.captains.length > 0 && data.sims && first.points && <>
@@ -316,7 +316,8 @@ export default function MyTeamPage() {
 
       {team && <>
         <h3>The squad</h3>
-        <Table columns={squadColumns} data={squad} sort="role" desc={false} rowKey={(r) => r.element} />
+        <Table columns={squadColumns} data={squad} sort="role" desc={false} rowKey={(r) => r.element}
+               cardSub={["club", "pos", "role"]} cardStats={[`xp${data.gw}`, "total"]} />
       </>}
 
       <Note>
