@@ -2,7 +2,7 @@ import * as Plot from "@observablehq/plot";
 import { useCallback, useMemo, useState } from "react";
 import { color } from "../colors";
 import { band } from "../components/Simulation";
-import { WhyProjection } from "../components/Why";
+import { ConfidenceBadge, WhyProjection } from "../components/Why";
 import { Chart, Club, Legend, Loading, MidweekBadge, Note, Opponent, Segmented, Table, Tiles, plotDefaults, type Column, type TileProps } from "../components/ui";
 import { rows, type Forecast, type ModelTeam, type NextGw, type Player } from "../data";
 import { POSITIONS, dec, int, money, pct, pts, when } from "../format";
@@ -113,6 +113,7 @@ export default function NextGameweek() {
   const hasPlay = players.some((r) => r.p_play != null);
   const hasRotation = players.some((r) => r.rotation != null);
   const hasRanges = players.some((r) => r.pts_p90 != null);
+  const hasConfidence = players.some((r) => r.confidence != null);
   const midweekAhead = horizon.some((g) => site.midweek.some((m) => m.gw === g));
 
   const playerColumns: Column<Row>[] = [
@@ -131,6 +132,9 @@ export default function NextGameweek() {
                          title: "What his minutes in the midweek cup or European match did to his GW xP" } as Column<Row>] : []),
     ...(hasPlay ? [{ key: "play", label: "Plays", numeric: true, value: (r: Row) => r.p_play, render: (r: Row) => pct(r.p_play),
                      title: "This model's chance he plays in the next gameweek" } as Column<Row>] : []),
+    ...(hasConfidence ? [{ key: "conf", label: "Confidence", value: (r: Row) => ({ High: 3, Medium: 2, Low: 1 })[r.confidence ?? "Low"] ?? null,
+                           render: (r: Row) => <ConfidenceBadge level={r.confidence} sd={r.xp_sd} />,
+                           title: "How far this model's three parts agree on his GW xP (hover a badge for more)" } as Column<Row>] : []),
     ...horizon.map((g): Column<Row> => ({ key: `xp${g}`, label: `GW${g}`, short: `GW${g} xP`, group: "xP", numeric: true,
                                           value: (r) => r[`xp_${g}`], render: (r) => pts(r[`xp_${g}`]) })),
     { key: "total", label: "Total", short: "Total xP", group: "xP", numeric: true, value: (r) => r.xp_total, render: (r) => <strong>{pts(r.xp_total)}</strong>,
@@ -206,10 +210,12 @@ export default function NextGameweek() {
                    options={[{ value: 0, label: "All" }, ...[1, 2, 3, 4].map((p) => ({ value: p, label: POSITIONS[p] }))]} />
       </div>
       <Table columns={playerColumns} data={shown} sort="total" rowKey={(r) => r.element}
-             cardSub={["club", "pos", "opp"]} cardStats={[`xp${gw}`, "total"]}
+             cardSub={["club", "pos", "opp", "conf"]} cardStats={[`xp${gw}`, "total"]}
              detail={(r) => <WhyProjection player={r.player} forecast={r} gw={gw} gameweeks={horizon} />} />
       <Note>
-        Click a player for why this model expects what it does. The 30 highest expected points (xP) over GW{horizon[0]}–{horizon[horizon.length - 1]}, already cut for injury flags.
+        Click a player for why this model expects what it does.
+        {hasConfidence && <> Confidence is how far this model's three parts agree on him: where they disagree (Low), forecasts have
+          missed by more than usual.</>} The 30 highest expected points (xP) over GW{horizon[0]}–{horizon[horizon.length - 1]}, already cut for injury flags.
         {hasRanges && <> Simulated: the middle 80% of his GW{gw} points, and his chances of 10+ and of 2 or fewer, from playing the
           gameweek thousands of times.</>}
         {hasRotation && <> Midweek: a player whose club played a cup or European match this week has his GW{gw} xP

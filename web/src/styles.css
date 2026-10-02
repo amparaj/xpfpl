@@ -543,3 +543,24 @@ pre.code {
 }
 .sheet-title .muted { font-weight: 400; font-size: 13.5px; }
 .sheet-body > div > details.why-details:first-child { border-top: 0; margin-top: 6px; padding-top: 0; }
+
+/* "Why this projection?": badges, tiles and the outcome bands (FPL Prism's layout, this site's tokens). */
+.badge { display: inline-block; font-size: 12px; font-weight: 600; padding: 2px 9px; border-radius: 999px; white-space: nowrap; background: var(--chip); color: var(--ink-2); }
+.badge.conf-high { background: color-mix(in srgb, var(--good) 14%, transparent); color: var(--good); }
+.badge.conf-low { background: color-mix(in srgb, var(--bad) 14%, transparent); color: var(--bad); }
+.why-badges { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; font-size: 13px; }
+.why-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.why-tiles-xp { grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); grid-auto-flow: column; }
+.why-tile { background: var(--page); border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; min-width: 0; }
+.why-tiles-xp .why-tile { background: color-mix(in srgb, var(--s1) 8%, var(--surface)); }
+.why-tile-label { font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.why-tile-value { font-size: 21px; font-weight: 700; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+.why-tiles-xp .why-tile-value { font-size: 24px; }
+.why-tile-note { font-size: 11.5px; color: var(--ink-2); line-height: 1.3; }
+.bands-bar { display: flex; gap: 2px; height: 12px; border-radius: 4px; overflow: hidden; }
+.bands-bar > span { min-width: 2px; }
+.bands-labels { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px 8px; margin-top: 6px; }
+@media (max-width: 640px) { .why-tiles:not(.why-tiles-xp), .bands-labels { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.bands-labels > div { display: grid; grid-template-columns: auto 1fr; column-gap: 6px; align-items: center; }
+.bands-labels small { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.bands-labels b { grid-column: 2; font-size: 16px; font-variant-numeric: tabular-nums; }

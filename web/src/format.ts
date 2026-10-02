@@ -28,3 +28,8 @@ export const day = (iso: string | null | undefined) =>
   iso ? new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "–";
 
 export const isMissing = missing;
+
+/** Risk from the chance of 2 points or fewer in the gameweek: how often the pick lets you down.
+ * Among players on 3+ xP about one in ten is Low (45% or less), the rest split Medium / High at 60%. */
+export const risk = (pBlank: number | null | undefined): "Low" | "Medium" | "High" | null =>
+  missing(pBlank) ? null : pBlank <= 0.45 ? "Low" : pBlank <= 0.6 ? "Medium" : "High";

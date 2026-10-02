@@ -370,6 +370,14 @@ export default function Report() {
           )}
         </div>
         {v && <Calibration validation={v} />}
+        <p>
+          <strong>Confidence.</strong> Each player's forecast carries a High, Medium or Low confidence label: how far this model's three
+          parts (the neural network, the gradient boosting and the minutes model) disagree on him, as their spread over his xP. On the
+          six seasons above, among players on 2+ xP, the forecasts where they disagreed most (the Low 15%) missed by about 1.2 times the
+          usual squared error for the same xP, in five of the six seasons; where they agreed (High, about half) a little less than usual.
+          The cut-offs were fixed on 2020-21 to 2022-23 and held on the three later seasons. The chance of playing, the player's history
+          and retraining from a different random start were weaker signals. Risk is separate: how often a pick scores 2 or fewer.
+        </p>
         {r?.calibration && <p className="note">Pooled over the walk-forward seasons, points ≈ {dec(r.calibration.intercept, 2)} + {dec(r.calibration.slope, 2)} × xP: an
           xP of 6 means about 6. Recalibrating on earlier seasons gained nothing.</p>}
       </Section>

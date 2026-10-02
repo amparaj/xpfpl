@@ -99,3 +99,12 @@ def test_compare_counts_the_same_weeks():
                                      vice_captains={6: p}, total_hits=0)
     out = simulate.compare(d, plan(1), plan(2), [6], {1: 3, 2: 3})
     assert out["p_better"] == 1 / 3 and out["p_tie"] == 1 / 3
+
+
+def test_summary_bands_add_up_and_the_horizon_is_summed():
+    elements = np.array([1])
+    # Two gameweeks, four simulations each: 0 (didn't play), 4, 7, 12 points; then 2 a week.
+    pts = np.array([[[DNP], [4], [7], [12]], [[2], [2], [2], [2]]], dtype=np.int8)
+    s = simulate.summary(Draws([6, 7], elements, pts), 6).loc[1]
+    assert (s.p_blank, s.p_3_5, s.p_6_9, s.p_haul) == (0.25, 0.25, 0.25, 0.25)
+    assert (s.total_p10, s.total_p90) == (2, 9)        # DNP counts as 0; percentiles take the lower value

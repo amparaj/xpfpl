@@ -250,5 +250,7 @@ def season_record(season: str, rows: pd.DataFrame, bs: dict, xp: dict[int, pd.Se
     nxt = {k: v for k, v in upcoming[0].items() if k not in ("next", "season")} if upcoming else None
     if nxt:
         nxt["forecast"], nxt["forecast_source"] = team_forecast(nxt)
-    return {"model": next(iter(saved.values()))["model"] if saved else config.MODEL,
+    # The model making the decisions now: the latest saved decision's (the replayed weeks before the
+    # live record can be another model's, e.g. mlp; the page names them separately).
+    return {"model": saved[max(saved)]["model"] if saved else config.MODEL,
             "gameweeks": weeks, "next": nxt}

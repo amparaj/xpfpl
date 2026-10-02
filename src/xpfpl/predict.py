@@ -1,5 +1,6 @@
 """Expected points for every current player over the next few gameweeks."""
 
+import numpy as np
 import pandas as pd
 
 from xpfpl import config, models, prices
@@ -25,7 +26,9 @@ def predict_upcoming(horizon: int = config.HORIZON, model: str = config.MODEL,
 
     Also carries `price_delta`, the expected price change per gameweek; for the component
     model, one column per scoring component, so the dashboard can show where an xP comes from;
-    and for a model with a minutes head (xmins, ensemble), `xmins` and `p_play` for the next GW.
+    and for a model with a minutes head (xmins, ensemble), `xmins`, `p_play` and `p_full` (60+
+    minutes) for the next GW; for the ensemble, how far its members disagree on the next GW
+    (`xp_sd`) and the `confidence` that gives (config.CONFIDENCE_CUTS).
     With config.SIM_RUNS > 0, the next GW's simulated range (simulate.py): `pts_p10`/`pts_p50`/
     `pts_p90` and the chances of 10+ (`p_haul`) and of 2 or fewer (`p_blank`); every simulation
     for every week of the horizon goes to data/predictions/<season>/gwNN_<model>_sims.npz.
@@ -84,6 +87,7 @@ def predict_upcoming(horizon: int = config.HORIZON, model: str = config.MODEL,
     out["price_delta"] = prices.for_upcoming(frame, players).reindex(out.index).fillna(0.0)
     out = out.join(_components(predictor, frame, next_gw))
     out = out.join(_minutes(predictor, frame, next_gw))
+    out = out.join(_confidence(predictor, frame, next_gw))
     out = out.join(_scorer_odds(scorers, players))
     out = out.join(_rotation(frame, next_gw, gameweeks))
     out = out.join(ranges)
@@ -168,9 +172,36 @@ def _minutes(predictor, frame: pd.DataFrame, gw: int) -> pd.DataFrame:
     avail = availability(rows["status"], rows["chance_of_playing_next_round"], rows["gw"] * 0)
     parts = pd.DataFrame({"element": rows["element"].to_numpy(),
                           "xmins": (e["xmins"] * avail).to_numpy(),
-                          "p_none": (1 - (1 - e["p_none"]) * avail).to_numpy()})
+                          "p_none": (1 - (1 - e["p_none"]) * avail).to_numpy(),
+                          "p_short": (1 - e["p_full"] * avail).to_numpy()})
     g = parts.groupby("element")
-    return pd.DataFrame({"xmins": g["xmins"].sum(), "p_play": 1 - g["p_none"].prod()})
+    return pd.DataFrame({"xmins": g["xmins"].sum(), "p_play": 1 - g["p_none"].prod(),
+                         "p_full": 1 - g["p_short"].prod()})
+
+
+def _confidence(predictor, frame: pd.DataFrame, gw: int) -> pd.DataFrame:
+    """For an ensemble: how far its members' next-gameweek forecasts spread (`xp_sd`, before
+    injury flags, a double gameweek's matches summed) and the confidence that gives.
+
+    Tested on six held-out seasons (config.CONFIDENCE_CUTS): where the members disagree most,
+    the forecast misses by more than usual for the same xP, in five of the six."""
+    members = getattr(predictor, "members", None)
+    if not members or len(members) < 2:
+        return pd.DataFrame(index=pd.Index([], name="element"))
+    rows = frame[frame["gw"] == gw]
+    preds = pd.DataFrame({name: np.clip(m.predict(rows), 0, None) for name, m in members.items()}, index=rows.index)
+    per = preds.groupby(rows["element"].to_numpy()).sum()
+    return confidence_table(per)
+
+
+def confidence_table(per_member: pd.DataFrame) -> pd.DataFrame:
+    """`xp_sd` (members' standard deviation) and `confidence` (High / Medium / Low) from one
+    column of next-gameweek xP per ensemble member, indexed by element."""
+    sd = per_member.std(axis=1)
+    rel = sd / per_member.mean(axis=1).clip(lower=1.0)
+    high, low = config.CONFIDENCE_CUTS
+    label = np.where(rel <= high, "High", np.where(rel <= low, "Medium", "Low"))
+    return pd.DataFrame({"xp_sd": sd, "confidence": label}, index=pd.Index(per_member.index, name="element"))
 
 
 def _components(predictor, frame: pd.DataFrame, gw: int) -> pd.DataFrame:

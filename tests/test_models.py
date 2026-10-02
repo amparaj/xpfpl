@@ -140,3 +140,12 @@ def test_training_is_reproducible(name, frames):
 
     assert first.meta["best_epoch"] == second.meta["best_epoch"]
     assert np.allclose(first.predict(val_df), second.predict(val_df))
+
+
+def test_confidence_from_how_far_the_members_disagree():
+    from xpfpl import config, predict
+    members = pd.DataFrame({"mlp": [4.0, 4.0, 0.2], "gbm": [4.1, 5.0, 0.15], "xmins": [3.9, 3.0, 0.25]}, index=[1, 2, 3])
+    t = predict.confidence_table(members)
+    assert list(t["confidence"]) == ["High", "Low", "High"]   # a tiny xP's spread is judged against 1 point
+    assert t.loc[2, "xp_sd"] == pytest.approx(1.0)
+    assert config.CONFIDENCE_CUTS[0] < config.CONFIDENCE_CUTS[1]
