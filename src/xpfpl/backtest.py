@@ -273,87 +273,210 @@ def settle(squad: dict[int, int], bank: float, free_transfers: int, plan, chip: 
     return squad, bank, free_transfers
 
 
+@dataclass
+class Season:
+    """What a replay of one season needs, prepared once: its rows, the model and price table
+    as of its start, the actual points and minutes, and a cache of each deadline's forecast
+    (shared by every replay that uses the same model, which `paired` relies on)."""
+    rows: pd.DataFrame
+    predictor: object
+    price_table: dict | None
+    actual: pd.DataFrame
+    position: dict
+    gameweeks: list
+    forecasts: dict = field(default_factory=dict)
+
+    @classmethod
+    def prepare(cls, settings: Settings, frame: pd.DataFrame, predictor=None,
+                price_table: dict | None = None) -> "Season":
+        rows = frame[frame["season"] == settings.season]
+        if rows.empty:
+            raise ValueError(f"No data for {settings.season}. Seasons: {sorted(frame['season'].unique())}")
+        if settings.model == "baseline":
+            predictor = None
+        elif predictor is None:
+            predictor = fit_model(frame, settings.season, name=settings.model)
+        if settings.price_weight and price_table is None:
+            price_table = prices.fit(frame, before_season=settings.season)
+        return cls(rows, predictor, price_table,
+                   rows.groupby(["gw", "element"])[[TARGET, "minutes"]].sum(),
+                   rows.groupby("element")["position"].first().astype(int).to_dict(),
+                   sorted(rows["gw"].unique()))
+
+    def forecast(self, gw: int, gws: list[int]) -> pd.DataFrame:
+        key = (gw, tuple(gws))
+        if key not in self.forecasts:
+            state, teams = _snapshot(self.rows, gw)
+            self.forecasts[key] = _predict_horizon(self.rows, state, teams, gws, self.predictor, self.price_table)
+        return self.forecasts[key]
+
+
+@dataclass
+class Manager:
+    """A manager's state at a deadline: squad (element -> purchase price in tenths), bank, free
+    transfers and the chips played so far (chip -> gameweeks)."""
+    squad: dict
+    bank: float
+    free_transfers: int = 1
+    used_chips: dict = field(default_factory=dict)
+
+    def copy(self) -> "Manager":
+        return Manager(dict(self.squad), self.bank, self.free_transfers,
+                       {k: list(v) for k, v in self.used_chips.items()})
+
+
+def play_week(settings: Settings, season: Season, gw: int, me: Manager) -> tuple[dict, Manager, dict]:
+    """One gameweek: forecast from the deadline snapshot, solve, maybe play a chip, score it on
+    what happened. Returns (the week's record, the manager's state after it, the decision)."""
+    squad, bank, free_transfers = me.squad, me.bank, me.free_transfers
+    gws = [g for g in season.gameweeks if gw <= g < gw + settings.horizon]
+    pool = season.forecast(gw, gws)
+    now_cost = pool["now_cost"].to_dict()   # not `prices`: that name is the module
+    selling = {p: selling_price(now_cost.get(p, buy), buy) for p, buy in squad.items()}
+    pool = _shortlist(pool, squad, settings.pool_size)
+
+    plan_settings = dict(discount=settings.discount, bench_weight=settings.bench_weight,
+                         ft_value=settings.ft_value, price_weight=settings.price_weight, time_limit=60)
+    base = dict(current_squad=selling or None, bank=round(bank, 1), **plan_settings)
+    plan = solve(pool, gws, **base, free_transfers=free_transfers, max_hits=settings.max_hits,
+                 plan_transfers=settings.plan_transfers)
+
+    chip = None
+    if settings.chips and squad:
+        chip, _ = _pick_chip(pool, gws, plan, _available_chips(me.used_chips, gw),
+                             dict(base), settings.thresholds)
+    plan = play_chip(pool, gws, base, chip, plan, free_transfers=free_transfers,
+                     max_hits=settings.max_hits, plan_transfers=settings.plan_transfers)
+    used_chips = {k: list(v) for k, v in me.used_chips.items()}
+    if chip:
+        used_chips.setdefault(chip, []).append(gw)
+
+    actual = season.actual
+    gw_actual = actual.loc[gw] if gw in actual.index.get_level_values(0) else actual.iloc[:0]
+    result = score_gameweek(plan, gw, gw_actual[TARGET].to_dict(), gw_actual["minutes"].to_dict(),
+                            season.position, chip)
+
+    hits = 0 if chip in ("wildcard", "freehit") else plan.hits
+    moves = len(plan.transfers_in) if squad else 0
+    net = result["points"] - config.HIT_COST * hits
+    record = {
+        "gw": gw, "points": net, "gross": result["points"], "hits": hits, "transfers": moves,
+        "chip": chip or "", "xp": plan.xp[gw], "captain": plan.captains[gw],
+        "captain_name": pool.at[result["captain"], "name"] if result["captain"] else "-",
+        "captain_points": result["captain_points"], "bench_points": result["bench_points"],
+        "autosubs": result["autosubs"], "free_transfers": free_transfers,
+        "bank": round(bank, 1), "squad_value": round(sum(now_cost.get(p, v) for p, v in squad.items()) / 10.0, 1)
+        if squad else settings.budget,
+    }
+    squad, bank, free_transfers = settle(squad, bank, free_transfers, plan, chip, now_cost, selling,
+                                         settings.budget)
+    decision = dict(plan=plan, chip=chip, pool=pool, selling=selling, now_cost=now_cost)
+    return record, Manager(squad, bank, free_transfers, used_chips), decision
+
+
 def run(settings: Settings, frame: pd.DataFrame | None = None, predictor=None,
-        verbose: bool = True, price_table: dict | None = None, observer=None) -> "Result":
+        verbose: bool = True, price_table: dict | None = None, observer=None,
+        season: Season | None = None) -> "Result":
     """Replay `settings.season` and return the per-gameweek record plus a summary.
 
     `observer`, if given, is called once per gameweek with a dict of that week's decision (gw,
     plan, chip, pool, the squad/bank/free transfers it started from, selling prices, now_cost,
     and the state it left): the Model's Team replay records its weeks from it."""
-    frame = build_training_frame(load_matches()) if frame is None else frame
-    rows = frame[frame["season"] == settings.season]
-    if rows.empty:
-        raise ValueError(f"No data for {settings.season}. Seasons: {sorted(frame['season'].unique())}")
-    if settings.model == "baseline":
-        predictor = None
-    elif predictor is None:
-        predictor = fit_model(frame, settings.season, name=settings.model)
-    if settings.price_weight and price_table is None:
-        price_table = prices.fit(frame, before_season=settings.season)
+    if season is None:
+        frame = build_training_frame(load_matches()) if frame is None else frame
+        season = Season.prepare(settings, frame, predictor, price_table)
+    last = min(settings.end_gw, max(season.gameweeks))
 
-    actual = rows.groupby(["gw", "element"])[[TARGET, "minutes"]].sum()
-    position = rows.groupby("element")["position"].first().astype(int).to_dict()
-    season_gws = sorted(rows["gw"].unique())
-    last = min(settings.end_gw, max(season_gws))
-
-    squad: dict[int, int] = {}          # element -> purchase price in tenths
-    bank, free_transfers, used_chips = settings.budget, 1, {}
+    me = Manager({}, settings.budget)
     records = []
-
-    for gw in [g for g in season_gws if settings.start_gw <= g <= last]:
-        gws = [g for g in season_gws if gw <= g < gw + settings.horizon]
-        state, teams = _snapshot(rows, gw)
-        pool = _predict_horizon(rows, state, teams, gws, predictor, price_table)
-        now_cost = pool["now_cost"].to_dict()   # not `prices`: that name is the module
-        selling = {p: selling_price(now_cost.get(p, buy), buy) for p, buy in squad.items()}
-        pool = _shortlist(pool, squad, settings.pool_size)
-
-        plan_settings = dict(discount=settings.discount, bench_weight=settings.bench_weight,
-                     ft_value=settings.ft_value, price_weight=settings.price_weight, time_limit=60)
-        base = dict(current_squad=selling or None, bank=round(bank, 1), **plan_settings)
-        plan = solve(pool, gws, **base, free_transfers=free_transfers, max_hits=settings.max_hits,
-                     plan_transfers=settings.plan_transfers)
-
-        chip, advice = (None, [])
-        if settings.chips and squad:
-            chip, advice = _pick_chip(pool, gws, plan, _available_chips(used_chips, gw),
-                                      {k: v for k, v in base.items()}, settings.thresholds)
-        plan = play_chip(pool, gws, base, chip, plan, free_transfers=free_transfers,
-                         max_hits=settings.max_hits, plan_transfers=settings.plan_transfers)
-        if chip:
-            used_chips.setdefault(chip, []).append(gw)
-
-        gw_actual = actual.loc[gw] if gw in actual.index.get_level_values(0) else actual.iloc[:0]
-        points = gw_actual[TARGET].to_dict()
-        minutes = gw_actual["minutes"].to_dict()
-        result = score_gameweek(plan, gw, points, minutes, position, chip)
-
-        hits = 0 if chip in ("wildcard", "freehit") else plan.hits
-        moves = len(plan.transfers_in) if squad else 0
-        net = result["points"] - config.HIT_COST * hits
-        records.append({
-            "gw": gw, "points": net, "gross": result["points"], "hits": hits, "transfers": moves,
-            "chip": chip or "", "xp": plan.xp[gw], "captain": plan.captains[gw],
-            "captain_name": pool.at[result["captain"], "name"] if result["captain"] else "-",
-            "captain_points": result["captain_points"], "bench_points": result["bench_points"],
-            "autosubs": result["autosubs"], "free_transfers": free_transfers,
-            "bank": round(bank, 1), "squad_value": round(sum(now_cost.get(p, v) for p, v in squad.items()) / 10.0, 1)
-            if squad else settings.budget,
-        })
+    for gw in [g for g in season.gameweeks if settings.start_gw <= g <= last]:
+        record, after, decision = play_week(settings, season, gw, me)
+        records.append(record)
         if verbose:
-            print(f"  GW{gw:<3d} xP {plan.xp[gw]:5.1f}  actual {result['points']:5.1f}  "
-                  f"hits -{config.HIT_COST * hits:<2d} net {net:5.1f}  transfers {moves}  "
-                  f"C: {records[-1]['captain_name']} ({result['captain_points']:.0f})"
+            chip = decision["chip"]
+            print(f"  GW{gw:<3d} xP {record['xp']:5.1f}  actual {record['gross']:5.1f}  "
+                  f"hits -{config.HIT_COST * record['hits']:<2d} net {record['points']:5.1f}  "
+                  f"transfers {record['transfers']}  "
+                  f"C: {record['captain_name']} ({record['captain_points']:.0f})"
                   f"{'  ' + chip.upper() if chip else ''}")
-
-        before = dict(squad=dict(squad), bank=bank, free_transfers=free_transfers)
-        squad, bank, free_transfers = settle(squad, bank, free_transfers, plan, chip, now_cost, selling,
-                                             settings.budget)
         if observer is not None:
-            observer(dict(gw=gw, plan=plan, chip=chip, pool=pool, selling=selling, now_cost=now_cost, **before,
-                          after=dict(squad=dict(squad), bank=bank, free_transfers=free_transfers)))
+            observer(dict(gw=gw, **decision, squad=dict(me.squad), bank=me.bank, free_transfers=me.free_transfers,
+                          after=dict(squad=dict(after.squad), bank=after.bank, free_transfers=after.free_transfers)))
+        me = after
 
     return Result(settings, pd.DataFrame(records))
+
+
+# ---------------------------------------------------------------- paired comparison
+
+def paired(base: Settings, candidate: Settings, season: Season, weeks: int = 1,
+           candidate_season: Season | None = None, verbose: bool = False) -> "Paired":
+    """How many points `candidate` gains over `base`, measured without the chaos of two replays.
+
+    Two full replays drift apart after their first different transfer, and from then on they
+    own different squads: most of the gap between their totals is luck about which squad the
+    path happened to reach (~84 points a season, robustness.py). Here `base` is replayed once,
+    and at every gameweek `candidate` takes over `base`'s exact state (squad, bank, free
+    transfers, chips) for `weeks` gameweeks, then is scored against what `base` scored over the
+    same weeks. Every week is a like-for-like comparison from the same starting point.
+
+    `weeks` = 1 judges each week's decision on that week's points: right for captaincy, bench
+    order and chips, short-sighted for transfers bought for the fixtures after. `weeks` = the
+    horizon lets a transfer's later weeks count too (each window overlaps the next, which the
+    confidence interval allows for). `candidate_season` is needed when the two use different
+    models or price tables.
+    """
+    if base.season != candidate.season:
+        raise ValueError("Paired comparisons need the same season.")
+    other = candidate_season or season
+    last = min(base.end_gw, max(season.gameweeks))
+    gws = [g for g in season.gameweeks if base.start_gw <= g <= last]
+
+    states, ref = {}, {}
+    me = Manager({}, base.budget)
+    for gw in gws:
+        states[gw] = me.copy()
+        record, me, _ = play_week(base, season, gw, me)
+        ref[gw] = record["points"]
+
+    rows = []
+    for i, gw in enumerate(gws):
+        window = gws[i:i + weeks]
+        me, got = states[gw].copy(), 0.0
+        for g in window:
+            record, me, _ = play_week(candidate, other, g, me)
+            got += record["points"]
+        had = sum(ref[g] for g in window)
+        rows.append({"gw": gw, "weeks": len(window), "base": had, "candidate": got, "gain": got - had})
+        if verbose:
+            print(f"  GW{gw:<3d} base {had:6.1f}  candidate {got:6.1f}  gain {got - had:+6.1f}")
+    return Paired(base, candidate, weeks, pd.DataFrame(rows), sum(ref.values()))
+
+
+@dataclass
+class Paired:
+    base: Settings
+    candidate: Settings
+    weeks: int
+    gameweeks: pd.DataFrame
+    base_points: float
+
+    def summary(self, resamples: int = 2000, seed: int = 0) -> dict:
+        """Gain per season (per-week gain x the number of weeks) with a 90% interval from a
+        moving-block bootstrap over gameweeks (blocks of `weeks`, as the windows overlap)."""
+        g = self.gameweeks
+        per_week = (g["gain"] / g["weeks"]).to_numpy()
+        n = len(per_week)
+        block = max(1, self.weeks)
+        rng = np.random.default_rng(seed)
+        starts = rng.integers(0, max(n - block + 1, 1), size=(resamples, -(-n // block)))
+        idx = (starts[..., None] + np.arange(block)).reshape(resamples, -1)[:, :n]
+        means = per_week[np.clip(idx, 0, n - 1)].mean(axis=1)
+        low, high = np.quantile(means * n, [0.05, 0.95])
+        return {"season": self.base.season, "weeks": self.weeks, "gws": int(n),
+                "base_points": float(self.base_points),
+                "gain": float(per_week.sum()), "low": float(low), "high": float(high),
+                "better_weeks": int((per_week > 0).sum()), "worse_weeks": int((per_week < 0).sum())}
 
 
 @dataclass

@@ -29,7 +29,7 @@ import pandas as pd
 import torch
 from torch import nn
 
-from xpfpl import scoring
+from xpfpl import config, scoring
 from xpfpl.models.trainer import TrainConfig, fit, seed, standardise, standardiser
 
 # head -> (target column, loss family). "rate" heads are Poisson, "prob" heads Bernoulli.
@@ -111,6 +111,25 @@ def _tensors(frame: pd.DataFrame, features: list[str], mean, std):
     return torch.from_numpy(x), torch.from_numpy(y), torch.from_numpy(mask)
 
 
+def _blend_market(c: pd.DataFrame, frame: pd.DataFrame, weight: float | None = None) -> None:
+    """Where the match has odds (`mkt_known`), move the clean-sheet and goals-conceded heads
+    `weight` of the way to the market's: P(clean sheet) = P(60 minutes) x the market's chance of
+    nil, E[conceded] = the market's expected goals against.
+
+    The heads already see the odds as features, but they learn them from one season and a half of
+    rows among ten. Tested out of sample (components trained before each season, players getting
+    minutes): RMSE -0.0011 on 2024-25 (result markets only) and -0.0041 on 2025-26 (totals too) at
+    0.5; scaling goals and assists by the market's goals for was worse in both, so they stay."""
+    weight = config.MARKET_DEFENCE_WEIGHT if weight is None else weight
+    if not weight or "mkt_known" not in frame:
+        return
+    known = frame["mkt_known"].fillna(0).to_numpy() > 0
+    cs = c["played60"].to_numpy() * frame["mkt_cs"].fillna(0).to_numpy()
+    ga = frame["mkt_ga"].fillna(0).to_numpy()
+    c["clean_sheets"] = np.where(known, (1 - weight) * c["clean_sheets"] + weight * cs, c["clean_sheets"])
+    c["goals_conceded"] = np.where(known, (1 - weight) * c["goals_conceded"] + weight * ga, c["goals_conceded"])
+
+
 @dataclass
 class Predictor:
     model: ComponentNet
@@ -132,6 +151,7 @@ class Predictor:
             if not rows:
                 out[name] = np.zeros(len(frame))
         df = pd.DataFrame(out, index=frame.index)
+        _blend_market(df, frame)
         df["position"] = frame["position"].to_numpy()
         df["dc_era"] = frame["dc_era"].to_numpy() if "dc_era" in frame else 1.0
         return df

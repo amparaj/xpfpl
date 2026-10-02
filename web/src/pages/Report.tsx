@@ -275,7 +275,8 @@ export default function Report() {
             38 matches, so a short purple patch doesn't dominate.</p></div>
           <div className="pillar"><strong>Fixture</strong><p>Club attack and defence ratings from a Poisson model refitted before every gameweek
             (half-weighted every 240 days, goals and xG mixed), giving each side's expected goals and clean-sheet chance;
-            home or away; his points at that venue. Where Polymarket prices the match, its goal expectations are used.</p></div>
+            home or away; his points at that venue. Where Polymarket prices the match, its goal expectations are used, and
+            the component model moves its clean-sheet and goals-conceded parts halfway to the market's.</p></div>
           <div className="pillar"><strong>Crowd</strong><p>Net transfers before the deadline and ownership. The single most useful group: it carries
             team news (a knock, a rotation hint) before the stats can.</p></div>
           <div className="pillar"><strong>After the forecast</strong><p>FPL's chance-of-playing flag (assumed to recover 25% a week), the midweek factor
@@ -286,7 +287,8 @@ export default function Report() {
           The crowd inputs cut every model's error by about 0.05 RMSE, more than the gap between the best and worst architectures.
           Longer per-90 windows, club ratings, venue and BPS rank each added less than 0.005. Other ideas were tested and left out
           because they didn't help on seasons they weren't tuned on: club rotation rates, rest days, finishing luck, and bookmaker
-          odds as inputs.
+          odds as inputs. A penalty-taker adjustment (FPL's penalty order against who took them lately) is recorded with every
+          forecast but not applied: on 2025-26 it explained almost none of the error, so this season's results will decide it.
         </p>
       </Section>
 
@@ -340,6 +342,11 @@ export default function Report() {
           score the real points with auto-subs, carry the bank, free transfers and selling prices into the next week.
           {r?.backtest?.noise_sd && <> A replayed season moves by about {int(r.backtest.noise_sd)} points when the forecasts change by
           only 10%, so two settings closer than that can't be told apart.</>}
+          {" "}Settings that pay off within a few weeks (captaincy, bench, chips, how far to look ahead) can be compared more
+          precisely in pairs: the second setting takes over the first one's exact squad, bank and free transfers at every deadline
+          for a few weeks, and the two are scored over the same weeks. Tested with the same 10% noise, that measured a setting's
+          worth about five times more precisely than two full replays. It can't see what builds up over a season, such as squad
+          value from price rises, so those are still judged on full replays.
         </p>
       </Section>
 
@@ -385,14 +392,15 @@ export default function Report() {
       <Section id="simulation" n={++n}>
         <p>
           After each forecast the coming gameweeks are played thousands of times. Each simulated week draws both sides' goals (from the
-          market or the club ratings), each player's minutes (from the minutes model), his share of his side's goals and assists,
+          market or the club ratings), each club's line-up (every player's minutes from the minutes model, drawn for the whole side
+          at once so a club fields as many players as their chances add up to), his share of his side's goals and assists,
           clean sheets, saves, defensive actions, and bonus and cards as they have fallen in the past. Teammates share their side's
           goals, so they rise and fall together. Each player's simulated average is matched to his xP, so the simulation spreads the
           points without changing how many are expected.
         </p>
         {sim && <Tiles tiles={[
           { label: "Inside the middle 80%", value: pct(sim.coverage_80), note: `real scores on ${v.season} (80% is right)` },
-          { label: "Club totals inside", value: pct(sim.club_coverage_80), note: "a little wide: minutes are drawn per player" },
+          { label: "Club totals inside", value: pct(sim.club_coverage_80), note: "each club's total in each match (80% is right)" },
           { label: "Spread of points", value: `${dec(sim.spread.simulated, 1)} vs ${dec(sim.spread.actual, 1)}`, note: "variance, simulated against real" },
         ]} />}
         <p>

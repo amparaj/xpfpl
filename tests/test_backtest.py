@@ -186,3 +186,24 @@ def test_results_are_saved_and_reloaded(season_frame, tmp_path, monkeypatch):
     assert len(loaded) == 1
     assert loaded[0]["settings"]["season"] == "2099-00"
     assert len(loaded[0]["gameweeks"]) == 2
+
+
+def test_paired_comparison_of_a_setting_with_itself_gains_nothing(season_frame):
+    settings = backtest.Settings(season="2099-00", start_gw=1, end_gw=4, horizon=2,
+                                 model="baseline", pool_size=20)
+    season = backtest.Season.prepare(settings, season_frame)
+    result = backtest.paired(settings, settings, season, weeks=2)
+    s = result.summary()
+    assert s["gws"] == 4 and s["gain"] == pytest.approx(0.0)
+    assert list(result.gameweeks["weeks"]) == [2, 2, 2, 1]        # the last window runs out of season
+    assert s["base_points"] == pytest.approx(backtest.run(settings, season=season, verbose=False).summary["points"])
+
+
+def test_paired_candidate_starts_from_the_base_state(season_frame):
+    """A candidate that differs only from GW3 on gains exactly what its GW3 decision earns."""
+    base = backtest.Settings(season="2099-00", start_gw=1, end_gw=4, horizon=2, model="baseline", pool_size=20)
+    other = backtest.Settings(**{**base.__dict__, "bench_weight": 0.9, "ft_value": 0.0})
+    season = backtest.Season.prepare(base, season_frame)
+    result = backtest.paired(base, other, season, weeks=1).gameweeks.set_index("gw")
+    ref = backtest.run(base, season=season, verbose=False).gameweeks.set_index("gw")
+    assert (result["base"] == ref["points"]).all()

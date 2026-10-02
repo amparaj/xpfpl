@@ -59,6 +59,14 @@ POOL_SIZE = 50             # candidates per position handed to the optimiser
 # (6%) at prediction time has almost certainly been ruled out. On 2025-26 those players scored
 # 0.06 points against the model's 0.61, so the next gameweek's xP is multiplied by this.
 MARKET_OUT_XP_FACTOR = 0.1
+# The component model's clean-sheet and goals-conceded heads, moved this far towards the match
+# odds where there are any (models/components.py `_blend_market`): out of sample RMSE -0.0011
+# on 2024-25 and -0.0041 on 2025-26 at 0.5, against 0. Goals and assists stay the model's own.
+MARKET_DEFENCE_WEIGHT = 0.5
+# Penalty takers (setpieces.py): weight on the change in a player's penalty role (FPL's
+# penalties_order now, against the penalties he took lately). 0 = recorded in the forecast
+# (`pen_order`, `pen_xp`) but not applied: on 2025-26 its best weight was 0.29 (se 0.28).
+PENALTY_WEIGHT = 0.0
 # Monte Carlo (simulate.py): how many times `predict` plays each upcoming gameweek to give every
 # xP a range and the chances behind it. It only describes risk: the optimiser still maximises xP.
 # 0 switches it off.

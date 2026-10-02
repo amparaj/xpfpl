@@ -62,7 +62,9 @@ GLOSSARY = [
      "Instead of predicting one number directly, it predicts scoring components separately: whether "
      "a player will appear, reach 60 minutes, score goals, provide assists, make saves or earn bonus "
      "points. It then combines those estimates using FPL's scoring rules, making the expected-points "
-     "forecast easier to interpret."),
+     "forecast easier to interpret. Where a match has betting odds, its clean-sheet and goals-conceded "
+     "estimates are moved halfway to the market's (config.MARKET_DEFENCE_WEIGHT), which cut its error "
+     "on the two seasons tested."),
     ("Embedding model (model: embed)",
     "The MLP plus a learned vector for every player and club (`nn.Embedding`). The player vector lets "
     "this model represent persistent player-specific tendencies beyond recent form; the club vector "
@@ -84,7 +86,8 @@ GLOSSARY = [
     ("Monte Carlo (range, 10+, 2 or fewer)",
      "Playing each gameweek thousands of times on the computer to see what could happen, not just "
      "the average. Each simulated week draws the goals in every fixture (from the betting odds or our "
-     "club ratings), who plays, who scores and assists, clean sheets, bonus and cards, with every "
+     "club ratings), who plays (each club's line-up drawn as a whole, so it fields as many players as "
+     "their chances add up to), who scores and assists, clean sheets, bonus and cards, with every "
      "player's average matched to his xP. 'Range' is the middle 80% of his simulated scores; '10+' and "
      "'2 or fewer' are how often he got there. For a team it plays the auto-subs and the vice-captain "
      "too. It shows the risk; it doesn't change the picks, which still maximise xP."),
@@ -95,6 +98,18 @@ GLOSSARY = [
      "weren't used score less than this model expects that weekend, and those who played score more. "
      "Fitted on 2025-26 onwards, where the cup and European data starts, and only for the next "
      "gameweek: later weeks show the midweek matches but aren't adjusted. " + _midweek_factors()),
+    ("Penalty takers",
+     "FPL lists each club's penalty order. The forecast records it (pen_order) and what a change of "
+     "taker would be worth (pen_xp: a new first choice gains his club's penalties, a player who took "
+     "them lately but no longer does loses his). It isn't added to xP yet (config.PENALTY_WEIGHT is 0): "
+     "on 2025-26 it explained almost none of the error, and `xpfpl scorecard` reports the weight this "
+     "season's results support."),
+    ("Paired comparison",
+     "A way to compare two settings in the backtest without most of the luck: `xpfpl backtest "
+     "--paired key=value`. The second setting takes over the first one's exact squad, bank and free "
+     "transfers at every deadline for a few weeks and is scored over the same weeks. About five times "
+     "more precise than two full replays, but blind to what builds up over a season (price rises), "
+     "which still needs full replays."),
     ("FPL's own xP",
      "The expected-points figure the official game shows for each player, taken as it stood before "
      "each match. It is essentially recent form, so it is a yardstick, not a rival model."),
@@ -607,7 +622,9 @@ def render_tuning() -> None:
                                 for c in ("Points a season", "Worth (best - worst)")})
     st.caption("Read the last column with care: one replay of a season moves by about 84 points on luck alone "
                "(see \"Does it hold up?\" below), so a setting worth less than that in a single-replay search "
-               "is a guess, not a finding.")
+               "is a guess, not a finding. `xpfpl backtest --paired` compares two settings from the same squad "
+               "each week instead, which cuts that noise about five-fold for anything that pays off within a "
+               "few weeks (see \"Paired comparison\" in the glossary).")
 
     retune = robustness.latest_retune()
     if retune:
@@ -772,8 +789,8 @@ def render_simulation() -> None:
     st.caption("Players grouped by their simulated chance (x) against how often it happened (y); the dashed line is "
                "a perfect match, bars are 95% intervals. The simulation is only as right as the xP it's built "
                "around: where this model over-forecast the top players that season, their chance of 10+ runs high "
-               "too. Club totals come out a little wide because each player's minutes are drawn on their own, "
-               "while a club always fields eleven.")
+               "too. Each club's line-up is drawn as a whole, so a club fields as many players as their chances "
+               "of playing add up to (drawn player by player, club totals came out a little wide).")
 
 
 def _flow_diagram() -> str:

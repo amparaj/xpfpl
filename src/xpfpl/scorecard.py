@@ -11,7 +11,9 @@ and over the players who'd been getting minutes. Bias by position is the early w
 rule changes the history can't teach (e.g. the 2026-27 bonus-points changes). Forecasts saved
 with Monte Carlo ranges (simulate.py) are also scored on those (`ranges`): how many scores
 landed inside the 10th-90th percentile band, and the average chance of 10+ / of 2 or fewer
-against how often it happened.
+against how often it happened. Forecasts that record the penalty-taker adjustment
+(setpieces.py, `pen_xp`) are scored on it too (`penalties`): the points each player scored beyond
+his xP, against the adjustment, for the players it would have moved.
 """
 
 import json
@@ -43,7 +45,7 @@ def score(matches: pd.DataFrame, season: str) -> dict:
     """Score every saved forecast for `season` whose gameweek has been played."""
     folder = config.PREDICTIONS_DIR / season
     played = set(matches.loc[matches["season"] == season, "gw"].unique())
-    rows, positions, ranges = [], [], []
+    rows, positions, ranges, penalties = [], [], [], []
     for path in sorted(folder.glob("gw*_*.csv")) if folder.exists() else []:
         match = FILE.search(path.name)
         if not match:
@@ -69,6 +71,12 @@ def score(matches: pd.DataFrame, season: str) -> dict:
                            "inside": float(((got >= r["pts_p10"]) & (got <= r["pts_p90"])).mean()),
                            "p_haul": float(r["p_haul"].mean()), "haul": float((got >= 10).mean()),
                            "p_blank": float(r["p_blank"].mean()), "blank": float((got <= 2).mean())})
+        if "pen_xp" in pred:
+            moved = active & (pred["pen_xp"].fillna(0).abs().to_numpy() > 0.05)
+            if moved.any():
+                penalties.append({"gw": gw, "model": model, "n": int(moved.sum()),
+                                  "pen_xp": pred["pen_xp"].to_numpy()[moved].round(3).tolist(),
+                                  "beyond_xp": (y - p)[moved].round(3).tolist()})
         for pos, name in config.POSITIONS.items():
             mask = active & (pred["position"].to_numpy() == pos)
             if mask.any():
@@ -76,7 +84,21 @@ def score(matches: pd.DataFrame, season: str) -> dict:
                                   "predicted": float(p[mask].mean()), "actual": float(y[mask].mean()),
                                   "n": int(mask.sum())})
     return {"generated": datetime.now().isoformat(timespec="seconds"), "season": season,
-            "gameweeks": rows, "positions": positions, "ranges": ranges}
+            "gameweeks": rows, "positions": positions, "ranges": ranges, "penalties": penalties}
+
+
+def penalty_fit(report: dict, model: str | None = None) -> dict | None:
+    """The weight on `pen_xp` that best explains the points beyond xP so far (least squares
+    through zero) and its standard error. 1 = the adjustment is right at full weight, 0 = it
+    adds nothing; config.PENALTY_WEIGHT is worth raising once the interval excludes 0."""
+    rows = [r for r in report.get("penalties", []) if model in (None, r["model"])]
+    x = np.concatenate([r["pen_xp"] for r in rows]) if rows else np.array([])
+    y = np.concatenate([r["beyond_xp"] for r in rows]) if rows else np.array([])
+    if len(x) < 2 or not (x ** 2).sum():
+        return None
+    k = float((x * y).sum() / (x ** 2).sum())
+    se = float(np.sqrt(((y - k * x) ** 2).sum() / (len(x) - 1) / (x ** 2).sum()))
+    return {"n": int(len(x)), "weight": k, "se": se}
 
 
 def save(report: dict) -> None:
@@ -113,4 +135,9 @@ def summarise(report: dict) -> str:
         lines.append("\nMonte Carlo ranges (scores are whole numbers, so inside the band should be 80% or a bit more):\n"
                      + ranges[["gw", "model", "n", "below", "inside", "above", "p_haul", "haul", "p_blank", "blank"]]
                      .sort_values(["model", "gw"]).round(3).to_string(index=False))
+    for model in sorted({r["model"] for r in report.get("penalties", [])}):
+        fit = penalty_fit(report, model)
+        if fit:
+            lines.append(f"\nPenalty takers ({model}): best weight {fit['weight']:.2f} (se {fit['se']:.2f}) over "
+                         f"{fit['n']} player-weeks; config.PENALTY_WEIGHT is {config.PENALTY_WEIGHT:g}")
     return "\n".join(lines)

@@ -29,3 +29,13 @@ def test_scorecard_scores_played_gameweeks_only(tmp_path, monkeypatch):
     scorecard.save(report)
     assert scorecard.load(season)["season"] == season
     assert "Live record" in scorecard.summarise(report)
+
+
+def test_penalty_fit_recovers_the_weight():
+    rng = np.random.default_rng(1)
+    x = rng.choice([-0.4, 0.4], 400)
+    y = 0.5 * x + rng.normal(0, 0.2, 400)
+    report = {"penalties": [{"gw": 6, "model": "ensemble", "n": 400, "pen_xp": x.tolist(), "beyond_xp": y.tolist()}]}
+    fit = scorecard.penalty_fit(report)
+    assert abs(fit["weight"] - 0.5) < 3 * fit["se"] and fit["n"] == 400
+    assert scorecard.penalty_fit({"penalties": []}) is None
