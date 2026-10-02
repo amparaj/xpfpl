@@ -834,6 +834,9 @@ with tab_plan:
         if not available:
             st.write("No chips available this gameweek.")
         else:
+            warning = chips.window_warning(available, gw)
+            if warning:
+                st.warning(warning)
             advice = run_chip_advice(horizon, model, stamp(), int(team_id), tuple(sorted(available)),
                                      **kwargs, **planning, free_transfers=ft, max_hits=int(max_hits))
             draws = sim_draws(horizon, model, stamp())

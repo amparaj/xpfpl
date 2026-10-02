@@ -80,3 +80,6 @@ TRIPLE_CAPTAIN_MIN_XP = 6.0
 BENCH_BOOST_MIN_XP = 8.0
 FREE_HIT_MIN_GAIN = 18.0
 WILDCARD_MIN_GAIN = 30.0
+# Warn once the gameweeks left in a chip window are no more than the unused chips plus this many
+# spare weeks (one chip per GW, so three chips and six weeks left gives three weeks of slack).
+CHIP_SPARE_WEEKS = 3

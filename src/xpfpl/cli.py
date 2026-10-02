@@ -617,6 +617,9 @@ def cmd_recommend(args) -> None:
     if not available:
         print("  No chips available this gameweek.")
     else:
+        warning = chips.window_warning(available, gw)
+        if warning:
+            print(f"  WARNING: {warning}")
         advice = chips.advise(players, gameweeks, plan, available, kwargs)
         odds = {}
         if draws is not None:
