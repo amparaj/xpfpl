@@ -1,7 +1,7 @@
 import * as Plot from "@observablehq/plot";
 import { useCallback, useMemo, useState } from "react";
 import { color } from "../colors";
-import { Chart, Club, Legend, Loading, Note, Segmented, Table, Tiles, plotDefaults, type Column } from "../components/ui";
+import { Chart, Club, Legend, Loading, Note, Segmented, Sheet, Table, Tiles, plotDefaults, usePhone, type Column } from "../components/ui";
 import type { ModelTeam } from "../data";
 import { POSITIONS, dec, int, money, pts, signed, when } from "../format";
 import { likelihood, pricesUrl, ukDay, type PriceChange, type PriceLog, type PricePlayer } from "../prices";
@@ -26,7 +26,7 @@ function Progress({ value }: { value: number | null }) {
   );
 }
 
-function PlayerPrice({ player, log }: { player: PricePlayer; log: PriceLog }) {
+function PlayerPrice({ player, log, inSheet = false }: { player: PricePlayer; log: PriceLog; inSheet?: boolean }) {
   const site = useSite();
   const all = useAllGameweeks(site.meta.played);
   const byGw = useMemo(() => history(all, player.id), [all, player.id]);
@@ -61,14 +61,16 @@ function PlayerPrice({ player, log }: { player: PricePlayer; log: PriceLog }) {
   }), [byGw]);
 
   return (
-    <div className="card">
-      <div className="toolbar" style={{ justifyContent: "space-between" }}>
-        <div>
-          <strong style={{ fontSize: 17 }}>{player.name}</strong>{" "}
-          <Club id={player.team} /> <span className="muted">{POSITIONS[player.pos]} · {money(player.cost / 10)}</span>
+    <div className={inSheet ? undefined : "card"}>
+      {!inSheet && (
+        <div className="toolbar" style={{ justifyContent: "space-between" }}>
+          <div>
+            <strong style={{ fontSize: 17 }}>{player.name}</strong>{" "}
+            <Club id={player.team} /> <span className="muted">{POSITIONS[player.pos]} · {money(player.cost / 10)}</span>
+          </div>
+          <a href="#prices" className="link">Close</a>
         </div>
-        <a href="#prices" className="link">Close</a>
-      </div>
+      )}
       <Tiles tiles={[
         { label: "Progress now", value: player.pct === null ? "–" : signed(player.pct, 1), note: "+100 rises, −100 falls" },
         { label: "Per hour", value: player.rate === null ? "–" : signed(player.rate, 0) },
@@ -112,6 +114,7 @@ export default function Prices() {
   const [modelOnly, setModelOnly] = useState(false);
   const [move, setMove] = useState<Move>("all");
   const selectedId = Number(window.location.hash.split("/")[1]) || null;
+  const phone = usePhone();
 
   const modelSquad = useMemo(() => {
     const weeks = modelTeam?.gameweeks ?? [];
@@ -188,7 +191,13 @@ export default function Prices() {
         { label: "Close to a fall", value: log.players.filter((p) => (p.pct ?? 0) <= -NEAR).length, note: `progress −${NEAR} or less` },
         { label: "Last checked", value: <span style={{ fontSize: 17 }}>{when(log.updated)}</span>, note: live ? "every hour" : "when the site was published" },
       ]} />
-      {selected && <PlayerPrice player={selected} log={log} />}
+      {selected && !phone && <PlayerPrice player={selected} log={log} />}
+      {phone && (
+        <Sheet open={!!selected} onClose={() => { window.location.hash = "prices"; }}
+               title={selected && <>{selected.name} <Club id={selected.team} /> <span className="muted">{POSITIONS[selected.pos]} · {money(selected.cost / 10)}</span></>}>
+          {selected && <PlayerPrice player={selected} log={log} inSheet />}
+        </Sheet>
+      )}
       <div className="toolbar" style={{ marginTop: 14 }}>
         <Segmented label="Direction" value={view} onChange={setView}
                    options={[{ value: "rise", label: "Towards a rise" }, { value: "fall", label: "Towards a fall" }, { value: "all", label: "All" }]} />
@@ -202,8 +211,8 @@ export default function Prices() {
         <label><input type="checkbox" checked={modelOnly} onChange={(e) => setModelOnly(e.target.checked)} /> This model's team only</label>
       </div>
       <Table key={view} columns={columns} data={list} sort="pct" desc={view !== "fall"} rowKey={(p) => p.id} limit={40}
-             selected={selectedId}
-             onRow={(p) => { window.location.hash = `prices/${p.id}`; window.scrollTo({ top: 0, behavior: "smooth" }); }} />
+             selected={selectedId} cardSub={["team", "pos", "price"]} cardStats={["pct", "next"]}
+             onRow={(p) => { window.location.hash = `prices/${p.id}`; if (!phone) window.scrollTo({ top: 0, behavior: "smooth" }); }} />
       <Legend items={[{ label: "Towards a rise", color: color.good }, { label: "Towards a fall", color: color.bad }]} />
 
       <h3>Price changes</h3>
@@ -212,7 +221,7 @@ export default function Prices() {
                    options={[{ value: "all", label: "All" }, { value: "rise", label: "Rises" }, { value: "fall", label: "Falls" }]} />
         <span className="muted">{changes.length} moves</span>
       </div>
-      <Table columns={changeColumns} data={changes} rowKey={(c) => c.key} limit={30} />
+      <Table columns={changeColumns} data={changes} rowKey={(c) => c.key} limit={30} cardSub={["team", "pos", "day"]} cardStats={["move", "to"]} />
       <Note>
         A move's day is the hourly check that first saw it{sinceStart < log.changes.length && <>; moves shown by gameweek
         were made before the log started</>}. Prices are FPL's own; this model values a likely rise a little when it

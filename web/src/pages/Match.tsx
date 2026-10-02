@@ -488,7 +488,8 @@ function Players({ week, fixture, players, home }: {
         ]} />
       </div>
       <Table columns={lines.some((l) => l.xp !== null) ? columns : columns.filter((c) => c.key !== "xp" && c.key !== "diff")}
-             data={shown} sort="points" rowKey={(l) => l.element} />
+             data={shown} sort="points" rowKey={(l) => l.element}
+             cardSub={["team", "pos", "minutes"]} cardStats={lines.some((l) => l.xp !== null) ? ["points", "xp"] : ["points", "xg"]} />
       <Note>Everyone who played. FPL columns are FPL's own; the rest are the match data's.
         {double && " In a double gameweek xP covers both matches, so Points − xP is left blank."}</Note>
     </>

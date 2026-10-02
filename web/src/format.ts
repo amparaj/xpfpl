@@ -2,6 +2,8 @@
 // (the dashboard's rules: points and xP to two decimals, chances as percentages).
 
 export const POSITIONS: Record<number, string> = { 1: "GKP", 2: "DEF", 3: "MID", 4: "FWD" };
+/** FPL's player status codes, in words ("a", available, has none). */
+export const STATUS: Record<string, string> = { d: "Doubtful", i: "Injured", s: "Suspended", u: "Unavailable", n: "Not in squad" };
 
 const missing = (v: unknown): v is null | undefined => v === null || v === undefined || Number.isNaN(v as number);
 

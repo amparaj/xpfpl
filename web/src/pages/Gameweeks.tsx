@@ -251,13 +251,14 @@ function Week({ gw, seasons }: { gw: number; seasons: string[] }) {
             <>
               <h3>This model's top forecasts</h3>
               <p className="note" style={{ marginTop: 0 }}>The ten highest xP before the deadline, and what they scored.</p>
-              <Table columns={forecastColumns} data={topForecasts} sort="xp" rowKey={(l) => l.element} />
+              <Table columns={forecastColumns} data={topForecasts} sort="xp" rowKey={(l) => l.element} cardSub={["team", "pos"]} cardStats={["xp", "points"]} />
             </>
           )}
 
           <h3>Players who played</h3>
           <Table columns={hasXp ? columns : columns.filter((c) => c.key !== "xp" && c.key !== "diff")}
-                 data={playedLines} sort="points" rowKey={(l) => l.element} limit={40} />
+                 data={playedLines} sort="points" rowKey={(l) => l.element} limit={40}
+                 cardSub={["team", "pos", "opp"]} cardStats={hasXp ? ["points", "xp"] : ["points", "minutes"]} />
           <Note>
             {hasXp && <>xP here is {data.xp_source}. </>}A red % tag is the injury flag FPL showed before the deadline, where one
             was recorded. Prices (£m) are as they stood during the gameweek.

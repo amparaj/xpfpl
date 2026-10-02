@@ -215,7 +215,8 @@ export default function ModelTeamPage() {
       {weeks.length > 0 && (
         <>
           <h3>Week by week</h3>
-          <Table columns={columns} data={[...weeks].reverse()} rowKey={(w) => w.gw} />
+          <Table columns={columns} data={[...weeks].reverse()} rowKey={(w) => w.gw} cardTitle={(w) => `GW${w.gw}`}
+                 cardSub={["source", "captain", "chip"]} cardStats={["points", "forecast", "vs"]} />
           <dl className="defs">
             <dt>Live</dt>
             <dd>Decided and saved before the gameweek's deadline, using only information available at the time.</dd>
