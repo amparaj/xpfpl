@@ -1,11 +1,12 @@
 # Keeps the team news: every player's FPL news (status, chance of playing, reason, return date,
-# FPL's source link and when it changed) and the latest press-conference summaries, as news.json
+# FPL's source link and when it changed), the latest press-conference summaries and NewsNow's
+# injury headlines (every four hours, hourly in the two days before a deadline), as news.json
 # on the `news` branch (src/xpfpl/data/news.py). The website's Team News page and the dashboard read it.
 #
 # FPL's API only shows the present, so the hourly runs keep the history: every change to a
 # player's news this season, timed by FPL's own `news_added`. The press-conference page is read
-# every run in the two days before a deadline, else every six hours. `xpfpl fetch` copies the log
-# and the press conferences into archive/news/.
+# every run in the two days before a deadline, else every six hours. `xpfpl fetch` copies the log,
+# the press conferences and the headlines into archive/news/.
 #
 # The branch is one commit, replaced each run (like `prices`). Each run starts from the branch's
 # current file, so the log carries on; a run that can't read it fails rather than starting again.

@@ -190,6 +190,10 @@ button.link { background: none; border: 0; padding: 0; color: var(--s1); text-de
 .quote { margin: 8px 0 0; padding: 6px 10px; border-left: 3px solid var(--grid); color: var(--ink-2); font-size: 13.5px; font-style: italic; }
 .quote-by { font-style: normal; color: var(--muted); font-size: 12.5px; margin-top: 2px; }
 .news-history { margin: 0; padding-left: 18px; font-size: 13.5px; }
+.headlines { list-style: none; margin: 0; padding: 0; max-width: 900px; }
+.headlines li { padding: 8px 0; border-bottom: 1px solid var(--grid); }
+.headlines li > a { font-weight: 500; }
+.headline-meta { display: block; font-size: 12.5px; color: var(--muted); margin-top: 2px; }
 .tag.cup { background: color-mix(in srgb, var(--s1) 14%, transparent); color: var(--ink); margin-right: 4px; }
 
 /* FPL's progress to a price change: a bar from the middle, right towards a rise, left towards a fall. */

@@ -1,6 +1,6 @@
 """Team news: who's out, who's doubtful, who's back and when, and where each piece came from.
 
-Two sources:
+Three sources:
 
   FPL (bootstrap-static), for every player:
     news               "Hamstring injury - Expected back 10 Oct", "Suspended until 17 Oct", ...
@@ -14,16 +14,23 @@ Two sources:
   page, updated before each gameweek (robots.txt allows it; one request per run). Players are
   matched to FPL's by club and name (`match_press`).
 
+  NewsNow's Premier League injuries-and-suspensions page (HEADLINES_URL): the latest headlines from
+  the papers and club sites, each with its publisher, time and NewsNow link. Display only: never a
+  model input. robots.txt allows the listing page for general crawlers (it shuts out AI companies'
+  crawlers, which this isn't, and disallows the /A/ article redirects and the ?p= pages, which are
+  never fetched: the links are only shown for people to click). Read every HEADLINES_EVERY_HOURS,
+  or every run near a deadline. Players are found in the headlines by name (`match_headlines`).
+
 Considered and not used: Fantasy Football Scout's injury table (its terms, 6.6, forbid automated
 extraction and re-use in another database; FPL's own news, source link and timestamp cover the
-same ground) and NewsNow (its robots.txt shuts out AI agents). Both are linked from the pages.
+same ground). It's linked from the pages.
 
 The FPL API only ever shows the present, so a scheduled GitHub Action
 (.github/workflows/news-snapshot.yml) runs `update` every hour and force-pushes news.json to the
-`news` branch: everyone with news now, the latest press conferences, and a log of every change to
-a player's news this season (dated by FPL's own `news_added`). The website and the dashboard read
-it from there; `pull()` (run by `xpfpl fetch`) copies the log and each press-conference snapshot
-into archive/news/<season>/.
+`news` branch: everyone with news now, the latest press conferences, the last HEADLINE_DAYS of
+headlines, and a log of every change to a player's news this season (dated by FPL's own
+`news_added`). The website and the dashboard read it from there; `pull()` (run by `xpfpl fetch`)
+copies the log, each press-conference snapshot and the headlines into archive/news/<season>/.
 
 `availability` turns all of it into each upcoming match's chance of playing for `predict`.
 
@@ -53,6 +60,16 @@ PRESS_NAME = "Premier Fantasy Tools"
 # deadline (when the pressers happen), else every PRESS_EVERY_HOURS.
 PRESS_EVERY_HOURS = 6
 PRESS_BUSY_HOURS = 48
+HEADLINES_URL = "https://www.newsnow.com/au/Sport/Football/Premier+League/Injuries+and+Suspensions"
+HEADLINES_NAME = "NewsNow"
+HEADLINES_EVERY_HOURS = 4          # and every run within PRESS_BUSY_HOURS of a deadline
+HEADLINE_DAYS = 14                 # how long news.json keeps a headline (the archive keeps them all)
+# Surnames that are also everyday words: in a headline they only count with the player's first name
+# or his club alongside.
+COMMON_WORDS = {"white", "james", "rice", "hall", "king", "young", "little", "rose", "gray", "grey", "brown",
+                "green", "long", "best", "hill", "wood", "bell", "page", "cash", "mount", "doherty", "ward",
+                "boss", "star", "out", "back", "news", "blow", "boost", "update", "fit", "doubt", "ban",
+                "pedro", "joao", "jesus", "costa", "silva", "santos", "alves", "lewis", "dunk", "neves"}
 STATUSES = ("OUT", "DOUBT", "IN")
 # FPL's status codes in words.
 STATUS_WORDS = {"a": "Available", "d": "Doubtful", "i": "Injured", "s": "Suspended", "u": "Unavailable",
@@ -221,6 +238,9 @@ CLUB_ALIASES = {
     "nottingham forest": "nott'm forest", "tottenham hotspur": "spurs", "tottenham": "spurs",
     "afc bournemouth": "bournemouth", "wolverhampton wanderers": "wolves", "west ham united": "west ham",
     "leicester city": "leicester", "sheffield united": "sheffield utd", "luton town": "luton",
+    # Short forms headlines use.
+    "man united": "man utd", "man city": "man city", "villa": "aston villa", "forest": "nott'm forest",
+    "nottm forest": "nott'm forest", "palace": "crystal palace", "west ham": "west ham", "wolves": "wolves",
 }
 
 
@@ -323,6 +343,120 @@ def press_now(bs: dict) -> dict | None:
     return press
 
 
+# ---------------------------------------------------------------- headlines
+
+def fetch_headlines(timeout: float = 30) -> str:
+    resp = requests.get(HEADLINES_URL, headers=_HEADERS, timeout=timeout)
+    resp.raise_for_status()
+    resp.encoding = "utf-8"
+    return resp.text
+
+
+def parse_headlines(page: str) -> list[dict]:
+    """The headlines on a NewsNow topic page, newest first: {"id", "title", "publisher", "t" (ISO
+    time), "url"}, each once.
+
+    NewsNow serves a script like this one its plain layout: the topic's own boxes are
+    <div class="rs-newsbox ... js-newsmain">, each headline a <div class="hl" data-id> with an
+    <a class="hll"> to c.newsnow.com/A/<id>, the publisher (data-pub) and a Unix `data-time`; the
+    other boxes ("newsteaser", trending) are other topics and are skipped. A browser gets <article>
+    cards instead (title span, publisher name, `data-timestamp`), read as a fallback."""
+    out: dict[str, dict] = {}
+
+    def add(link, title, publisher, stamp):
+        if link and title and link.group(2) not in out:
+            out[link.group(2)] = {
+                "id": link.group(2), "title": _text(title.group(1)),
+                "publisher": _text(publisher.group(1)) if publisher else None,
+                "t": pd.Timestamp(int(stamp.group(1)), unit="s", tz="UTC").isoformat() if stamp else None,
+                "url": htmllib.unescape(link.group(1))}
+
+    boxes = re.split(r'<div class="rs-newsbox\b', page)[1:]
+    for box in boxes:
+        if "js-newsmain" not in box[:300]:
+            continue
+        for item in re.split(r'<div class="hl\b', box)[1:]:
+            add(re.search(r'<a class="hll" href="(https://c\.newsnow\.com/A/(\d+)[^"]*)"', item),
+                re.search(r'<a class="hll"[^>]*>(.*?)</a>', item, flags=re.S),
+                re.search(r'class="src[^"]*"[^>]*>([^<]*)<', item),
+                re.search(r'data-time="(\d+)"', item))
+    if not out:
+        for card in re.split(r'<article\b', page)[1:]:
+            add(re.search(r'<a href="(https://c\.newsnow\.com/A/(\d+)[^"]*)"[^>]*class="[^"]*article-card__headline', card),
+                re.search(r'class="[^"]*article-title[^"]*"[^>]*>(.*?)</span>', card, flags=re.S),
+                re.search(r'class="[^"]*article-publisher__name[^"]*"[^>]*>(.*?)</span>', card, flags=re.S),
+                re.search(r'data-timestamp="(\d+)"', card))
+    return sorted(out.values(), key=lambda h: h["t"] or "", reverse=True)
+
+
+def match_headlines(items: list[dict], bs: dict) -> list[dict]:
+    """Each headline with `players` (FPL ids named in it) and `teams` (FPL team ids named in it).
+
+    A player counts when his full name is in the title, or his web name is (as whole words) and
+    either it follows his first name or a short form of it ("Ben White" for Benjamin White), or his
+    club is named too, or the name is his alone in the league and not an everyday word."""
+    clubs = club_ids(bs)
+    club_words = sorted(((tuple(_tokens(name)), team) for name, team in clubs.items() if len(name) > 3),
+                        key=lambda x: -len(x[0]))
+    web_count: dict[tuple, int] = {}
+    people = []
+    for e in bs["elements"]:
+        web = tuple(_tokens(e["web_name"]))
+        full = tuple(_tokens(f"{e.get('first_name', '')} {e.get('second_name', '')}"))
+        if not web:
+            continue
+        web_count[web] = web_count.get(web, 0) + 1
+        first = tuple(_tokens(e.get("first_name", "")))
+        people.append((e["id"], e["team"], web, full, first[0] if first else ""))
+
+    def at(words: list[str], phrase: tuple) -> list[int]:
+        n = len(phrase)
+        return [i for i in range(len(words) - n + 1) if n and tuple(words[i:i + n]) == phrase]
+
+    def has(words: list[str], phrase: tuple) -> bool:
+        return bool(at(words, phrase))
+
+    def named(words: list[str], web: tuple, first: str) -> bool:
+        """The web name straight after the first name or a short form of it (3+ letters)."""
+        return any(i > 0 and len(words[i - 1]) >= 3 and first.startswith(words[i - 1]) for i in at(words, web))
+
+    out = []
+    for h in items:
+        words = _tokens(h["title"])
+        teams = sorted({team for phrase, team in club_words if has(words, phrase)})
+        strong, weak = [], []
+        for pid, team, web, full, first in people:
+            if (has(words, full) and len(full) > 1) or (first and named(words, web, first)):
+                strong.append((pid, full))
+            elif has(words, web) and (team in teams or (web_count[web] == 1 and " ".join(web) not in COMMON_WORDS
+                                                        and len(" ".join(web)) >= 4)):
+                weak.append((pid, web))
+        # "Jurrien Timber" names one Timber: a surname-only match on a name already given in full goes.
+        named_in_full = {w for _, full in strong for w in full}
+        found = [pid for pid, _ in strong] + [pid for pid, web in weak if web[-1] not in named_in_full]
+        out.append({**h, "players": found, "teams": teams})
+    return out
+
+
+def headlines_now(bs: dict) -> list[dict] | None:
+    """Today's headlines, matched to FPL's players, or None if the page can't be read."""
+    try:
+        return match_headlines(parse_headlines(fetch_headlines()), bs)
+    except requests.RequestException as exc:
+        print(f"  (headlines not read: {exc})")
+        return None
+
+
+def _merge_headlines(old: list[dict], new: list[dict] | None, now: pd.Timestamp) -> list[dict]:
+    """The headlines seen so far within HEADLINE_DAYS, a re-read one replacing its older copy."""
+    keep = {h["id"]: h for h in old}
+    for h in new or []:
+        keep[h["id"]] = h
+    cutoff = now - pd.Timedelta(days=HEADLINE_DAYS)
+    return sorted((h for h in keep.values() if h.get("t") and pd.Timestamp(h["t"]) >= cutoff),
+                  key=lambda h: h["t"], reverse=True)
+
+
 # ---------------------------------------------------------------- the chance of playing each match
 
 def _press_wins(press: dict | None, bs: dict) -> pd.Series:
@@ -406,21 +540,27 @@ def _plain(v):
     return v
 
 
-def _press_due(previous_press: dict | None, bs: dict, now: pd.Timestamp) -> bool:
-    if not previous_press or not previous_press.get("fetched"):
+def _due(fetched: str | None, bs: dict, now: pd.Timestamp, every_hours: float) -> bool:
+    """Whether a page last read at `fetched` is due again: every run within PRESS_BUSY_HOURS of
+    the next deadline, else every `every_hours`."""
+    if not fetched:
         return True
-    age = now - pd.Timestamp(previous_press["fetched"])
     _, _, _, deadline = _deadlines(bs)
     busy = deadline is not None and pd.Timedelta(0) <= pd.Timestamp(deadline) - now <= pd.Timedelta(hours=PRESS_BUSY_HOURS)
-    return busy or age >= pd.Timedelta(hours=PRESS_EVERY_HOURS)
+    return busy or now - pd.Timestamp(fetched) >= pd.Timedelta(hours=every_hours)
+
+
+def _press_due(previous_press: dict | None, bs: dict, now: pd.Timestamp) -> bool:
+    return _due((previous_press or {}).get("fetched"), bs, now, PRESS_EVERY_HOURS)
 
 
 def update(previous: dict | None, bs: dict, press: dict | None = None, now: pd.Timestamp | None = None,
-           read_press: bool = True) -> dict:
+           read_press: bool = True, headlines: list[dict] | None = None) -> dict:
     """The new news.json from the `previous` one and bootstrap-static `bs`.
 
     `press` is today's press conferences (matched); if None and `read_press`, the page is read
-    when due (`_press_due`), else the previous copy is kept. The log gets an entry for every
+    when due (`_press_due`), else the previous copy is kept. `headlines` likewise (matched; read
+    when due if None and `read_press`), merged into the previous run's. The log gets an entry for every
     player whose status, chance or news differs from the previous run's (and, on a season's first
     run, everyone with news now), timed by FPL's `news_added`."""
     now = (now or pd.Timestamp.now(tz="UTC")).tz_convert("UTC").floor("min")
@@ -437,6 +577,14 @@ def update(previous: dict | None, bs: dict, press: dict | None = None, now: pd.T
     if press is not None:
         press = {**press, "fresh": press_is_for_next(press, bs)}
     said = press_table(press)["press"] if press else pd.Series(dtype=object)
+
+    old_headlines = (previous.get("headlines") or {}) if same else {}
+    headlines_fetched = old_headlines.get("fetched")
+    if headlines is None and read_press and _due(headlines_fetched, bs, now, HEADLINES_EVERY_HOURS):
+        headlines = headlines_now(bs)
+    if headlines is not None:
+        headlines_fetched = now.isoformat()
+    headline_items = _merge_headlines(old_headlines.get("items", []), headlines, now)
 
     rows = []
     for p in table.to_dict("records"):
@@ -467,7 +615,9 @@ def update(previous: dict | None, bs: dict, press: dict | None = None, now: pd.T
 
     return {"updated": now.isoformat(), "season": season, "gw_current": current, "gw_next": upcoming,
             "last_deadline": last_deadline, "next_deadline": deadline, "players": rows, "press": press,
-            "press_url": PRESS_URL, "press_name": PRESS_NAME, "log": log}
+            "press_url": PRESS_URL, "press_name": PRESS_NAME,
+            "headlines": {"fetched": headlines_fetched, "items": headline_items},
+            "headlines_url": HEADLINES_URL, "headlines_name": HEADLINES_NAME, "log": log}
 
 
 def run(folder: Path, bs: dict | None = None) -> Path:
@@ -514,8 +664,8 @@ def change_log(state: dict | None) -> pd.DataFrame:
 
 
 def pull(remote_name: str = "origin") -> list[Path]:
-    """Copy the `news` branch's change log and its press-conference snapshot into
-    archive/news/<season>/ (log.parquet, press/<date>.json). Returns the files written."""
+    """Copy the `news` branch's change log, its press-conference snapshot and its headlines into
+    archive/news/<season>/ (log.parquet, press/<date>.json, headlines.parquet). Returns the files written."""
     import subprocess
     from xpfpl.data import archive
 
@@ -531,7 +681,8 @@ def pull(remote_name: str = "origin") -> list[Path]:
 
 
 def save(state: dict) -> list[Path]:
-    """Write a news.json's log and press conferences into the archive (unchanged files skipped)."""
+    """Write a news.json's log, press conferences and headlines into the archive (unchanged files
+    skipped; headlines are added to the ones already there, so the archive keeps every one seen)."""
     from xpfpl.data import archive
     folder = ARCHIVE / state["season"]
     written = []
@@ -548,7 +699,30 @@ def save(state: dict) -> list[Path]:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(text, encoding="utf-8")
             written.append(path)
+    items = (state.get("headlines") or {}).get("items", [])
+    if items:
+        path = folder / "headlines.parquet"
+        new = headline_table(items)
+        old = pd.read_parquet(path) if path.exists() else new.iloc[0:0]
+        both = pd.concat([old[~old["id"].isin(new["id"])], new], ignore_index=True)
+        both = both.sort_values("t", ascending=False, ignore_index=True)
+        if archive.write(both, path):
+            written.append(path)
     return written
+
+
+def headline_table(items: list[dict]) -> pd.DataFrame:
+    """Headlines as a table: id, t (timestamp), title, publisher, url, players and teams (lists)."""
+    t = pd.DataFrame(items, columns=["id", "t", "title", "publisher", "url", "players", "teams"])
+    t["t"] = pd.to_datetime(t["t"], utc=True, errors="coerce")
+    for c in ("players", "teams"):
+        t[c] = t[c].map(lambda v: [int(x) for x in v] if isinstance(v, list) else [])
+    return t
+
+
+def archived_headlines(season: str) -> pd.DataFrame:
+    path = ARCHIVE / season / "headlines.parquet"
+    return pd.read_parquet(path) if path.exists() else headline_table([])
 
 
 def archived_log(season: str) -> pd.DataFrame:

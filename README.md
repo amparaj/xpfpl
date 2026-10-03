@@ -77,7 +77,8 @@ Everything in one place, no command line needed. The tabs follow the Guide's wee
 - **Team News**: every player with news (status, chance of playing, reason, expected return date,
   when FPL last changed it and a link to the article it came from), your squad's first; the chance of
   playing this model used and which rule set it; the managers' press conferences (OUT / DOUBT / IN and
-  their words); and every change to FPL's news in the last 14 days.
+  their words); the latest headlines from NewsNow with the players and clubs they name (your squad's
+  shown with your squad); and every change to FPL's news in the last 14 days.
 - **Prices**: FPL's own progress towards each player's next price change (new in 2026-27: +100
   rises, -100 falls), how fast it's moving and FPL's likelihood of a move at the next updates; the
   players closest to a rise and to a fall; your squad's purchase and selling prices and what a rise
@@ -729,7 +730,7 @@ drops the old season's match-by-match history.
 | `deadline-snapshots` | Where the scheduled Action pushes each pre-deadline snapshot | Never merge it: `xpfpl fetch` copies the snapshots into `archive/` |
 | `odds` | `odds.json`, replaced by the odds Action | Never merge or edit it |
 | `prices` | `prices.json` and a daily snapshot per day, replaced every hour by the price Action | Never merge or edit it: `xpfpl fetch` copies the change log and daily snapshots into `archive/prices/` |
-| `news` | `news.json`, replaced every hour by the news Action | Never merge or edit it: `xpfpl fetch` copies the news log and press conferences into `archive/news/` |
+| `news` | `news.json`, replaced every hour by the news Action | Never merge or edit it: `xpfpl fetch` copies the news log, press conferences and headlines into `archive/news/` |
 
 ## Website
 
@@ -800,8 +801,14 @@ came from (`scout_news_link`, usually the club's own team news) and known absenc
 (`scout_risks`, e.g. a loanee who can't face his parent club). It logs every change, and reads
 [Premier Fantasy Tools' press-conference summaries](https://www.premierfantasytools.com/premier-league-press-conferences/)
 (each club's OUT / DOUBT / IN and the manager's words; every run in the two days before a deadline,
-else every six hours), matching the names to FPL's players by club. `xpfpl fetch` copies the log and
-each press-conference snapshot into `archive/news/<season>/`.
+else every six hours), matching the names to FPL's players by club. It also reads the latest headlines
+from [NewsNow's Premier League injuries and suspensions page](https://www.newsnow.com/au/Sport/Football/Premier+League/Injuries+and+Suspensions)
+(title, publisher, time and NewsNow's link; every four hours, hourly in the two days before a
+deadline), picking out the players and clubs each one names, and keeps two weeks of them. NewsNow's
+robots.txt allows that listing page for general crawlers; it disallows the `/A/` article redirects
+and the `?p=` pages, which are never fetched (the links are only shown for people to click). The
+headlines are for reading only: no model input. `xpfpl fetch` copies the log, each press-conference
+snapshot and every headline seen into `archive/news/<season>/`.
 
 `predict` turns the news into each upcoming match's chance that the player is available
 (`news.availability`):
@@ -814,9 +821,8 @@ each press-conference snapshot into `archive/news/<season>/`.
 Each forecast records `avail`, `news_rule` (which rule set it), `press` and `back`, and `xpfpl scorecard`
 reports, for each kind of news, the chance the forecast gave against how many played. None of it could be
 tested beforehand: nothing kept FPL's news or press conferences before 2026-27. `config.PRESS_NEWS` and
-`config.NEWS_RETURN_DATES` switch the two parts off. Fantasy Football Scout's injury table and NewsNow
-aren't read (Scout's terms forbid automated extraction; NewsNow's robots.txt shuts out AI agents): the
-pages link to them.
+`config.NEWS_RETURN_DATES` switch the two parts off. Fantasy Football Scout's injury table isn't read
+(its terms forbid automated extraction): the pages link to it.
 
 ```bash
 xpfpl publish          # export -> build web/ -> push web/dist to gh-pages
