@@ -181,6 +181,15 @@ button.link { background: none; border: 0; padding: 0; color: var(--s1); text-de
 .key-dot { width: 9px; height: 9px; border-radius: 50%; }
 .tag { font-size: 12px; padding: 1px 6px; border-radius: 4px; background: var(--chip); color: var(--ink-2); white-space: nowrap; }
 .tag.warn { background: color-mix(in srgb, var(--bad) 16%, transparent); color: var(--bad); }
+.tag.good-tag { background: color-mix(in srgb, var(--good) 16%, transparent); color: var(--good); }
+/* Team News: the press-conference cards and the managers' words. */
+.press-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+.press-card { margin: 0; }
+.press-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.press-line { margin: 4px 0; font-size: 14px; line-height: 1.6; }
+.quote { margin: 8px 0 0; padding: 6px 10px; border-left: 3px solid var(--grid); color: var(--ink-2); font-size: 13.5px; font-style: italic; }
+.quote-by { font-style: normal; color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+.news-history { margin: 0; padding-left: 18px; font-size: 13.5px; }
 .tag.cup { background: color-mix(in srgb, var(--s1) 14%, transparent); color: var(--ink); margin-right: 4px; }
 
 /* FPL's progress to a price change: a bar from the middle, right towards a rise, left towards a fall. */

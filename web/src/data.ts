@@ -155,6 +155,11 @@ export interface Forecast {
   p_full?: number | null;
   /** How far the ensemble's members disagree on his next-gameweek xP, and the confidence that gives. */
   xp_sd?: number | null; confidence?: "High" | "Medium" | "Low" | null;
+  /** The team news behind the next gameweek (data/news.py): the chance of being available it came to, the rule
+   * that set it (FPL's flag, a newer press conference, a return date or a known absence), what the press
+   * conference said and FPL's return date. */
+  avail?: number | null; news_rule?: "flag" | "press" | "back" | "risk" | null; press?: "OUT" | "DOUBT" | "IN" | null;
+  back?: string | null;
   [xp: `xp_${number}`]: number;
 }
 /** The forecast saved for the next gameweek: xP per player for each gameweek of its horizon. */

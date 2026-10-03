@@ -169,8 +169,12 @@ GLOSSARY = [
      "Predicting matches this model was trained on. Past-gameweek xP in the review tab is in-sample, "
      "so it looks a little more accurate than this model really is on future games."),
     ("Injury scaling",
-     "xP is multiplied by FPL's chance-of-playing flag (a 50% flag halves xP). For later weeks, "
-     "flagged players are assumed to recover by 25 percentage points per gameweek."),
+     "xP is multiplied by the chance the player is available (a 50% flag halves xP). Next gameweek: "
+     "FPL's chance-of-playing flag, unless a press conference given after FPL's last update says OUT (0), "
+     "DOUBT (50%) or IN (100%). Later weeks: FPL's return date where it gives one (0 before it; 75% from it "
+     "after an injury, 100% after a ban), 0 in a gameweek FPL lists as a known absence (a loanee against "
+     "his parent club), else the flag recovering 25 points a gameweek. The Team News tab shows which rule "
+     "set each player's chance."),
     ("Optimiser",
      "After predicting xP, an integer linear program (the PuLP library with the CBC solver) searches "
      "every legal squad for the highest total xP: £ budget, 2 GKP / 5 DEF / 5 MID / 3 FWD, max 3 per "
@@ -934,7 +938,8 @@ def _flow_diagram() -> str:
         ("Features", "#f4f3ef", ["Minutes and role", "Underlying numbers\n(form, xG/xA per 90)",
                                  "Fixture\n(club ratings, market goals)", "Crowd\n(transfers, ownership)"]),
         ("Models", "#dbe8f8", members),
-        ("Adjust", "#f4f3ef", ["Injury flags", "Midweek factor", "Ruled out\n(scorer odds <= 6%)"]),
+        ("Adjust", "#f4f3ef", ["Team news\n(flags, return dates, press)", "Midweek factor",
+                                "Ruled out\n(scorer odds <= 6%)"]),
         ("xP", "#2a78d6", [f"xP per player\nnext {config.HORIZON} GWs"]),
         ("Use", "#f4f3ef", ["Monte Carlo\n(ranges, captain and chip odds)", "Optimiser\n(squad, transfers, XI, captain, chips)"]),
         ("Out", "#fbe1d6", ["Recommendation\nand This Model's Team", "Scorecard\n(forecasts scored after the GW)"]),
@@ -1029,7 +1034,9 @@ def render() -> None:
         "- Later weeks of the plan are a route, not a commitment: they assume today's predictions and "
         "get re-planned every week.\n"
         "- Free transfers are estimated by replaying your season. Override them if they look wrong.\n"
-        "- This model doesn't read team news, press conferences or predicted line-ups: only FPL's injury flag.\n"
+        "- Team news comes from FPL's flags and return dates and one site's press-conference summaries, "
+        "matched by name; predicted line-ups aren't read, and the press-conference rule isn't tested yet "
+        "(no history before 2026-27: `xpfpl scorecard` checks it as the season goes).\n"
         "- Price changes are predicted from form and transfer momentum, not FPL's own progress figures "
         "(the Prices tab shows those, and they're being logged so they can be used once there's enough "
         "history), so treat them as a tie-breaker.\n"

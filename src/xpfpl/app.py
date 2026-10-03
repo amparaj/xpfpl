@@ -15,8 +15,8 @@ import pandas as pd
 import requests
 import streamlit as st
 
-from xpfpl import (chips, config, guide, market_view, match_view, models, myteam, price_view, profile_view,
-                   review, simulate)
+from xpfpl import (chips, config, guide, market_view, match_view, models, myteam, news_view, price_view,
+                   profile_view, review, simulate)
 from xpfpl.data import api, cups
 from xpfpl.data.history import load_matches
 from xpfpl.myteam import load_my_team
@@ -604,8 +604,9 @@ if not config.MATCHES_PATH.exists():
     st.stop()
 
 # The Guide's weekly routine, left to right: look back at the week, research, plan; then the season.
-tab_guide, tab_review, tab_players, tab_prices, tab_markets, tab_plan, tab_myteam, tab_season = st.tabs(
-    ["Guide", "Gameweek Review", "Players & Fixtures", "Prices", "Markets", "Plan Ahead", "My Team", "My Season"])
+tab_guide, tab_review, tab_players, tab_news, tab_prices, tab_markets, tab_plan, tab_myteam, tab_season = st.tabs(
+    ["Guide", "Gameweek Review", "Players & Fixtures", "Team News", "Prices", "Markets", "Plan Ahead", "My Team",
+     "My Season"])
 
 with tab_guide:
     guide.render()
@@ -1371,6 +1372,19 @@ with tab_players:
             unsafe_allow_html=True)
     st.dataframe(ticker.style.apply(colour).format({"Average Fixture Difficulty Rating": "{:.2f}"}), width="stretch",
                  height=38 * (len(ticker) + 1))
+
+
+# ---------------------------------------------------------------- team news
+
+with tab_news:
+    news_bs, _ = live_data()
+    news_players, news_gws = predictions(horizon, model, stamp())
+    try:
+        news_me = my_team(int(team_id))
+    except Exception:                      # a bad team id or FPL hiccup: show the news without your squad
+        news_me = None
+    news_view.render(news_bs, team_short, news_me, news_players[f"xp_{news_gws[0]}"],
+                     news_players[[c for c in ("avail", "news_rule") if c in news_players]])
 
 
 # ---------------------------------------------------------------- prices

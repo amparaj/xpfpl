@@ -1,0 +1,66 @@
+# Keeps the team news: every player's FPL news (status, chance of playing, reason, return date,
+# FPL's source link and when it changed) and the latest press-conference summaries, as news.json
+# on the `news` branch (src/xpfpl/data/news.py). The website's Team News page and the dashboard read it.
+#
+# FPL's API only shows the present, so the hourly runs keep the history: every change to a
+# player's news this season, timed by FPL's own `news_added`. The press-conference page is read
+# every run in the two days before a deadline, else every six hours. `xpfpl fetch` copies the log
+# and the press conferences into archive/news/.
+#
+# The branch is one commit, replaced each run (like `prices`). Each run starts from the branch's
+# current file, so the log carries on; a run that can't read it fails rather than starting again.
+# Scheduled workflows only run from the default branch.
+name: News snapshot
+
+on:
+  schedule:
+    - cron: "37 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: news-snapshot
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      # Only what news.py needs: installing the package's own dependencies would pull in torch.
+      - name: Install
+        run: |
+          pip install --quiet pandas pyarrow requests
+          pip install --quiet --no-deps -e .
+
+      - name: Start from the branch's file
+        run: |
+          mkdir -p "$RUNNER_TEMP/news"
+          if git ls-remote --exit-code --heads origin news >/dev/null; then
+            git fetch --quiet --depth=1 origin news
+            git --work-tree="$RUNNER_TEMP/news" checkout FETCH_HEAD -- .
+            test -s "$RUNNER_TEMP/news/news.json"
+          fi
+
+      - name: Update
+        run: python -m xpfpl.data.news update "$RUNNER_TEMP/news"
+
+      - name: Replace the news branch
+        working-directory: ${{ runner.temp }}/news
+        run: |
+          git init --quiet -b news
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit --quiet -m "News $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push --quiet --force "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" HEAD:news
+        env:
+          GH_TOKEN: ${{ github.token }}

@@ -120,7 +120,8 @@ function Overview() {
         {site.meta.model === "mlp"
           ? <>This model is a small neural network built with a machine-learning library.</>
           : <>This model is "{site.meta.model}": {site.meta.model_description}.</>}{" "}
-        Its forecast is then adjusted for FPL's injury flags, and double gameweeks count both matches.
+        Its forecast is then adjusted for the <a href="#news">team news</a> (FPL's injury flags and return dates, and the
+        managers' press conferences), and double gameweeks count both matches.
       </p>
       <p>
         <strong>Midweek matches.</strong> A club with a Champions League match on Tuesday might rest its stars on
