@@ -226,7 +226,7 @@ export default function MarketsPage() {
   const matchColumns: Column<MatchView>[] = [
     { key: "match", label: "Match", value: (m) => m.label, render: (m) => (
       <span className="opponent"><Club code={m.home_code} />{m.goals_home !== null ? ` ${m.goals_home}–${m.goals_away} ` : " v "}<Club code={m.away_code} /></span>) },
-    ...only<MatchView>(isLive, [{ key: "ko", label: "Kick-off", value: (m: MatchView) => m.kickoff, render: (m: MatchView) => when(m.kickoff) }]),
+    ...only<MatchView>(isLive, [{ key: "ko", label: "Kick-off", sortable: true, value: (m: MatchView) => m.kickoff, render: (m: MatchView) => when(m.kickoff) }]),
     { key: "home", label: "Home", group: "Market", numeric: true, value: (m) => m.home_win, render: (m) => pct(m.home_win), title: "Market odds of a home win" },
     { key: "draw", label: "Draw", group: "Market", numeric: true, value: (m) => m.draw, render: (m) => pct(m.draw), title: "Market odds of a draw" },
     { key: "away", label: "Away", group: "Market", numeric: true, value: (m) => m.away_win, render: (m) => pct(m.away_win), title: "Market odds of an away win" },
@@ -412,7 +412,7 @@ function MarketAccuracy({ data }: { data: Row[] }) {
     return scores.length > 1 && Number(text) === best && scores.filter((v) => v === best).length === 1 ? <strong>{text}</strong> : text;
   };
   const columns: Column<AccuracyRow>[] = [
-    { key: "season", label: "Season", value: (r) => r.season },
+    { key: "season", label: "Season", sortable: true, value: (r) => r.season },
     { key: "matches", label: "Matches", numeric: true, value: (r) => r.matches },
     ...ACCURACY_METRICS.flatMap((m): Column<AccuracyRow>[] => sources.map((s) => ({
       key: `${m.key}_${s.key}`, label: s.label, short: s.short, group: m.label, numeric: true, title: `${m.title}. ${s.title}`,

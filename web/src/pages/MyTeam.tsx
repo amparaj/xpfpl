@@ -10,19 +10,16 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Pitch } from "../components/Pitch";
 import { CaptainOddsTable, ScoreChart, band } from "../components/Simulation";
 import { Club, Loading, Note, Segmented, Table, Tiles, type Column, type TileProps } from "../components/ui";
-import { rows, type MyTeam, type MyTeamPrivate, type MyWeek, type MyWeekNumbers, type PlanSettings, type Player } from "../data";
+import { WhyProjection } from "../components/Why";
+import { rows, type Forecast, type MyTeam, type MyTeamPrivate, type MyWeek, type MyWeekNumbers, type PlanSettings, type Player } from "../data";
 import { POSITIONS, int, money, pct, pts, signed, when } from "../format";
 import { rememberWord, rememberedWord, unseal } from "../seal";
 import { useData, useSite } from "../site";
 
 const CHIP_NAMES: Record<string, string> = { wildcard: "Wildcard", freehit: "Free Hit", bboost: "Bench Boost", "3xc": "Triple Captain" };
 
-interface Squad {
-  element: number; xp_total: number; pts_p10?: number | null; pts_p90?: number | null;
-  p_haul?: number | null; p_blank?: number | null; p_play?: number | null;
-  [xp: `xp_${number}`]: number;
-}
-type SquadRow = Squad & { player: Player; role: string; order: number };
+/** A squad player's row of the saved forecast (myteam.outlook). */
+type SquadRow = Forecast & { player: Player; role: string; order: number };
 
 /** The team: the data's own after the deadline, else what the secret word unlocked (remembered in this browser). */
 function useTeam(data: MyTeam | null | undefined) {
@@ -132,7 +129,7 @@ export default function MyTeamPage() {
     if (!team) return [];
     const first = team.weeks[0];
     const order = [...first.lineup, ...first.bench];
-    return rows<Squad>(team.players).map((r) => {
+    return rows<Forecast>(team.players).map((r) => {
       const i = order.indexOf(r.element);
       const role = r.element === first.captain ? "Captain" : r.element === first.vice ? "Vice" : i < 0 ? "–" : i < 11 ? "XI" : `Bench ${i - 10}`;
       return { ...r, player: site.player.get(r.element)!, role, order: i < 0 ? 99 : i };
@@ -328,7 +325,9 @@ export default function MyTeamPage() {
       {team && <>
         <h3>The squad</h3>
         <Table columns={squadColumns} data={squad} sort="role" desc={false} rowKey={(r) => r.element}
-               cardSub={["club", "pos", "role"]} cardStats={[`xp${data.gw}`, "total"]} />
+               cardSub={["club", "pos", "role"]} cardStats={[`xp${data.gw}`, "total"]}
+               detail={(r) => <WhyProjection player={r.player} forecast={r} gw={data.gw} gameweeks={data.gameweeks} />} />
+        <p className="note">Click a player for why this model expects what it does.</p>
       </>}
 
       <Note>

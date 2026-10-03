@@ -165,7 +165,7 @@ export default function Prices() {
       render: (p) => pts(forecast(p.id)), title: "This model's forecast for the next gameweek" },
   ];
   const changeColumns: Column<PriceChange & { key: number }>[] = [
-    { key: "day", label: "Day (UK)", value: (c) => c.t ?? "", render: (c) => (c.t ? ukDay(c.t) : `GW${c.gw ?? "?"}`) },
+    { key: "day", label: "Day (UK)", sortable: true, value: (c) => c.t ?? "", render: (c) => (c.t ? ukDay(c.t) : `GW${c.gw ?? "?"}`) },
     { key: "name", label: "Player", value: (c) => c.name },
     { key: "team", label: "Club", value: (c) => site.teamByCode.get(c.team_code)?.short, render: (c) => <Club code={c.team_code} /> },
     { key: "pos", label: "Pos", value: (c) => c.pos, render: (c) => POSITIONS[c.pos] },
