@@ -8,6 +8,7 @@ import Gameweeks from "./pages/Gameweeks";
 import MarketsPage from "./pages/Markets";
 import ModelTeamPage from "./pages/ModelTeam";
 import MyTeamPage from "./pages/MyTeam";
+import News from "./pages/News";
 import NextGameweek from "./pages/NextGameweek";
 import Players from "./pages/Players";
 import Prices from "./pages/Prices";
@@ -23,6 +24,7 @@ const PAGES = [
   { id: "model-team", label: "This Model's Team", component: ModelTeamPage },
   { id: "my-team", label: "My Team", component: MyTeamPage },
   { id: "players", label: "Players", component: Players },
+  { id: "news", label: "Team News", component: News },
   { id: "prices", label: "Prices", component: Prices },
   { id: "markets", label: "Markets", component: MarketsPage },
   { id: "data", label: "Data", component: DataPage },

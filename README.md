@@ -26,7 +26,8 @@ Each gameweek it tells you:
    *before* the match, so there's no leakage.
 3. **Prediction** (`xpfpl/models/`): seven interchangeable models predict points for each fixture
    (see [Models](#models)), all compared against a no-ML baseline (5-match average) that they have
-   to beat to be worth using. Double gameweeks sum their fixtures and FPL's injury flags scale the xP.
+   to beat to be worth using. Double gameweeks sum their fixtures and the team news scales the xP
+   (`xpfpl/data/news.py`: FPL's flags and return dates, and press conferences; see [Team news](#team-news)).
 4. **Decisions** (`xpfpl/optimise.py`, `xpfpl/chips.py`): an integer linear program picks a 15-man
    squad, XI and captain for *every* gameweek in the horizon, linked by transfers, to maximise
    discounted xP under FPL's rules (budget, 2/5/5/3, max 3 per club, valid formations, free
@@ -73,6 +74,10 @@ Everything in one place, no command line needed. The tabs follow the Guide's wee
 - **Players & Fixtures** (with each player's spatial profile under "A player's season": shot zones, every shot, per-90 zone metrics against his position, and similar profiles): xP for every player with filters (and the midweek factor on next week's
   xP, when there is one, and his simulated range and chances of 10+ and of 2 or fewer), and a fixture difficulty ticker that marks each club's cup and European
   matches ("[UCL Tue]").
+- **Team News**: every player with news (status, chance of playing, reason, expected return date,
+  when FPL last changed it and a link to the article it came from), your squad's first; the chance of
+  playing this model used and which rule set it; the managers' press conferences (OUT / DOUBT / IN and
+  their words); and every change to FPL's news in the last 14 days.
 - **Prices**: FPL's own progress towards each player's next price change (new in 2026-27: +100
   rises, -100 falls), how fast it's moving and FPL's likelihood of a move at the next updates; the
   players closest to a rise and to a fall; your squad's purchase and selling prices and what a rise
@@ -371,7 +376,7 @@ batched in PyTorch:
 1. each side's goals ~ Poisson(the fixture's expected goals: the betting odds where there are
    some, else the club ratings in `teams.py`);
 2. each player: no minutes, a cameo or 60+, from the minutes model (`xmins`, in the ensemble) and
-   scaled by the injury flag, midweek rotation and the market's "ruled out"; drawn for the whole
+   scaled by the team news, midweek rotation and the market's "ruled out"; drawn for the whole
    side at once (systematic sampling), so every player keeps his chance but a club fields as many
    players as those chances add up to, not 8 one week and 17 the next;
 3. each of his side's goals is his with probability (his per-90 rate x time on the pitch / the
@@ -724,6 +729,7 @@ drops the old season's match-by-match history.
 | `deadline-snapshots` | Where the scheduled Action pushes each pre-deadline snapshot | Never merge it: `xpfpl fetch` copies the snapshots into `archive/` |
 | `odds` | `odds.json`, replaced by the odds Action | Never merge or edit it |
 | `prices` | `prices.json` and a daily snapshot per day, replaced every hour by the price Action | Never merge or edit it: `xpfpl fetch` copies the change log and daily snapshots into `archive/prices/` |
+| `news` | `news.json`, replaced every hour by the news Action | Never merge or edit it: `xpfpl fetch` copies the news log and press conferences into `archive/news/` |
 
 ## Website
 
@@ -740,7 +746,9 @@ seasons, exported to `seasons/<season>/` with their own clubs, players and fixtu
 the horizon with any midweek factor on their xP, each club's fixtures with our win chances and a
 badge for its cup or European matches, and anyone the betting markets have ruled out), **My Team** (the team I'm
 playing in the coming gameweek, as on the dashboard's My Team tab, with its simulated score this week and over the
-horizon, captain odds and what the transfers are worth; see below), **Players**, **Prices** (who's closest to a price rise or
+horizon, captain odds and what the transfers are worth; see below), **Players**, **Team News** (who's out, doubtful or back
+and when, the source and time of FPL's news, the managers' press conferences and the chance of playing this model used;
+refreshed hourly from the `news` branch), **Prices** (who's closest to a price rise or
 fall by FPL's own progress figure, and every move logged this season; refreshed hourly from the `prices` branch), **Markets** (the betting odds at each deadline against what happened),
 **The Model's Team** (its pitch marks a club's midweek match; each live week shows its simulated score, captain odds and chip odds, and whether the score landed in its likely range) and **Data** (the archive). It
 doesn't train or plan.
@@ -781,6 +789,34 @@ three days of each player's progress and one full snapshot a day (`daily/<date>.
 replaces the branch with one commit. FPL's API only shows the present, so these runs are the only
 record of when prices moved and how FPL's projections did; `xpfpl fetch` copies them into
 `archive/prices/<season>/`.
+
+### Team news
+
+The Team News page reads `news.json` from the `news` branch the same way. A scheduled Action
+(`.github/workflows/news-snapshot.yml`) runs `python -m xpfpl.data.news update` every hour. It reads
+bootstrap-static, which carries FPL's news for every player: status, chance of playing, the text
+("Hamstring injury - Expected back 10 Oct"), when FPL last changed it (`news_added`), the article it
+came from (`scout_news_link`, usually the club's own team news) and known absences ahead
+(`scout_risks`, e.g. a loanee who can't face his parent club). It logs every change, and reads
+[Premier Fantasy Tools' press-conference summaries](https://www.premierfantasytools.com/premier-league-press-conferences/)
+(each club's OUT / DOUBT / IN and the manager's words; every run in the two days before a deadline,
+else every six hours), matching the names to FPL's players by club. `xpfpl fetch` copies the log and
+each press-conference snapshot into `archive/news/<season>/`.
+
+`predict` turns the news into each upcoming match's chance that the player is available
+(`news.availability`):
+
+| Week | Rule |
+| --- | --- |
+| Next gameweek | FPL's chance of playing, unless a press conference for this gameweek, given on a later day than FPL's last update to the player, says OUT (0), DOUBT (`PRESS_DOUBT_CHANCE`, 50%) or IN (100%) |
+| Later weeks | FPL's return date: 0 for matches before it; from it 100% after a ban, `RETURN_CHANCE` (75%) after an injury. 0 in a gameweek FPL lists as a known absence. Otherwise the next week's chance recovering 25 points a week |
+
+Each forecast records `avail`, `news_rule` (which rule set it), `press` and `back`, and `xpfpl scorecard`
+reports, for each kind of news, the chance the forecast gave against how many played. None of it could be
+tested beforehand: nothing kept FPL's news or press conferences before 2026-27. `config.PRESS_NEWS` and
+`config.NEWS_RETURN_DATES` switch the two parts off. Fantasy Football Scout's injury table and NewsNow
+aren't read (Scout's terms forbid automated extraction; NewsNow's robots.txt shuts out AI agents): the
+pages link to them.
 
 ```bash
 xpfpl publish          # export -> build web/ -> push web/dist to gh-pages

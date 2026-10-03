@@ -20,6 +20,11 @@ def _pull_snapshots() -> None:
     if got:
         print(f"Copied the price change log and {len(got) - 1} daily price snapshot(s) from the "
               f"{pricewatch.BRANCH} branch into archive/prices/.")
+    from xpfpl.data import news
+    got = news.pull()
+    if got:
+        print(f"Copied the team news log / press conferences from the {news.BRANCH} branch into archive/news/ "
+              f"({len(got)} file(s)).")
 
 
 def cmd_fetch(args) -> None:

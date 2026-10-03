@@ -13,7 +13,9 @@ with Monte Carlo ranges (simulate.py) are also scored on those (`ranges`): how m
 landed inside the 10th-90th percentile band, and the average chance of 10+ / of 2 or fewer
 against how often it happened. Forecasts that record the penalty-taker adjustment
 (setpieces.py, `pen_xp`) are scored on it too (`penalties`): the points each player scored beyond
-his xP, against the adjustment, for the players it would have moved.
+his xP, against the adjustment, for the players it would have moved. Forecasts that record the
+team news (data/news.py: `avail`, `press`) are scored on it (`news`): for each kind of news, the
+chance of playing the forecast gave against how many played.
 """
 
 import json
@@ -45,7 +47,7 @@ def score(matches: pd.DataFrame, season: str) -> dict:
     """Score every saved forecast for `season` whose gameweek has been played."""
     folder = config.PREDICTIONS_DIR / season
     played = set(matches.loc[matches["season"] == season, "gw"].unique())
-    rows, positions, ranges, penalties = [], [], [], []
+    rows, positions, ranges, penalties, news = [], [], [], [], []
     for path in sorted(folder.glob("gw*_*.csv")) if folder.exists() else []:
         match = FILE.search(path.name)
         if not match:
@@ -77,6 +79,8 @@ def score(matches: pd.DataFrame, season: str) -> dict:
                 penalties.append({"gw": gw, "model": model, "n": int(moved.sum()),
                                   "pen_xp": pred["pen_xp"].to_numpy()[moved].round(3).tolist(),
                                   "beyond_xp": (y - p)[moved].round(3).tolist()})
+        if "avail" in pred:
+            news += _news_rows(pred, actual, gw, model)
         for pos, name in config.POSITIONS.items():
             mask = active & (pred["position"].to_numpy() == pos)
             if mask.any():
@@ -84,7 +88,25 @@ def score(matches: pd.DataFrame, season: str) -> dict:
                                   "predicted": float(p[mask].mean()), "actual": float(y[mask].mean()),
                                   "n": int(mask.sum())})
     return {"generated": datetime.now().isoformat(timespec="seconds"), "season": season,
-            "gameweeks": rows, "positions": positions, "ranges": ranges, "penalties": penalties}
+            "gameweeks": rows, "positions": positions, "ranges": ranges, "penalties": penalties, "news": news}
+
+
+def _news_rows(pred: pd.DataFrame, actual: pd.DataFrame, gw: int, model: str) -> list[dict]:
+    """Per kind of team news in a forecast: how many players, the average chance of playing the
+    forecast gave them (`avail`) and the share who played (`played`). Kinds: what a press
+    conference said (`press OUT` / `press DOUBT` / `press IN`) and, for the rest, FPL's flag below 100%."""
+    played = (actual["minutes"].reindex(pred.index).fillna(0) > 0).to_numpy()
+    groups = {}
+    if "press" in pred:
+        for said in ("OUT", "DOUBT", "IN"):
+            groups[f"press {said}"] = (pred["press"] == said).to_numpy()
+    flagged = pred["chance"].fillna(100).to_numpy() < 100 if "chance" in pred else np.zeros(len(pred), dtype=bool)
+    taken = np.any(list(groups.values()), axis=0) if groups else np.zeros(len(pred), dtype=bool)
+    groups["FPL flag"] = flagged & ~taken
+    avail = pred["avail"].to_numpy(dtype=float)
+    return [{"gw": gw, "model": model, "kind": kind, "n": int(mask.sum()),
+             "avail": float(np.nanmean(avail[mask])), "played": float(played[mask].mean())}
+            for kind, mask in groups.items() if mask.any()]
 
 
 def penalty_fit(report: dict, model: str | None = None) -> dict | None:
@@ -140,4 +162,11 @@ def summarise(report: dict) -> str:
         if fit:
             lines.append(f"\nPenalty takers ({model}): best weight {fit['weight']:.2f} (se {fit['se']:.2f}) over "
                          f"{fit['n']} player-weeks; config.PENALTY_WEIGHT is {config.PENALTY_WEIGHT:g}")
+    news = pd.DataFrame(report.get("news", []))
+    if len(news):
+        pooled = news.assign(a=news["avail"] * news["n"], p=news["played"] * news["n"]).groupby(["model", "kind"])[
+            ["n", "a", "p"]].sum()
+        pooled = pooled.assign(avail=pooled["a"] / pooled["n"], played=pooled["p"] / pooled["n"])[["n", "avail", "played"]]
+        lines.append("\nTeam news (chance of playing given vs share who played, pooled over gameweeks):\n"
+                     + pooled.round(3).to_string())
     return "\n".join(lines)

@@ -59,6 +59,19 @@ POOL_SIZE = 50             # candidates per position handed to the optimiser
 # (6%) at prediction time has almost certainly been ruled out. On 2025-26 those players scored
 # 0.06 points against the model's 0.61, so the next gameweek's xP is multiplied by this.
 MARKET_OUT_XP_FACTOR = 0.1
+# Team news (data/news.py `availability`). Not tuned: there's no history of FPL's news or of
+# press conferences before 2026-27, so these follow what the news says and are recorded in every
+# forecast (`news_rule`, `press`) for `xpfpl scorecard` to check as the season goes.
+# A press conference for the next gameweek, given after FPL's last update to the player's news,
+# overrides FPL's chance of playing: OUT 0, IN 100%, DOUBT this.
+PRESS_NEWS = True
+PRESS_DOUBT_CHANCE = 0.5
+# FPL's return dates ("Expected back 10 Oct", "Suspended until 17 Oct") and known absences (a
+# loanee against his parent club) for the gameweeks after the next: 0 before the date; from it a
+# suspended player is available and an injured one gets RETURN_CHANCE (FPL's own figure for a
+# player just back), instead of the flag recovering 25 points a week.
+NEWS_RETURN_DATES = True
+RETURN_CHANCE = 0.75
 # The component model's clean-sheet and goals-conceded heads, moved this far towards the match
 # odds where there are any (models/components.py `_blend_market`): out of sample RMSE -0.0011
 # on 2024-25 and -0.0041 on 2025-26 at 0.5, against 0. Goals and assists stay the model's own.

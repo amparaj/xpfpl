@@ -361,7 +361,8 @@ def _next_gameweek(bs: dict, season: str, model: str) -> dict | None:
     keep = ["element", *[f"xp_{g}" for g in gws], "xp_total",
             *[c for c in ("xmins", "p_play", "p_full", "mkt_anytime", "market_out", "rotation", "rotation_factor",
                           "pts_p10", "pts_p50", "pts_p90", "p_haul", "p_6_9", "p_3_5", "p_blank",
-                          "total_p10", "total_p50", "total_p90", "xp_sd", "confidence") if c in t]]
+                          "total_p10", "total_p50", "total_p90", "xp_sd", "confidence",
+                          "avail", "news_rule", "press", "back") if c in t]]
     return {"gw": gw, "deadline": upcoming["deadline_time"], "model": key.split("_", 1)[1], "gameweeks": gws,
             "players": table(t[keep], digits=3)}
 
@@ -517,6 +518,14 @@ def _prices(bs: dict) -> dict:
     return pricewatch.update(None, bs)[0]
 
 
+def _news(bs: dict) -> dict:
+    """The team news (data/news.py): the hourly Action's news.json with today's FPL news and, when
+    due, a fresh read of the press conferences. On github.io the page reads the Action's file from
+    the `news` branch directly; this copy is the fallback, and what a local build shows."""
+    from xpfpl.data import news
+    return news.current(bs)
+
+
 def export(model: str = config.MODEL, out: Path = config.SITE_DATA_DIR) -> list[Path]:
     from xpfpl.data import markets
     from xpfpl.data.history import load_matches
@@ -573,6 +582,7 @@ def export(model: str = config.MODEL, out: Path = config.SITE_DATA_DIR) -> list[
             written.append(_write(histories, out / "market_history" / market_season / f"gw{gw:02d}.json"))
     written.append(_write(_accuracy(season, model), out / "accuracy.json"))
     written.append(_write(_prices(bs), out / "prices.json"))
+    written.append(_write(_news(bs), out / "news.json"))
     for past in browsable_seasons(season)[:-1]:
         written += _past_season(past, model, out)
     return written

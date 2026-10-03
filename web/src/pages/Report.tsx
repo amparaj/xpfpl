@@ -252,7 +252,8 @@ export default function Report() {
           <table className="compact report-table">
             <thead><tr><th>Source</th><th>What</th><th>Seasons</th></tr></thead>
             <tbody>
-              <tr><td>FPL's API</td><td>this season: every player's matches, prices, ownership, transfers, injury flags, fixtures</td><td>{site.meta.season}</td></tr>
+              <tr><td>FPL's API</td><td>this season: every player's matches, prices, ownership, transfers, injury flags and news (return dates, sources), fixtures</td><td>{site.meta.season}</td></tr>
+              <tr><td>Premier Fantasy Tools</td><td>press-conference summaries: who each manager named as out, doubtful or fit, with his words</td><td>{site.meta.season}</td></tr>
               <tr><td>vaastav's Fantasy-Premier-League</td><td>every past season's player-match rows (FPL's own data, kept on GitHub)</td><td>2016-17 on</td></tr>
               <tr><td>Polymarket</td><td>match result, goals and goalscorer prices at each FPL deadline</td><td>2024-25 on</td></tr>
               <tr><td>Football-Data.co.uk</td><td>bookmakers' match odds (to judge the market and the ratings; not a model input)</td><td>2016-17 on</td></tr>
@@ -283,7 +284,9 @@ export default function Report() {
             the component model moves its clean-sheet and goals-conceded parts halfway to the market's.</p></div>
           <div className="pillar"><strong>Crowd</strong><p>Net transfers before the deadline and ownership. The single most useful group: it carries
             team news (a knock, a rotation hint) before the stats can.</p></div>
-          <div className="pillar"><strong>After the forecast</strong><p>FPL's chance-of-playing flag (assumed to recover 25% a week), the midweek factor
+          <div className="pillar"><strong>After the forecast</strong><p>The chance of being available (<a href="#news">team news</a>: FPL's
+            flag for next week unless a newer press conference says otherwise; FPL's return dates and known absences for the weeks after,
+            else the flag recovering 25% a week), the midweek factor
             for players whose club played a cup or European match, and a cut to a tenth for anyone whose goalscorer odds are
             {" "}{pct(site.meta.out_threshold)} or less.</p></div>
         </div>

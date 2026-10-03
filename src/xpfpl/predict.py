@@ -9,24 +9,16 @@ from xpfpl.data.history import load_matches
 from xpfpl.features import build_future_frame
 
 
-def availability(status: pd.Series, chance: pd.Series, offset: pd.Series) -> pd.Series:
-    """Probability a player is available `offset` gameweeks from now.
-
-    Uses FPL's chance_of_playing (injury/suspension flags) for the next GW and assumes
-    flagged players gradually recover after that. Players who left the league ('u') are 0.
-    """
-    p = chance.fillna(100).astype(float) / 100.0
-    p = (p + 0.25 * offset).clip(upper=1.0)
-    return p.where(status != "u", 0.0)
-
-
 def predict_upcoming(horizon: int = config.HORIZON, model: str = config.MODEL,
-                     bs: dict | None = None, fixtures: list[dict] | None = None) -> tuple[pd.DataFrame, list[int]]:
+                     bs: dict | None = None, fixtures: list[dict] | None = None,
+                     press: dict | None = None) -> tuple[pd.DataFrame, list[int]]:
     """Returns (players, gameweeks): one row per player with an `xp_<gw>` column per gameweek.
 
     Also carries `price_delta`, the expected price change per gameweek; for the component
     model, one column per scoring component, so the dashboard can show where an xP comes from;
-    `pen_order`/`pen_xp` for the penalty takers (setpieces.py); and for a model with a minutes
+    `pen_order`/`pen_xp` for the penalty takers (setpieces.py); the team news behind next week's
+    chance of playing (`avail`, `news_rule`, `press`, `back`: data/news.py; `press` is today's
+    press conferences, read from the web when not given); and for a model with a minutes
     head (xmins, ensemble), `xmins`, `p_play` and `p_full` (60+ minutes) for the next GW; for the ensemble, how far its members disagree on the next GW
     (`xp_sd`) and the `confidence` that gives (config.CONFIDENCE_CUTS).
     With config.SIM_RUNS > 0, the next GW's simulated range (simulate.py): `pts_p10`/`pts_p50`/
@@ -47,10 +39,13 @@ def predict_upcoming(horizon: int = config.HORIZON, model: str = config.MODEL,
     frame = build_future_frame(matches, bs, fixtures, gameweeks, api.current_season(bs), market)
 
     predictor = models.load(model)
-    offset = frame["gw"] - next_gw  # 0 for the next gameweek, 1 for the one after...
     raw = pd.Series(predictor.predict(frame), index=frame.index).astype(float).clip(lower=0.0)
-    frame = frame.assign(xp=raw * availability(frame["status"],
-                                               frame["chance_of_playing_next_round"], offset))
+    # Each match's chance the player is available (data/news.py): FPL's flag, a newer press
+    # conference for the next gameweek, return dates and known absences for the weeks after.
+    from xpfpl.data import news
+    press = news.press_now(bs) if press is None and config.PRESS_NEWS else press
+    frame = frame.join(news.availability(frame, bs, next_gw, press))
+    frame["xp"] = raw * frame["avail"]
     # Midweek cup/European matches (data/cups.py): next week's xP moves by what the player's own
     # minutes in the midweek match said about his place on 2025-26 onwards. Later weeks only
     # show the club's midweek matches (`cup_<gw>`): no rotation penalty showed up at club level.
@@ -95,6 +90,7 @@ def predict_upcoming(horizon: int = config.HORIZON, model: str = config.MODEL,
     out = out.join(_scorer_odds(scorers, players))
     out = out.join(_rotation(frame, next_gw, gameweeks))
     out = out.join(_penalties(frame, next_gw))
+    out = out.join(_news(frame, next_gw, bs, press))
     out = out.join(ranges)
     out.index.name = "element"
 
@@ -118,8 +114,7 @@ def _simulate(frame: pd.DataFrame, raw: pd.Series, predictor, matches: pd.DataFr
         return pd.DataFrame(index=pd.Index([], name="element"))
     expectations = getattr(predictor, "expectations", None)
     minutes = expectations(frame) if expectations else None
-    play = (frame["xp"] / raw.where(raw > 0)).fillna(
-        availability(frame["status"], frame["chance_of_playing_next_round"], frame["gw"] - next_gw))
+    play = (frame["xp"] / raw.where(raw > 0)).fillna(frame["avail"])
     inp = simulate.inputs(frame, frame["xp"], minutes, play_factor=play)
     draws = simulate.by_gameweek(simulate.run(inp, simulate.history_tables(matches), sims=config.SIM_RUNS), inp)
     simulate.save(draws, season, next_gw, model)
@@ -135,6 +130,20 @@ def _rotation(frame: pd.DataFrame, next_gw: int, gameweeks: list[int]) -> pd.Dat
     level.columns = [f"cup_{gw}" for gw in gameweeks]
     rows = frame[frame["gw"] == next_gw].drop_duplicates("element").set_index("element")
     return level.join(rows[["rotation", "rotation_factor"]], how="outer")
+
+
+def _news(frame: pd.DataFrame, next_gw: int, bs: dict, press: dict | None) -> pd.DataFrame:
+    """Next gameweek's team news per element: the chance of being available it came to (`avail`,
+    a double gameweek's best), the rule that set it (`news_rule`), what a press conference for
+    that week said (`press`: OUT / DOUBT / IN, whether or not it won over FPL's flag) and FPL's
+    return date (`back`)."""
+    from xpfpl.data import news
+    rows = frame[frame["gw"] == next_gw].sort_values("avail", ascending=False).drop_duplicates("element")
+    out = rows.set_index("element")[["avail", "news_rule"]]
+    said = news.press_table(press)["press"] if news.press_is_for_next(press, bs) else pd.Series(dtype=object)
+    out["press"] = out.index.map(said)
+    out["back"] = out.index.map(news.fpl(bs).set_index("id")["back"])
+    return out
 
 
 def _penalties(frame: pd.DataFrame, next_gw: int) -> pd.DataFrame:
@@ -184,7 +193,7 @@ def _minutes(predictor, frame: pd.DataFrame, gw: int) -> pd.DataFrame:
     e = expectations(rows) if expectations else None
     if e is None:
         return pd.DataFrame(index=pd.Index([], name="element"))
-    avail = availability(rows["status"], rows["chance_of_playing_next_round"], rows["gw"] * 0)
+    avail = rows["avail"]
     parts = pd.DataFrame({"element": rows["element"].to_numpy(),
                           "xmins": (e["xmins"] * avail).to_numpy(),
                           "p_none": (1 - (1 - e["p_none"]) * avail).to_numpy(),

@@ -7,6 +7,7 @@ import { useMemo, type ReactNode } from "react";
 import type { Forecast, Player } from "../data";
 import { POSITIONS, STATUS, dec, money, pct, pts, risk, signed } from "../format";
 import { ROTATION } from "../midweek";
+import { NEWS_RULE } from "../news";
 import { fairResult, oddsUrl, type OddsSnapshot } from "../polymarket";
 import { matchPlayer, ours } from "../ratings";
 import { history, useAllGameweeks } from "../season";
@@ -192,6 +193,14 @@ export function WhyProjection({ player, forecast, gw, gameweeks }: {
                                        title: ROTATION[forecast.rotation] ?? forecast.rotation }] : []),
         ]} />
         {player.news && <p>{player.news}</p>}
+        {(forecast?.press || (forecast?.news_rule && forecast.news_rule !== "flag")) && (
+          <p className="note">
+            {forecast.press && <>Press conference: <strong>{forecast.press}</strong>. </>}
+            {forecast.avail != null && <>This model gave him a {pct(forecast.avail)} chance of being available
+              ({NEWS_RULE[forecast.news_rule ?? "flag"]}). </>}
+          </p>
+        )}
+        {(player.news || forecast?.press) && <p><a className="link" href={`#news/${player.id}`}>Team news →</a></p>}
       </Group>
 
       <Group title="Underlying numbers" hint="what his play is worth">
