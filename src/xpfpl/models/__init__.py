@@ -19,7 +19,7 @@ from pathlib import Path
 import pandas as pd
 
 from xpfpl import config
-from xpfpl.models import baseline, components, embed, ensemble, gbm, minutes, mlp, sequence
+from xpfpl.models import baseline, components, dist, embed, ensemble, gbm, minutes, mlp, sequence
 from xpfpl.models.trainer import TrainConfig
 
 MODULES = {
@@ -29,6 +29,7 @@ MODULES = {
     "sequence": sequence,        # a GRU over the last six matches
     "xmins": minutes,            # expected minutes first, then points given the minutes
     "ensemble": ensemble,        # the average of mlp, gbm and xmins
+    "dist": dist,                # the chance of every score (softmax head), xP = its average
     "gbm": gbm,                  # LightGBM on the same features (tabular benchmark)
     "baseline": baseline,        # average of the last 5 matches, no learning at all
 }
@@ -41,6 +42,7 @@ DESCRIPTIONS = {
     "sequence": "GRU over the last six matches",
     "xmins": "Expected minutes (0 / cameo / 60+), then points given the minutes",
     "ensemble": "The average of the mlp, gbm and xmins predictions",
+    "dist": "The chance of every score (MLP with a softmax head); xP is its average",
     "gbm": "Gradient-boosted decision trees for tabular data; an alternative to the neural-network models",
     "baseline": "Average of the last 5 matches (no ML)",
 }

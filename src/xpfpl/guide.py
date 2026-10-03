@@ -4,7 +4,7 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-from xpfpl import backtest, config, models, tune, validate
+from xpfpl import backtest, config, distribution, eda, models, tune, validate
 from xpfpl.features import FEATURES, PLAYER_STATS, SEQ_LEN, WINDOWS
 from xpfpl.style import POINTS
 
@@ -21,6 +21,7 @@ MODEL_LABELS = {
     "gbm": "LightGBM",
     "xmins": "xMins",
     "ensemble": "Ensemble",
+    "dist": "Distribution",
     "baseline": "Baseline",
     "FPL xP": "FPL's own xP",
 }
@@ -83,6 +84,21 @@ GLOSSARY = [
     ("Ensemble (model: ensemble)",
      "The average of the MLP, LightGBM and xMins predictions. Different models make different "
      "mistakes, so the average is usually as good as the best of them and steadier."),
+    ("Distribution model (model: dist)",
+     "A PyTorch network that forecasts the chance of every score from -3 to 25 at once (a softmax over "
+     "the scores), trained with cross-entropy, i.e. the log score. Its xP is the average of those "
+     "chances. It's the benchmark for the Monte Carlo, which builds the same chances by simulating "
+     "matches; on 2025-26 the simulation scored better, so it isn't in the ensemble."),
+    ("Log score / RPS",
+     "Two scores for a forecast of the chance of every score, lower is better. Log score: minus the log "
+     "of the chance given to what happened, so a confident miss costs a lot. RPS (ranked probability "
+     "score): the squared gaps between the forecast's and the result's running totals over every "
+     "score, so a near miss (7 when 8 happened) costs less than a far one. Both are 'proper': a "
+     "forecaster does best by saying what it really believes."),
+    ("SHAP",
+     "How far each input moves one forecast away from the average forecast; the pieces add up to the "
+     "forecast. Averaged (ignoring the sign) over many players, it ranks which inputs the model leans on. "
+     "Shown for the LightGBM model under \"What goes with points?\"."),
     ("Monte Carlo (range, 10+, 2 or fewer)",
      "Playing each gameweek thousands of times on the computer to see what could happen, not just "
      "the average. Each simulated week draws the goals in every fixture (from the betting odds or our "
@@ -109,7 +125,8 @@ GLOSSARY = [
      "--paired key=value`. The second setting takes over the first one's exact squad, bank and free "
      "transfers at every deadline for a few weeks and is scored over the same weeks. About five times "
      "more precise than two full replays, but blind to what builds up over a season (price rises), "
-     "which still needs full replays."),
+     "which still needs full replays. `xpfpl tune` judges the horizon, discount, bench weight and chip "
+     "thresholds this way (`--paired-weeks`)."),
     ("FPL's own xP",
      "The expected-points figure the official game shows for each player, taken as it stood before "
      "each match. It is essentially recent form, so it is a yardstick, not a rival model."),
@@ -145,7 +162,8 @@ GLOSSARY = [
      "and chip thresholds get tuned with (`xpfpl tune`)."),
     ("Tuning",
     "`xpfpl tune` sets the tuning parameters in config.py by backtesting candidate values over several "
-    "seasons and keeping whatever scores most points, one group of parameters at a time. It's the "
+    "seasons and keeping whatever scores most points, one group of parameters at a time (settings that pay "
+    "off within a few weeks are compared in pairs; see Paired comparison). It's the "
      "difference between 'a 5-gameweek horizon feels right' and 'a 5-gameweek horizon scored best'."),
     ("In-sample",
      "Predicting matches this model was trained on. Past-gameweek xP in the review tab is in-sample, "
@@ -791,6 +809,118 @@ def render_simulation() -> None:
                "around: where this model over-forecast the top players that season, their chance of 10+ runs high "
                "too. Each club's line-up is drawn as a whole, so a club fields as many players as their chances "
                "of playing add up to (drawn player by player, club totals came out a little wide).")
+    _distribution_scores(report, sim)
+
+
+def _distribution_scores(report: dict, sim: dict) -> None:
+    """Log score and RPS of every forecast of the chance of each score (distribution.py)."""
+    comparison = _same_season_comparison(report) or {}
+    rows = comparison.get("distribution") or sim.get("distribution")
+    if not rows:
+        return
+    st.markdown(
+        "**Is the whole spread right?** Two scores for a forecast of the chance of *every* score, lower "
+        "better: the **log score** (how surprised the forecast was by what happened; a confident miss costs "
+        "a lot) and the **RPS** (how far the forecast's spread sat from the score, so 7 when 8 happened beats "
+        "2). The benchmark is what a forecaster with no model would say: the spread of scores that past "
+        "players of the same position and similar 5-match form went on to get. **Distribution** is a "
+        "PyTorch network that forecasts the chances directly, instead of simulating matches.")
+    table = pd.DataFrame(rows)
+    table["model"] = table["model"].map(lambda name: MODEL_LABELS.get(name, name))
+    st.dataframe(table.rename(columns={"model": "Forecast", "log_score": "Log score", "rps": "RPS",
+                                       "rows": "Player-matches"}),
+                 hide_index=True, width="stretch",
+                 column_config={"Log score": st.column_config.NumberColumn(format="%.3f"),
+                                "RPS": st.column_config.NumberColumn(format="%.3f"),
+                                "Player-matches": st.column_config.NumberColumn(format="localized")})
+    st.caption(f"Players getting minutes on {report['season']}; scores from {distribution.LOW} to "
+               f"{distribution.HIGH}, the ends taking the tails. `xpfpl compare` adds the Distribution row.")
+
+
+POSITION_ORDER = list(eda.POSITIONS.values())
+
+
+def _raincloud(row: dict) -> alt.Chart:
+    """One position's points per appearance: the share at each score (the cloud), the middle
+    50% and 90% (the box) and single scores (the rain)."""
+    scale = alt.Scale(domain=[-3.5, 20.5], nice=False)
+    title = "Points in a match (20+ in the last bar)"
+    cloud = alt.Chart(pd.DataFrame(row["histogram"])).mark_bar(color=MLP_COLOUR, size=9).encode(
+        x=alt.X("points:Q", scale=scale, axis=None),
+        y=alt.Y("share:Q", title="Share", axis=alt.Axis(format="%")),
+        tooltip=[alt.Tooltip("points:Q", title="Points"), alt.Tooltip("share:Q", title="Share", format=".1%")]
+    ).properties(height=130)
+    box = alt.Chart(pd.DataFrame([row]))
+    whisker = box.mark_rule(color=MUTED, strokeWidth=2).encode(
+        x=alt.X("p5:Q", scale=scale), x2="p95:Q", y=alt.value(12))
+    middle = box.mark_bar(color=MLP_COLOUR, opacity=0.35, size=14).encode(
+        x=alt.X("p25:Q", scale=scale), x2="p75:Q", y=alt.value(12))
+    median = box.mark_tick(color=MLP_COLOUR, thickness=3, size=18).encode(
+        x=alt.X("p50:Q", scale=scale), y=alt.value(12))
+    rain = alt.Chart(pd.DataFrame({"points": row["sample"]})).transform_calculate(
+        jitter="random()").mark_circle(color=MLP_COLOUR, size=14, opacity=0.35).encode(
+        x=alt.X("points:Q", scale=scale, title=title),
+        y=alt.Y("jitter:Q", axis=None, scale=alt.Scale(domain=[-1.6, 1.1])))
+    return alt.vconcat(cloud, (rain + whisker + middle + median).properties(height=70), spacing=2)
+
+
+def _bar_chart(df: pd.DataFrame, value: str, title: str, signed: bool) -> alt.Chart:
+    """Horizontal bars, biggest at the top; blue where more of the feature goes with more points."""
+    order = df.sort_values(value, key=abs, ascending=False)["label"].tolist()
+    sign = df["rho"] if signed else df["direction"]
+    df = df.assign(way=["More of it, more points" if v >= 0 else "More of it, fewer points" for v in sign])
+    return alt.Chart(df).mark_bar().encode(
+        x=alt.X(f"{value}:Q", title=title),
+        y=alt.Y("label:N", sort=order, title=None, axis=alt.Axis(labelLimit=260)),
+        color=alt.Color("way:N", title=None, legend=alt.Legend(orient="bottom"),
+                        scale=alt.Scale(domain=["More of it, more points", "More of it, fewer points"],
+                                        range=[MLP_COLOUR, BASE_COLOUR])),
+        tooltip=[alt.Tooltip("label:N", title="Feature"), alt.Tooltip("feature:N", title="Column"),
+                 alt.Tooltip(f"{value}:Q", title=title, format=".3f")],
+    ).properties(height=28 * len(df))
+
+
+def render_eda() -> None:
+    """What goes with points, by position (eda.py): correlations, the spread of scores, SHAP."""
+    st.subheader("What goes with points?")
+    report = eda.load()
+    if not report:
+        st.info("Run `xpfpl eda` (or `xpfpl train`) to build these figures.")
+        return
+    st.markdown(
+        f"Everything here is as it stood **before** each match, set against that match's points: the same "
+        f"view the models have. (Setting a week's stats against the same week's points would show that goals "
+        f"score points, which is no help before the deadline.) Seasons {', '.join(report['seasons'])}, "
+        f"players getting minutes ({report['rows']:,} player-matches).")
+    pos = st.segmented_control("Position", POSITION_ORDER, default="MID", key="eda_position") or "MID"
+    spread = {r["position"]: r for r in report["spread"]}
+    if pos in spread:
+        r = spread[pos]
+        st.markdown(f"**How {pos} points are spread** (per appearance): average {r['mean']:.2f}, "
+                    f"half of all scores between {r['p25']:.0f} and {r['p75']:.0f}; "
+                    f"{r['share_2_or_fewer']:.0%} were 2 or fewer and {r['share_10_plus']:.1%} were 10+.")
+        st.altair_chart(_raincloud(r), width="stretch")
+        st.caption("Bars: the share of appearances with each score. Below: the middle 50% (box), 5th-95th "
+                   "percentile (line), median (tick), and a sample of single scores. Most appearances are "
+                   "a 1 or a 2; the average is pulled up by the rare hauls, which is why xP sits above the typical score.")
+    c = st.columns(2)
+    with c[0]:
+        st.markdown(f"**Linked with points ({pos})**")
+        corr = pd.DataFrame([r for r in report["correlations"] if r["position"] == pos])
+        if len(corr):
+            st.altair_chart(_bar_chart(corr, "rho", "Rank correlation with points", signed=True), width="stretch")
+        st.caption("Spearman rank correlation of each feature with the match's points. Many of these move "
+                   "together (the 5- and 10-match averages of the same stat), so the list repeats itself.")
+    with c[1]:
+        st.markdown(f"**What moves this model's forecast ({pos})**")
+        shap = pd.DataFrame([r for r in report["shap"] if r["position"] == pos])
+        if len(shap):
+            st.altair_chart(_bar_chart(shap, "mean_abs", "Average effect on xP (points)", signed=False),
+                            width="stretch")
+            st.caption("SHAP for the LightGBM model: how far each feature moves a player's xP from the average, "
+                       "on average. Unlike the correlations, a feature that only repeats another gets little here.")
+        else:
+            st.info("Needs a trained LightGBM model (`xpfpl train` with LightGBM installed).")
 
 
 def _flow_diagram() -> str:
@@ -882,6 +1012,7 @@ def render() -> None:
     render_backtest()
     render_robustness()
     render_simulation()
+    render_eda()
     render_tuning()
 
     st.subheader("Glossary")
@@ -902,4 +1033,5 @@ def render() -> None:
         "- Price changes are predicted from form and transfer momentum, not FPL's own progress figures "
         "(the Prices tab shows those, and they're being logged so they can be used once there's enough "
         "history), so treat them as a tie-breaker.\n"
-        "- Blank and double gameweek handling still hasn't been tested against a real one.")
+        "- Blank and double gameweeks are handled (a double's two matches add up, a blank is 0) and "
+        "tested against past seasons' doubles and blanks, but not yet live this season.")

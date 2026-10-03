@@ -498,7 +498,8 @@ def _pit(sim: np.ndarray, actual: np.ndarray, rng: np.random.Generator) -> np.nd
     return below + rng.random(len(actual)) * equal
 
 
-def check(frame: pd.DataFrame, xp: np.ndarray, predictor, tables: dict, sims: int = 400, seed: int = 0) -> dict:
+def check(frame: pd.DataFrame, xp: np.ndarray, predictor, tables: dict, sims: int = 1000, seed: int = 0,
+          with_pmf: bool = False) -> dict:
     """Score the simulated ranges on a held-out season's matches (validate.py's report).
 
     - `haul`/`blank`: of the players given a ~20% chance of 10+, did ~20% get 10+?
@@ -507,8 +508,11 @@ def check(frame: pd.DataFrame, xp: np.ndarray, predictor, tables: dict, sims: in
     - `club`: the same for each club's total in each match, which tests whether teammates
       move together as much as they do in reality.
     - `mean_gap`: the simulated average's distance from the model's xP (should be ~0).
+    - `scores`: log score and RPS of the simulated chance of every score (distribution.py).
     Players getting minutes only (played in one of their previous five), as elsewhere.
+    `with_pmf` also returns those chances (`pmf`, rows x distribution.K), to compare forecasters.
     """
+    from xpfpl import distribution
     expectations = getattr(predictor, "expectations", None)
     minutes = expectations(frame) if expectations else None
     first_dc = frame["season"].iloc[0] == BONUS_SEASONS         # see season_dc_rate
@@ -526,7 +530,8 @@ def check(frame: pd.DataFrame, xp: np.ndarray, predictor, tables: dict, sims: in
     club_y = np.bincount(club, weights=y[active])
     club_pit = _pit(club_sim, club_y, rng)
     tenths = lambda v: [round(float(c), 4) for c in np.histogram(v, np.linspace(0, 1, 11))[0] / len(v)]  # noqa: E731
-    return {
+    pmf = distribution.from_draws(pts[:, active])
+    out = {
         "sims": sims, "rows": int(active.sum()), "clubs": int(len(club_y)),
         "mean_gap": float(np.mean(np.abs(pts[:, active].mean(axis=0) - np.asarray(xp)[active]))),
         "haul": _reliability((pts[:, active] >= HAUL).mean(axis=0), y[active] >= HAUL, HAUL_BINS),
@@ -535,7 +540,11 @@ def check(frame: pd.DataFrame, xp: np.ndarray, predictor, tables: dict, sims: in
         "club_pit": tenths(club_pit), "club_coverage_80": float(((club_pit >= 0.1) & (club_pit <= 0.9)).mean()),
         "spread": {"simulated": float(pts[:, active].var(axis=0).mean() + pts[:, active].mean(axis=0).var()),
                    "actual": float(y[active].var())},
+        "scores": distribution.scores(pmf, y[active]),
     }
+    if with_pmf:
+        out["pmf"] = pmf
+    return out
 
 
 def moves_label(players: pd.DataFrame, plan) -> str:

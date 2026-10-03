@@ -25,6 +25,15 @@ A single replay is chaotic: 10% noise on xP moves a season by ~84 points (robust
 than most gaps between candidates. So each candidate is scored on `replays` runs per season -
 the clean forecast plus `replays - 1` with keyed noise (robustness.Noisy), the same noise for
 every candidate, which makes the comparison paired - and the runs can go to `workers` processes.
+
+Even so, two full replays drift apart after their first different transfer, so stages whose
+decisions pay off within a few weeks (horizon and discount, bench weight, the chip thresholds)
+are judged by `backtest.paired` instead when `paired_weeks` > 0: the stage's incumbent is
+replayed once per season and replay, and every candidate branches off its exact state at each
+deadline for `paired_weeks` gameweeks. That measured a gain with a third to a tenth of the
+noise (CLAUDE.md, 2026-10-02). Transfer planning, free transfer value and price changes work
+through banked transfers and team value over a season, which short windows miss, so they keep
+full replays.
 """
 
 import json
@@ -36,7 +45,7 @@ from datetime import datetime
 import pandas as pd
 
 from xpfpl import config
-from xpfpl.backtest import Settings, predictors, run
+from xpfpl.backtest import Season, Settings, paired, predictors, reference, run
 from xpfpl.data.history import load_matches
 from xpfpl.features import build_training_frame
 from xpfpl import prices
@@ -70,6 +79,9 @@ def _combos(grid: dict[str, list]) -> list[dict]:
 
 
 CHIPS = ("3xc", "bboost", "freehit", "wildcard")
+# Parameters whose stages `paired_weeks` judges by paired comparisons (see the module docstring).
+PAIRED = {"horizon", "discount", "bench_weight", *CHIPS}
+PAIRED_WEEKS = 3
 NOISE_SD = 0.1
 _WORKER: dict = {}          # per process: frame, predictors and price tables
 
@@ -113,6 +125,27 @@ def _replay_in_worker(settings: Settings, replay: int, noise_sd: float) -> float
                price_table=w["tables"][settings.season], verbose=False).summary["points"]
 
 
+def _season(store: dict, frame, fitted, tables, settings: Settings, replay: int, noise_sd: float) -> Season:
+    """One Season per (season, replay), kept so its forecasts are shared by every candidate."""
+    key = (settings.season, replay)
+    if key not in store:
+        store[key] = Season.prepare(settings, frame, _predictor(fitted, settings.season, replay, noise_sd),
+                                    tables.get(settings.season))
+    return store[key]
+
+
+def _reference_in_worker(settings: Settings, replay: int, noise_sd: float):
+    w = _WORKER
+    season = _season(w.setdefault("seasons", {}), w["frame"], w["fitted"], w["tables"], settings, replay, noise_sd)
+    return reference(settings, season)
+
+
+def _paired_in_worker(base: Settings, candidate: Settings, replay: int, noise_sd: float, weeks: int, ref) -> float:
+    w = _WORKER
+    season = _season(w.setdefault("seasons", {}), w["frame"], w["fitted"], w["tables"], base, replay, noise_sd)
+    return paired(base, candidate, season, weeks=weeks, ref=ref).summary()["gain"]
+
+
 class _Runner:
     """Runs backtests in this process or in a pool of worker processes."""
 
@@ -120,6 +153,7 @@ class _Runner:
                  verbose: bool = False):
         self.frame, self.fitted, self.tables = frame, fitted, tables
         self.noise_sd, self.verbose = noise_sd, verbose
+        self.seasons: dict = {}
         self.pool = (ProcessPoolExecutor(workers, initializer=_init_worker, initargs=(seasons, model))
                      if workers > 1 else None)
 
@@ -130,6 +164,26 @@ class _Runner:
         return [run(s, frame=self.frame, predictor=_predictor(self.fitted, s.season, r, self.noise_sd),
                     price_table=self.tables[s.season], verbose=self.verbose).summary["points"]
                 for s, r in jobs]
+
+    def references(self, jobs: list[tuple[Settings, int]]) -> list:
+        """The base's path (backtest.reference) for each (settings, replay)."""
+        if self.pool is not None:
+            futures = [self.pool.submit(_reference_in_worker, s, r, self.noise_sd) for s, r in jobs]
+            return [f.result() for f in futures]
+        return [reference(s, self._season(s, r)) for s, r in jobs]
+
+    def gains(self, jobs: list[tuple], weeks: int) -> list[float]:
+        """Points a season each candidate gains over its base (backtest.paired), per job of
+        (base, candidate, replay, the base's reference)."""
+        if self.pool is not None:
+            futures = [self.pool.submit(_paired_in_worker, b, c, r, self.noise_sd, weeks, ref)
+                       for b, c, r, ref in jobs]
+            return [f.result() for f in futures]
+        return [paired(b, c, self._season(b, r), weeks=weeks, ref=ref).summary()["gain"]
+                for b, c, r, ref in jobs]
+
+    def _season(self, settings: Settings, replay: int) -> Season:
+        return _season(self.seasons, self.frame, self.fitted, self.tables, settings, replay, self.noise_sd)
 
     def close(self) -> None:
         if self.pool is not None:
@@ -162,6 +216,48 @@ def _score_all(runner: _Runner, base: Settings, candidates: list[dict], seasons:
     return [_summarise_candidate(choice, p) for choice, p in zip(candidates, points)]
 
 
+def _incumbent(settings: Settings, grid: dict[str, list]) -> dict:
+    """The stage's parameters as they stand before it: the base its candidates are paired against."""
+    return {k: settings.thresholds.get(k) if k in CHIPS else getattr(settings, k) for k in grid}
+
+
+def _score_paired(runner: _Runner, base: Settings, grid: dict[str, list], seasons: list[str],
+                  chips_on: bool, replays: int, weeks: int) -> list[dict]:
+    """Every candidate as a gain over the stage's incumbent (`backtest.paired`), on every season
+    and replay. `points_per_season` is the incumbent's points plus that gain, so the rows read
+    like full replays; `gain_per_season` is the measured part. The incumbent itself gains 0."""
+    incumbent = _incumbent(base, grid)
+    candidates = _combos(grid)
+    keys = [(s, r) for s in seasons for r in range(replays)]
+    bases = {s: _trial(base, incumbent, s, chips_on) for s in seasons}
+    refs = dict(zip(keys, runner.references([(bases[s], r) for s, r in keys])))
+    jobs, where = [], []
+    for i, choice in enumerate(candidates):
+        if choice == incumbent:
+            continue
+        for s, r in keys:
+            jobs.append((bases[s], _trial(base, choice, s, chips_on), r, refs[(s, r)]))
+            where.append((i, s))
+    results = runner.gains(jobs, weeks)
+    gains: list[dict[str, list[float]]] = [{s: [] for s in seasons} for _ in candidates]
+    for (i, s), value in zip(where, results):
+        gains[i][s].append(float(value))
+    rows = []
+    for choice, g in zip(candidates, gains):
+        if choice == incumbent:
+            g = {s: [0.0] * replays for s in seasons}
+        points = {s: [refs[(s, r)].total + g[s][r] for r in range(replays)] for s in seasons}
+        row = _summarise_candidate(choice, points)
+        # The noise that matters is the gain's, not the season totals'.
+        var = [pd.Series(v).var(ddof=1) / len(v) for v in g.values() if len(v) > 1]
+        row.update(method="paired", weeks=weeks, incumbent=choice == incumbent,
+                   gain_per_season={s: sum(v) / len(v) for s, v in g.items()},
+                   mean_gain=sum(sum(v) / len(v) for v in g.values()) / len(seasons),
+                   se=math.sqrt(sum(var)) / len(seasons) if var else None)
+        rows.append(row)
+    return rows
+
+
 def _fitted_models(frame, seasons: list[str], model: str, workers: int) -> dict:
     """One model per season. With workers, fit through robustness.py's cache so they can load it."""
     if workers > 1:
@@ -174,7 +270,8 @@ def tune(seasons: list[str], model: str = config.MODEL, base: Settings | None = 
          frame=None, stages=None, chip_stages=None, verbose: bool = False,
          fitted: dict | None = None, replays: int = 1, workers: int = 1,
          noise_sd: float = NOISE_SD, confirm_seasons: list[str] | None = None,
-         chosen: dict | None = None, trials: list[dict] | None = None) -> dict:
+         chosen: dict | None = None, trials: list[dict] | None = None,
+         paired_weeks: int = PAIRED_WEEKS) -> dict:
     """Run the coordinate descent and return the report (also written to config.TUNING_PATH).
 
     `fitted` lets a caller pass in {season: predictor} instead of training them here (in-process
@@ -183,7 +280,9 @@ def tune(seasons: list[str], model: str = config.MODEL, base: Settings | None = 
     features and load the models from robustness.py's cache. `confirm_seasons`: afterwards,
     replay the winner, today's config and the pre-tuning settings on these unseen seasons.
     `chosen`/`trials` resume an interrupted run: the winners and trials of the stages it
-    finished (pass only the stages still to run).
+    finished (pass only the stages still to run). `paired_weeks` > 0 judges the stages made only
+    of PAIRED parameters by paired comparisons over windows of that many gameweeks; 0 replays
+    every stage in full.
     """
     from xpfpl.robustness import PRE_TUNING
 
@@ -206,17 +305,28 @@ def tune(seasons: list[str], model: str = config.MODEL, base: Settings | None = 
         for name, grid in [(n, g) for n, g in stages] + [(n, g) for n, g in chip_stages]:
             chips_on = any(k in CHIPS for k in grid)
             candidates = _combos(grid)
+            by_pairs = paired_weeks > 0 and set(grid) <= PAIRED
+            how = f"paired, {paired_weeks}-GW windows" if by_pairs else "full replays"
             print(f"\n--- {name} ({len(candidates)} candidates x {len(seasons)} seasons x "
-                  f"{replays} replays) ---", flush=True)
+                  f"{replays} replays, {how}) ---", flush=True)
             settings = replace(base, **{k: v for k, v in chosen.items() if k in asdict(base)})
             settings.thresholds = {**base.thresholds, **{k: v for k, v in chosen.items() if k in CHIPS}}
-            scored = _score_all(runner, settings, candidates, seasons, chips_on, replays)
+            if by_pairs:
+                scored = _score_paired(runner, settings, grid, seasons, chips_on, replays, paired_weeks)
+            else:
+                scored = _score_all(runner, settings, candidates, seasons, chips_on, replays)
             for row in scored:
                 row["stage"] = name
                 trials.append(row)
                 values = ", ".join(f"{k}={row[k]}" for k in grid)
                 se = f" ± {row['se']:.0f}" if row["se"] is not None else ""
-                print(f"  {values:40s} {row['mean_points']:7.1f}{se} points "
+                if not by_pairs:
+                    note = se
+                elif row["incumbent"]:
+                    note = " (incumbent)"
+                else:
+                    note = f" gain {row['mean_gain']:+.1f}{se}"
+                print(f"  {values:40s} {row['mean_points']:7.1f} points{note} "
                       f"({'  '.join(f'{s}: {p:.0f}' for s, p in row['points_per_season'].items())})",
                       flush=True)
             best = max(scored, key=lambda r: r["mean_points"])
@@ -244,6 +354,7 @@ def tune(seasons: list[str], model: str = config.MODEL, base: Settings | None = 
         "model": model,
         "replays": replays,
         "noise_sd": noise_sd,
+        "paired_weeks": paired_weeks,
         "chosen": chosen,
         "trials": trials,
         "confirm_seasons": confirm_seasons or [],

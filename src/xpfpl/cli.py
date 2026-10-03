@@ -100,9 +100,11 @@ def _validate(predictor, train_df, val_df, name: str = config.MODEL, stale_frame
     ceiling = comparison.get("ceiling") if comparison.get("season") == val_df["season"].iloc[0] else None
     simulation = None
     if config.SIM_RUNS > 0:
-        from xpfpl import simulate
+        from xpfpl import distribution, simulate
         print("Simulating the held-out season to check the Monte Carlo ranges...")
-        simulation = simulate.check(val_df, preds[name], predictor, validate.match_tables(train_df))
+        simulation = simulate.check(val_df, preds[name], predictor, validate.match_tables(train_df), with_pmf=True)
+        simulation["distribution"] = _distribution_table(
+            {f"Monte Carlo ({name})": simulation.pop("pmf")}, train_df, val_df[active])
     report = validate.build_report(
         val_df, preds, target=TARGET, primary=name,
         trained_on=f"{train_df['season'].min()} to {train_df['season'].max()}",
@@ -112,6 +114,20 @@ def _validate(predictor, train_df, val_df, name: str = config.MODEL, stale_frame
     validate.save_report(report)
     print("\n" + validate.summarise(report))
     print(f"Saved the accuracy report to {config.VALIDATION_PATH}")
+
+
+def _distribution_table(forecasts: dict, train_df: pd.DataFrame, rows: pd.DataFrame) -> list[dict]:
+    """Log score and RPS of each forecast of the chance of every score on `rows` (players getting
+    minutes), with the no-model benchmark: past scores by position and 5-match form."""
+    from xpfpl import distribution
+    from xpfpl.features import TARGET
+
+    bands = distribution.from_bands(distribution.form_bands(train_df), rows)
+    table = distribution.table({**forecasts, distribution.BENCHMARK: bands}, rows[TARGET].to_numpy())
+    print("\nForecasts of every score (lower is better):")
+    for r in table:
+        print(f"  {r['model']:28s} log score {r['log_score']:.3f}   RPS {r['rps']:.3f}")
+    return table
 
 
 def cmd_train(args) -> None:
@@ -142,6 +158,24 @@ def cmd_train(args) -> None:
     if args.model != config.MODEL:
         print(f"config.MODEL is still '{config.MODEL}' - set it to '{args.model}' in "
               f"src/xpfpl/config.py to use this model by default.")
+    else:
+        _eda(frame)
+
+
+def _eda(frame: pd.DataFrame) -> None:
+    """The exploratory figures' data (eda.py): what goes with points, by position."""
+    from xpfpl import eda
+    report = eda.build(frame)
+    shap = "" if report["shap"] else " (no LightGBM model, so no SHAP)"
+    print(f"Saved the exploratory figures ({', '.join(report['seasons'])}) to {eda.PATH}{shap}")
+
+
+def cmd_eda(args) -> None:
+    """Rebuild models/eda.json from the training frame."""
+    from xpfpl.data.history import load_matches
+    from xpfpl.features import build_training_frame
+    print("Building features...")
+    _eda(build_training_frame(load_matches()))
 
 
 def _fit_rotation(frame: pd.DataFrame, predictor, name: str) -> None:
@@ -204,7 +238,7 @@ def cmd_compare(args) -> None:
     y = val_df[TARGET].to_numpy()
     active = (val_df["played_r5"] > 0).to_numpy()
 
-    preds, rows, horizons, ceiling = {}, [], {k: {} for k in stale}, None
+    preds, rows, horizons, ceiling, pmfs = {}, [], {k: {} for k in stale}, None, {}
     for name in names:
         print(f"\n--- {name}: {models.DESCRIPTIONS[name]} ---")
         started = time.time()
@@ -213,6 +247,13 @@ def cmd_compare(args) -> None:
         preds[name] = pred
         for k, frame in stale.items():
             horizons[k][name] = predictor.predict(frame)
+        if hasattr(predictor, "distribution"):
+            pmfs[name] = predictor.distribution(val_df[active])
+        if name == config.MODEL and config.SIM_RUNS > 0:
+            from xpfpl import simulate
+            print("  simulating the season (the Monte Carlo's chance of every score)...")
+            pmfs[f"Monte Carlo ({name})"] = simulate.check(val_df, pred, predictor, validate.match_tables(train_df),
+                                                           with_pmf=True)["pmf"]
         if name == "components":
             print("  simulating a perfect model from its probabilities...")
             ceiling = validate.simulate_ceiling(predictor.components(val_df), active,
@@ -252,12 +293,14 @@ def cmd_compare(args) -> None:
               f"({ceiling['rmse_p5']:.3f}-{ceiling['rmse_p95']:.3f}), R² {ceiling['r2_median']:.3f}. "
               f"Spread of points: simulated {ceiling['outcome_variance']:.2f}, "
               f"actual {ceiling['actual_variance']:.2f} (if simulated is lower, the ceiling is optimistic)")
+    distribution = _distribution_table(pmfs, train_df, val_df[active]) if pmfs else None
     config.COMPARISON_PATH.parent.mkdir(parents=True, exist_ok=True)
     config.COMPARISON_PATH.write_text(json.dumps(
         {"generated": datetime.now().isoformat(timespec="seconds"), "season": args.val_season,
          "rows": int(active.sum()), "models": table.to_dict("records"), "ceiling": ceiling,
          "headline": report["headline"], "horizons": report["horizons"],
-         "return_groups": report["return_groups"], "by_gameweek": report["by_gameweek"]}, indent=1),
+         "return_groups": report["return_groups"], "by_gameweek": report["by_gameweek"],
+         "distribution": distribution}, indent=1),
         encoding="utf-8")
     print(f"\nSaved to {config.COMPARISON_PATH}")
 
@@ -337,7 +380,8 @@ def cmd_tune(args) -> None:
     confirm = [s.strip() for s in (args.confirm_seasons or "").split(",") if s.strip()]
     report = tune.tune(seasons, model=args.model, frame=frame, stages=stages,
                        chip_stages=chip_stages, verbose=args.verbose, replays=args.replays,
-                       workers=args.workers, noise_sd=args.noise_sd, confirm_seasons=confirm)
+                       workers=args.workers, noise_sd=args.noise_sd, confirm_seasons=confirm,
+                       paired_weeks=args.paired_weeks)
     print("\n" + tune.summarise(report))
     print(f"\nEvery trial is in {config.TUNING_PATH}")
 
@@ -840,6 +884,9 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--no-leak-probe", action="store_true")
     p.set_defaults(func=cmd_robustness)
 
+    p = sub.add_parser("eda", help="rebuild the exploratory figures (what goes with points, by position)")
+    p.set_defaults(func=cmd_eda)
+
     p = sub.add_parser("tune", help="search the config.py tuning parameters by replaying whole seasons")
     p.add_argument("--seasons", default=",".join(config.HISTORY_SEASONS[-4:-1]),
                    help="comma-separated seasons to score each candidate on")
@@ -854,6 +901,9 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--noise-sd", type=float, default=0.1, help="lognormal xP noise for the extra replays")
     p.add_argument("--workers", type=int, default=1,
                    help="processes to run replays in (each builds the features, ~2 GB of memory)")
+    p.add_argument("--paired-weeks", type=int, default=3,
+                   help="judge the horizon/discount, bench weight and chip stages by paired "
+                        "comparisons over windows of N gameweeks (backtest.paired); 0 = full replays")
     p.add_argument("--confirm-seasons", default="",
                    help="comma-separated unseen seasons to replay the winner, today's config and the "
                         "pre-tuning settings on afterwards")

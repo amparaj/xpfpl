@@ -184,7 +184,8 @@ function Overview() {
         <a href="#model-team">This Model's Team</a> it plays the auto-subs and the vice-captain too, giving this model's team a likely
         score, the odds of each captain option, and the chance a Triple Captain or Bench Boost would pay off.
         {simulation && <> Tested on {report?.validation?.season}, {pct(simulation.coverage_80)} of real scores landed inside
-          their simulated range, where 80% means the ranges are the right width.</>}
+          their simulated range, where 80% means the ranges are the right width.</>} Scored on the chance it gave every possible
+        score, the simulation also beat a neural network trained to forecast those chances directly.
       </p>
       <p>
         The simulations don't change the picks. With FPL's scoring, the team with the most expected points is the same whether

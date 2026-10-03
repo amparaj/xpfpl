@@ -497,13 +497,13 @@ def _midweek_minutes(season: str, gw: int, people: pd.DataFrame | None) -> pd.Se
 def _accuracy(season: str, model: str) -> dict:
     def load(path: Path):
         return json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
-    from xpfpl import robustness
+    from xpfpl import eda, robustness
     from xpfpl.data import cups
     rotation = load(cups.FACTORS_PATH) or {}
     return {"validation": load(config.VALIDATION_PATH), "comparison": load(config.COMPARISON_PATH),
             "tuning": load(config.TUNING_PATH), "robustness": robustness.site_summary(robustness.load_report()),
             "scorecard": load(config.PREDICTIONS_DIR / season / "scorecard.json"),
-            "rotation": rotation.get(model)}
+            "rotation": rotation.get(model), "eda": load(eda.PATH)}
 
 
 def _prices(bs: dict) -> dict:
