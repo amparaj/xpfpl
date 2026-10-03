@@ -147,7 +147,7 @@ def test_press_switch_off(bs, monkeypatch):
 def test_update_logs_changes_and_recoveries(bs):
     t0 = pd.Timestamp("2026-10-07T12:00:00Z")
     press = news.match_press(news.parse_press(PAGE), bs)
-    first = news.update(None, bs, press=press, now=t0)
+    first = news.update(None, bs, press=press, now=t0, headlines=[])
     assert {c["id"] for c in first["log"]} == {1, 3, 4}         # everyone with news; the loanee has none
     assert first["log"][0]["t"] == "2026-10-05T10:00:00Z"        # FPL's own time
     assert first["press"]["fresh"] and {p["id"]: p["press"] for p in first["players"]}[1] == "OUT"
@@ -166,9 +166,11 @@ def test_update_logs_changes_and_recoveries(bs):
 
 
 def test_new_season_starts_a_new_log(bs):
-    first = news.update(None, bs, press={"updated": None, "clubs": []}, now=pd.Timestamp("2026-10-07T12:00:00Z"))
+    first = news.update(None, bs, press={"updated": None, "clubs": []}, now=pd.Timestamp("2026-10-07T12:00:00Z"),
+                        headlines=[])
     first["season"] = "2025-26"
-    again = news.update(first, bs, press={"updated": None, "clubs": []}, now=pd.Timestamp("2026-10-07T13:00:00Z"))
+    again = news.update(first, bs, press={"updated": None, "clubs": []}, now=pd.Timestamp("2026-10-07T13:00:00Z"),
+                        headlines=[])
     assert len(again["log"]) == 3
 
 
@@ -181,3 +183,85 @@ def test_scorecard_scores_news_rows():
     assert rows["press OUT"]["played"] == 0 and rows["press IN"]["played"] == 1
     assert rows["FPL flag"]["n"] == 1 and rows["FPL flag"]["avail"] == 0.5
     assert "press DOUBT" not in rows
+
+
+HEADLINES = """
+<div class="newsfeed"><div class="article"><article class="u-card-base article-card"><div><a href="https://c.newsnow.com/A/111?-1:2" rel="nofollow" class="article-card__headline"><span class="article-title top-title">Arsenal handed Saliba boost &amp; White update</span></a>
+<span class="article-publisher"><span class="article-publisher__name u-right-spacer-xs">
+   Football.London
+</span> <span data-timestamp="1791029956" class="article-publisher__timestamp">2h</span></span>
+<span class="article-publisher"><span class="article-publisher__name">Football.London</span> <span data-timestamp="1791029956">2h</span></span></div></article></div>
+<div class="article"><article class="u-card-base article-card"><a href="https://c.newsnow.com/A/222?-1:2" rel="nofollow" class="article-card__headline"><span class="article-title">Ben White and Bukayo Saka in Man City clash</span></a>
+<span class="article-publisher__name">Club Site</span> <span data-timestamp="1791000000">9h</span></article></div>
+<div class="article"><article class="u-card-base article-card"><a href="https://c.newsnow.com/A/111?-1:2" rel="nofollow" class="article-card__headline"><span class="article-title">Arsenal handed Saliba boost &amp; White update</span></a></article></div>
+<div class="article"><article class="u-card-base article-card"><a href="https://c.newsnow.com/A/333?-1:2" rel="nofollow" class="article-card__headline"><span class="article-title">White Hart Lane memories and a new injury blow</span></a>
+<span class="article-publisher__name">Blog</span> <span data-timestamp="1790900000">1d</span></article></div></div>
+"""
+
+
+def test_parse_headlines():
+    items = news.parse_headlines(HEADLINES)
+    assert [h["id"] for h in items] == ["111", "222", "333"]               # newest first, repeat dropped
+    first = items[0]
+    assert first["title"] == "Arsenal handed Saliba boost & White update"
+    assert first["publisher"] == "Football.London"
+    assert first["t"] == pd.Timestamp(1791029956, unit="s", tz="UTC").isoformat()
+    assert first["url"] == "https://c.newsnow.com/A/111?-1:2"
+
+
+def test_match_headlines_needs_club_or_full_name_for_common_surnames(bs):
+    items = {h["id"]: h for h in news.match_headlines(news.parse_headlines(HEADLINES), bs)}
+    assert items["111"]["teams"] == [1] and set(items["111"]["players"]) == {1, 3}   # club named: White counts
+    assert set(items["222"]["players"]) == {2, 3} and items["222"]["teams"] == [2]   # full names; "Man City"
+    assert items["333"]["players"] == [] and items["333"]["teams"] == []             # "White" alone, no club
+
+
+def test_headlines_merge_and_age_out(bs):
+    t0 = pd.Timestamp(1791029956, unit="s", tz="UTC")
+    lines = news.match_headlines(news.parse_headlines(HEADLINES), bs)
+    first = news.update(None, bs, press={"updated": None, "clubs": []}, now=t0, headlines=lines[:2])
+    assert first["headlines"]["fetched"] == t0.floor("min").isoformat()
+    later = news.update(first, bs, now=t0 + pd.Timedelta(hours=1), read_press=False, headlines=lines[2:])
+    assert [h["id"] for h in later["headlines"]["items"]] == ["111", "222", "333"]
+    kept = news.update(later, bs, now=t0 + pd.Timedelta(days=15), read_press=False)
+    assert kept["headlines"]["items"] == [] and kept["headlines"]["fetched"] == later["headlines"]["fetched"]
+
+
+def test_save_keeps_every_headline(bs, tmp_path, monkeypatch):
+    monkeypatch.setattr(news, "ARCHIVE", tmp_path)
+    t0 = pd.Timestamp(1791029956, unit="s", tz="UTC")
+    lines = news.match_headlines(news.parse_headlines(HEADLINES), bs)
+    state = news.update(None, bs, press={"updated": None, "clubs": []}, now=t0, headlines=lines[:1])
+    news.save(state)
+    state["headlines"]["items"] = lines[1:]
+    news.save(state)
+    got = news.archived_headlines(state["season"])
+    assert list(got["id"]) == ["111", "222", "333"] and list(got.loc[0, "players"]) == [1, 3]
+
+
+PLAIN = """
+<div class="rs-newsbox js-newsbox js-newsbox-raw  js-newsmain central_tt_wrap " data-tt="{}">
+<div class="newsfeed "><div class="hl " data-id="111"><span class="f f_UK" c="UK"></span>
+<div class="hl__inner"><a class="hll" href="https://c.newsnow.com/A/111?-1327:38" target="_blank" rel="nofollow">Ben White back in training</a>
+<span class="meta"><span class="src src-part" data-pub="FL">Football.London<i class="fas fa-cog"></i></span><span class="time" data-time="1791029956">22:19</span></span></div></div></div></div>
+<div class="rs-newsbox js-newsbox js-newsbox-raw  js-newsmain js-central_ln_wrap ">
+<div class="newsfeed "><div class="hl " data-id="111"><div class="hl__inner"><a class="hll" href="https://c.newsnow.com/A/111?-1327:38">Ben White back in training</a></div></div>
+<div class="hl " data-id="222"><div class="hl__inner"><a class="hll" href="https://c.newsnow.com/A/222?-1327:38">Saka &amp; Saliba doubts</a>
+<span class="meta"><span class="src src-part" data-pub="X">The Standard<i></i></span><span class="time" data-time="1791000000">14:00</span></span></div></div></div></div>
+<div class="rs-newsbox js-newsbox js-newsbox-raw  rs-newsteaser js-newsteaser newsbox--trend">
+<div class="newsfeed "><div class="hl " data-id="999"><div class="hl__inner"><a class="hll" href="https://c.newsnow.com/A/999?-1:2">Cricket selectors</a></div></div></div></div>
+"""
+
+
+def test_parse_headlines_plain_layout_skips_other_topics():
+    items = news.parse_headlines(PLAIN)
+    assert [h["id"] for h in items] == ["111", "222"]
+    assert items[0]["publisher"] == "Football.London" and items[1]["title"] == "Saka & Saliba doubts"
+    assert items[0]["t"] == pd.Timestamp(1791029956, unit="s", tz="UTC").isoformat()
+
+
+def test_full_name_beats_a_namesake(bs):
+    bs["elements"] += [element(6, "Jurriën", "Timber", "J.Timber", 1), element(7, "Quinten", "Timber", "Timber", 2)]
+    item = news.match_headlines([{"id": "1", "title": "Jurrien Timber delivers fitness update", "t": None,
+                                  "publisher": None, "url": ""}], bs)[0]
+    assert item["players"] == [6]

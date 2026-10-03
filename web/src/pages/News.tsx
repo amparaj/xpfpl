@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Club, Loading, Note, Segmented, Sheet, Stats, Table, Tiles, usePhone, type Column } from "../components/ui";
 import { rows, type Forecast, type ModelTeam, type NextGw } from "../data";
 import { POSITIONS, STATUS, money, pct, pts, when } from "../format";
-import { NEWS_RULE, ago, newsUrl, shortDay, type NewsChange, type NewsLog, type NewsPlayer, type PressClub } from "../news";
+import { NEWS_RULE, ago, newsUrl, shortDay, type Headline, type NewsChange, type NewsLog, type NewsPlayer, type PressClub } from "../news";
 import { useData, useSite } from "../site";
 
 type View = "out" | "doubt" | "all";
@@ -10,8 +10,26 @@ type Since = 0 | 2 | 7;
 
 const ELSEWHERE = [
   { label: "Fantasy Football Scout: injuries and bans", url: "https://www.fantasyfootballscout.co.uk/fantasy-football-injuries" },
-  { label: "NewsNow: Premier League injuries and suspensions", url: "https://www.newsnow.com/au/Sport/Football/Premier+League/Injuries+and+Suspensions" },
 ];
+
+/** A list of headlines: each links out to the article (through NewsNow), with its publisher and how long ago. */
+function Headlines({ items }: { items: Headline[] }) {
+  const site = useSite();
+  return (
+    <ul className="headlines">
+      {items.map((h) => (
+        <li key={h.id}>
+          <a href={h.url} target="_blank" rel="noreferrer nofollow">{h.title}</a>
+          <span className="headline-meta">
+            {h.publisher}{h.t && <> · <span title={when(h.t)}>{ago(h.t)}</span></>}
+            {h.players.length > 0 && <> · {h.players.map((id, i) => (
+              <span key={id}>{i > 0 && ", "}<a href={`#news/${id}`}>{site.player.get(id)?.web_name ?? id}</a></span>))}</>}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 /** FPL's status as a coloured word: out (injured, suspended, left) red, doubtful amber-ish. */
 function Status({ p }: { p: NewsPlayer }) {
@@ -30,6 +48,7 @@ function PressTag({ said }: { said: "OUT" | "DOUBT" | "IN" | null }) {
 function Detail({ p, log, forecast, club }: { p: NewsPlayer; log: NewsLog; forecast?: Forecast; club?: PressClub }) {
   const history = log.log.filter((c) => c.id === p.id).sort((a, b) => (b.t ?? "").localeCompare(a.t ?? ""));
   const said = club?.players.find((x) => x.id === p.id);
+  const lines = (log.headlines?.items ?? []).filter((h) => h.players.includes(p.id));
   return (
     <div>
       {p.news ? <p style={{ fontSize: 15 }}>{p.news}</p> : <p className="muted">No news from FPL.</p>}
@@ -53,6 +72,12 @@ function Detail({ p, log, forecast, club }: { p: NewsPlayer; log: NewsLog; forec
           {!log.press?.fresh && <p className="note" style={{ marginTop: 0 }}>Before the last deadline: not used for Gameweek {log.gw_next}.</p>}
           {said && <p className="press-line">About him: <PressTag said={said.status} /></p>}
           {club.quotes.map((q, i) => <Quote key={i} text={q.text} by={q.by} />)}
+        </>
+      )}
+      {lines.length > 0 && (
+        <>
+          <h4 style={{ margin: "12px 0 4px" }}>In the headlines</h4>
+          <Headlines items={lines} />
         </>
       )}
       {history.length > 1 && (
@@ -110,6 +135,7 @@ export default function News() {
   const [since, setSince] = useState<Since>(0);
   const [search, setSearch] = useState("");
   const [modelOnly, setModelOnly] = useState(false);
+  const [headlineClub, setHeadlineClub] = useState(0);
   const selectedId = Number(window.location.hash.split("/")[1]) || null;
   const phone = usePhone();
 
@@ -137,6 +163,11 @@ export default function News() {
     return (log?.log ?? []).filter((c) => c.t && Date.parse(c.t) >= cutoff)
       .map((c, i) => ({ ...c, key: i })).sort((a, b) => (b.t ?? "").localeCompare(a.t ?? ""));
   }, [log]);
+
+  const headlineItems = log?.headlines?.items ?? [];
+  const shownHeadlines = headlineClub
+    ? headlineItems.filter((h) => h.teams.includes(headlineClub) || h.players.some((id) => site.player.get(id)?.team === headlineClub))
+    : headlineItems;
 
   if (log === undefined || (log === null && local === undefined)) return <Loading />;
   if (!log) return <p>The team news hasn't been collected yet.</p>;
@@ -211,7 +242,22 @@ export default function News() {
           {selected && detail(selected)}
         </Sheet>
       )}
-      {selectedId && !selected && <Note>No news for that player: he's fit, as far as FPL knows.</Note>}
+      {selectedId && !selected && (() => {
+        const fit = site.player.get(selectedId);
+        const lines = headlineItems.filter((h) => h.players.includes(selectedId));
+        return (
+          <div className="card">
+            <div className="toolbar" style={{ justifyContent: "space-between" }}>
+              <div>
+                {fit && <><strong style={{ fontSize: 17 }}>{fit.web_name}</strong> <Club id={fit.team} /></>}{" "}
+                <span className="muted">No FPL news: fit, as far as FPL knows.</span>
+              </div>
+              <a href="#news" className="link">Close</a>
+            </div>
+            {lines.length > 0 && <><h4 style={{ margin: "12px 0 4px" }}>In the headlines</h4><Headlines items={lines} /></>}
+          </div>
+        );
+      })()}
 
       <div className="toolbar" style={{ marginTop: 14 }}>
         <Segmented label="Status" value={view} onChange={setView}
@@ -253,6 +299,25 @@ export default function News() {
         </>
       )}
 
+      <h3>Latest headlines</h3>
+      {headlineItems.length === 0 ? <Note>The headlines couldn't be read.</Note> : (
+        <>
+          <div className="toolbar">
+            <select aria-label="Club" value={headlineClub} onChange={(e) => setHeadlineClub(Number(e.target.value))}>
+              <option value={0}>All clubs</option>
+              {[...site.meta.teams].sort((a, b) => a.name.localeCompare(b.name)).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+            <span className="muted">{shownHeadlines.length} headlines</span>
+          </div>
+          <Headlines items={shownHeadlines.slice(0, 40)} />
+          <p className="note">
+            The last two weeks from <a className="link" href={log.headlines_url} target="_blank" rel="noreferrer">{log.headlines_name} ↗</a>'s
+            Premier League injuries and suspensions page, checked every few hours (hourly before a deadline). Players and clubs are
+            picked out by name, so check the odd one. They're here to read: this model doesn't use them.
+          </p>
+        </>
+      )}
+
       <h3>Changes to FPL's news, last 14 days</h3>
       <Table columns={changeColumns} data={changes} sort="t" desc rowKey={(c) => c.key} limit={30}
              cardSub={["team", "status"]} cardStats={["t"]} />
@@ -263,6 +328,7 @@ export default function News() {
       </ul>
       <Note>
         FPL's news is the Premier League's own (the same text, flag and source link as in the FPL app), checked every hour.
+        Headlines come from NewsNow, credited to each publisher.
         Fantasy Football Scout's table adds return dates and sources for some players, but its terms don't allow copying
         it automatically, so it's linked rather than shown here.
       </Note>

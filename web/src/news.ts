@@ -1,6 +1,6 @@
 // Team news: news.json from the `news` branch, refreshed hourly by a scheduled GitHub Action
-// (src/xpfpl/data/news.py): FPL's news for every player, the managers' press conferences and a
-// log of every change to FPL's news this season.
+// (src/xpfpl/data/news.py): FPL's news for every player, the managers' press conferences, the latest
+// NewsNow headlines and a log of every change to FPL's news this season.
 
 export interface NewsRisk { gw: number | null; what: string | null; notes: string | null; url: string | null }
 export interface NewsPlayer {
@@ -29,10 +29,17 @@ export interface NewsChange {
   t: string | null; seen: string; gw: number | null; id: number; code: number; name: string; team_code: number; pos: number;
   status: string; chance: number | null; news: string; back: string | null; source: string | null;
 }
+/** A NewsNow headline: its NewsNow id and link, publisher and time, and the FPL players and clubs named in it. */
+export interface Headline {
+  id: string; title: string; publisher: string | null; t: string | null; url: string;
+  players: number[]; teams: number[];
+}
 export interface NewsLog {
   updated: string; season: string; gw_current: number | null; gw_next: number | null;
   last_deadline: string | null; next_deadline: string | null;
   players: NewsPlayer[]; press: Press | null; press_url: string; press_name: string; log: NewsChange[];
+  /** The last two weeks of headlines (absent in a file written before they were added). */
+  headlines?: { fetched: string | null; items: Headline[] }; headlines_url?: string; headlines_name?: string;
 }
 
 /** Where the live file is: the `news` branch through raw.githubusercontent.com on github.io, else the copy

@@ -1,10 +1,11 @@
 """The dashboard's Team News tab: who's out, doubtful or back and when, your squad's news first,
-the managers' press conferences and every change to FPL's news this season (data/news.py).
+the managers' press conferences, the latest headlines (NewsNow) and every change to FPL's news
+this season (data/news.py).
 
 Today's FPL news comes from the dashboard's own bootstrap-static call (as fresh as the last
 "Refresh live FPL data"); the change log comes from the hourly Action's news.json on the `news`
-branch (or archive/news/ when offline); the press conferences are read from the web at most every
-30 minutes.
+branch (or archive/news/ when offline); the press conferences and headlines are read from the web
+at most every 30 minutes.
 """
 
 import pandas as pd
@@ -17,8 +18,7 @@ STATUS_ORDER = ["Injured", "Suspended", "Doubtful", "Not available", "Unavailabl
 RULES = {"flag": "FPL's flag", "press": "Press conference", "back": "Return date", "risk": "Known absence"}
 ELSEWHERE = [
     ("Fantasy Football Scout: injuries and bans", "https://www.fantasyfootballscout.co.uk/fantasy-football-injuries"),
-    ("NewsNow: Premier League injuries and suspensions",
-     "https://www.newsnow.com/au/Sport/Football/Premier+League/Injuries+and+Suspensions"),
+    ("NewsNow: Premier League injuries and suspensions", news.HEADLINES_URL),
     ("Premier Fantasy Tools: press conference summaries", news.PRESS_URL),
 ]
 
@@ -32,6 +32,30 @@ def tracked() -> dict | None:
 def press(_bs: dict, gw_next: int | None) -> dict | None:
     """Today's press conferences (cached half an hour; `gw_next` keys the cache)."""
     return news.press_now(_bs)
+
+
+@st.cache_data(ttl=1800, show_spinner="Reading the headlines...")
+def headlines(_bs: dict, gw_next: int | None) -> list[dict] | None:
+    """Today's NewsNow headlines (cached half an hour)."""
+    return news.headlines_now(_bs)
+
+
+def _headline_table(items: list[dict], bs: dict, team_short: dict) -> pd.DataFrame:
+    name = {e["id"]: e["web_name"] for e in bs["elements"]}
+    t = pd.DataFrame(items, columns=["id", "t", "title", "publisher", "url", "players", "teams"])
+    when = pd.to_datetime(t["t"], utc=True, errors="coerce")
+    return t.assign(
+        when=when.dt.tz_convert("Europe/London").dt.strftime("%a %d %b %H:%M"),
+        Players=[", ".join(name.get(i, "") for i in ids) for ids in t["players"]],
+        Clubs=[", ".join(team_short.get(i, "") for i in ids) for ids in t["teams"]])
+
+
+def _show_headlines(t: pd.DataFrame, height: int | None = None) -> None:
+    shown = t[["when", "title", "publisher", "Players", "Clubs", "url"]].rename(columns={
+        "when": "When (UK)", "title": "Headline", "publisher": "Publisher", "url": "Link"})
+    st.dataframe(shown, hide_index=True, width="stretch", height=height or "auto",
+                 column_config={"Headline": st.column_config.TextColumn(width="large"),
+                                "Link": st.column_config.LinkColumn(display_text="Read")})
 
 
 def _ago(t: pd.Timestamp, now: pd.Timestamp) -> str:
@@ -100,7 +124,7 @@ def render(bs: dict, team_short: dict, me=None, xp: pd.Series | None = None,
     season = api.current_season(bs)
     previous = remote if remote and remote.get("season") == season else None
     gw_next = next((ev["id"] for ev in bs["events"] if ev["is_next"]), None)
-    state = news.update(previous, bs, press=press(bs, gw_next), read_press=False)
+    state = news.update(previous, bs, press=press(bs, gw_next), headlines=headlines(bs, gw_next), read_press=False)
     t = _table(state, team_short, xp, avail)
     now = pd.Timestamp(state["updated"])
     p = state.get("press") or {}
@@ -129,6 +153,10 @@ def render(bs: dict, team_short: dict, me=None, xp: pd.Series | None = None,
         else:
             st.dataframe(_shown(mine.sort_values("chance", na_position="last"), cols), hide_index=True,
                          width="stretch", column_config=_config())
+        squad_lines = [h for h in (state.get("headlines") or {}).get("items", []) if set(h["players"]) & set(me.squad)]
+        if squad_lines:
+            st.caption(f"In the headlines ({len(squad_lines)}):")
+            _show_headlines(_headline_table(squad_lines, bs, team_short))
 
     st.markdown("**All players with news**")
     f = st.columns([2, 2, 1, 2])
@@ -170,6 +198,27 @@ def render(bs: dict, team_short: dict, me=None, xp: pd.Series | None = None,
                 for q in club["quotes"]:
                     st.markdown(f"> {q['text']}" + (f"\n>\n> — {q['by']}" if q.get("by") else ""))
         st.caption(f"Summaries by [{news.PRESS_NAME}]({news.PRESS_URL}); read {p.get('fetched', '')[:16].replace('T', ' ')} UTC.")
+
+    st.markdown(f"**Latest headlines** · [{news.HEADLINES_NAME}]({news.HEADLINES_URL})")
+    items = (state.get("headlines") or {}).get("items", [])
+    if not items:
+        st.caption("Couldn't read the headlines.")
+    else:
+        h = _headline_table(items, bs, team_short)
+        f = st.columns([1, 2])
+        mine_only = f[0].checkbox("Only your squad", key="news_headlines_mine", disabled=me is None)
+        club_pick = f[1].multiselect("Clubs", sorted(team_short.values()), key="news_headlines_clubs")
+        if mine_only and me is not None:
+            h = h[[bool(set(ids) & set(me.squad)) for ids in h["players"]]]
+        if club_pick:
+            ids = {i for i, s_ in team_short.items() if s_ in club_pick}
+            team_of = {e["id"]: e["team"] for e in bs["elements"]}      # a player named counts for his club
+            h = h[[bool((set(clubs) | {team_of.get(p) for p in ps}) & ids)
+                   for clubs, ps in zip(h["teams"], h["players"])]]
+        _show_headlines(h, height=360)
+        st.caption(f"The last {news.HEADLINE_DAYS} days of headlines from {news.HEADLINES_NAME}'s Premier League injuries "
+                   "and suspensions page, with the players and clubs named in each (found by name, so check the odd "
+                   "one). Shown to read, not used by this model.")
 
     st.markdown("**Changes to FPL's news**")
     log = news.change_log(state)
