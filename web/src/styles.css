@@ -560,7 +560,11 @@ pre.code {
 .bands-bar { display: flex; gap: 2px; height: 12px; border-radius: 4px; overflow: hidden; }
 .bands-bar > span { min-width: 2px; }
 .bands-labels { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px 8px; margin-top: 6px; }
-@media (max-width: 640px) { .why-tiles:not(.why-tiles-xp), .bands-labels { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* Two to a row on a phone: four across left ~60px a tile, too narrow for a word like "Medium" at this size. */
+@media (max-width: 640px) {
+  .why-tiles, .bands-labels { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .why-tiles-xp { grid-auto-flow: row; }
+}
 .bands-labels > div { display: grid; grid-template-columns: auto 1fr; column-gap: 6px; align-items: center; }
 .bands-labels small { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
 .bands-labels b { grid-column: 2; font-size: 16px; font-variant-numeric: tabular-nums; }

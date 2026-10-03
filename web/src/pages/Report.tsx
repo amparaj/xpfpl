@@ -15,7 +15,7 @@ import { Calibration } from "./Accuracy";
 
 const SECTIONS = [
   { id: "summary", title: "Summary" },
-  { id: "architecture", title: "System architecture" },
+  { id: "architecture", title: "This Model's Architecture" },
   { id: "data", title: "Data" },
   { id: "inputs", title: "What this model reads" },
   { id: "models", title: "The models" },

@@ -123,7 +123,7 @@ export interface MyTeamPrivate {
   /** The Plan Ahead settings the team was last saved with (myteam.save_plan); null for older saves. */
   settings?: PlanSettings | null;
   weeks: MyWeek[]; captains: CaptainOdds[];
-  /** The squad: xP per gameweek (`xp_<gw>`, `xp_total`) and this gameweek's simulated range. */
+  /** The squad: each player's row of the saved forecast (xP per gameweek, minutes, simulated range, confidence). */
   players: Columns;
 }
 /** My Team (export._my_team): the team for the gameweek in progress, until it's finished, or the next

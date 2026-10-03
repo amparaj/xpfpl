@@ -137,6 +137,9 @@ export interface Column<T> {
   wrap?: boolean;
   /** A shorter label for the phone cards, where the group heading isn't shown ("Mkt home"). */
   short?: string;
+  /** Whether it can be sorted on. Default: when its values are numbers; names and descriptions can't
+   * (set true for text that sorts by meaning, such as a date or a season). */
+  sortable?: boolean;
 }
 
 /** A column's label as plain text, with its group in front ("xP GW6"): for the phone's sort list and detail sheet. */
@@ -266,6 +269,8 @@ export function Table<T>(props: TableProps<T>) {
       {all ? "Show fewer" : `Show all ${sorted.length}`}
     </button>
   ) : null;
+  const sortable = useMemo(() => new Set(columns.filter((c) =>
+    c.sortable ?? (c.numeric || data.some((r) => typeof c.value(r) === "number"))).map((c) => c.key)), [columns, data]);
   const sortBy = (key: string) => {
     if (sort === key) setDesc(!desc);
     else { setSort(key); setDesc(!!columns.find((c) => c.key === key)?.numeric); }
@@ -286,7 +291,7 @@ export function Table<T>(props: TableProps<T>) {
 
   if (phone && (props.cards ?? (columns.length > 4 || !!props.detail))) {
     return <>
-      <Cards {...props} shown={shown} sort={sort} desc={desc} sortBy={sortBy} setDesc={setDesc} more={more} tap={onRow ?? setOpen} />
+      <Cards {...props} shown={shown} sort={sort} desc={desc} sortBy={sortBy} sortable={sortable} setDesc={setDesc} more={more} tap={onRow ?? setOpen} />
       {sheet}
     </>;
   }
@@ -312,10 +317,12 @@ export function Table<T>(props: TableProps<T>) {
             {columns.map((c, i) => (
               <th key={c.key} className={cls(c, i)} title={c.title}
                   aria-sort={sort === c.key ? (desc ? "descending" : "ascending") : undefined}>
-                <button onClick={() => sortBy(c.key)}>
-                  {c.label}
-                  <span className="sort-mark">{sort === c.key ? (desc ? "▼" : "▲") : ""}</span>
-                </button>
+                {sortable.has(c.key) ? (
+                  <button onClick={() => sortBy(c.key)}>
+                    {c.label}
+                    <span className="sort-mark">{sort === c.key ? (desc ? "▼" : "▲") : ""}</span>
+                  </button>
+                ) : <span className="th-label">{c.label}</span>}
               </th>
             ))}
           </tr>
@@ -346,8 +353,8 @@ const cell = <T,>(c: Column<T>, r: T): ReactNode => (c.render ? c.render(r) : St
 
 /** The table on a phone: one card per row (its name, a few small columns, two to four numbers), a
  * sort control instead of the headings, and every column in a sheet when a card is tapped. */
-function Cards<T>({ columns, rowKey, selected, cardStats, cardSub, cardTitle, shown, sort, desc, sortBy, setDesc, more, tap }: Omit<TableProps<T>, "sort"> & {
-  shown: T[]; sort: string | null; desc: boolean; sortBy: (key: string) => void; setDesc: (d: boolean) => void; more: ReactNode;
+function Cards<T>({ columns, rowKey, selected, cardStats, cardSub, cardTitle, shown, sort, desc, sortBy, sortable, setDesc, more, tap }: Omit<TableProps<T>, "sort"> & {
+  shown: T[]; sort: string | null; desc: boolean; sortBy: (key: string) => void; sortable: Set<string>; setDesc: (d: boolean) => void; more: ReactNode;
   tap: (r: T) => void;
 }) {
   const [title, ...rest] = columns;
@@ -371,7 +378,7 @@ function Cards<T>({ columns, rowKey, selected, cardStats, cardSub, cardTitle, sh
           Sort by
           <select value={sort ?? ""} onChange={(e) => sortBy(e.target.value)}>
             {!sort && <option value="">–</option>}
-            {columns.map((c) => <option key={c.key} value={c.key}>{labelText(c)}</option>)}
+            {columns.filter((c) => sortable.has(c.key) || c.key === sort).map((c) => <option key={c.key} value={c.key}>{labelText(c)}</option>)}
           </select>
         </label>
         <button className="cards-dir" onClick={() => setDesc(!desc)}>

@@ -325,8 +325,15 @@ def outlook(team: dict, players: pd.DataFrame, gameweeks: list[int], draws=None,
                         "mean": round(float(diff.mean()), 2), "p10": float(q[0]), "p50": float(q[1]),
                         "p90": float(q[2])}
 
+    # Next week's row as Next Gameweek has it, for the site's "Why this projection?" panel. An older
+    # forecast takes the outcome bands and the horizon's range from its simulations (as export does).
+    if "p_3_5" not in players and simulated and first in draws.gameweeks:
+        found = simulate.summary(draws, first).drop(columns=[c for c in players if c != "element"], errors="ignore")
+        players = players.join(found)
     cols = [f"xp_{g}" for g in gameweeks]
-    extra = [c for c in ("pts_p10", "pts_p50", "pts_p90", "p_haul", "p_blank", "p_play") if c in players]
+    extra = [c for c in ("xmins", "p_play", "p_full", "rotation", "rotation_factor", "pts_p10", "pts_p50", "pts_p90",
+                         "p_haul", "p_6_9", "p_3_5", "p_blank", "total_p10", "total_p50", "total_p90", "xp_sd",
+                         "confidence") if c in players]
     table = players.loc[sorted(set(squad) | set(later)), cols + extra].copy()
     table["xp_total"] = table[cols].sum(axis=1)
     table.index.name = "element"
