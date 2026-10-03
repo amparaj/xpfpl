@@ -1,6 +1,7 @@
 import * as Plot from "@observablehq/plot";
 import { useCallback, useState } from "react";
 import { color } from "../colors";
+import WhatGoesWithPoints, { DistributionScores } from "../components/Eda";
 import { PAPER, Reliability } from "../components/Simulation";
 import { Chart, Legend, Loading, Note, Table, Tiles, plotDefaults, type Column } from "../components/ui";
 import type { Accuracy as AccuracyFile, Row } from "../data";
@@ -13,6 +14,9 @@ export default function Accuracy() {
   if (data === undefined) return <Loading />;
   if (!data) return <p>No accuracy reports exported yet.</p>;
   const { validation: v, comparison: c, scorecard: s, tuning: t, robustness: r } = data;
+  // Every score's chances, scored: `xpfpl compare` (with the distribution model) else the last `xpfpl train`.
+  const distribution = c?.distribution?.length ? { rows: c.distribution, season: c.season }
+    : v?.simulation?.distribution?.length ? { rows: v.simulation.distribution, season: v.season } : null;
 
   return (
     <>
@@ -29,6 +33,8 @@ export default function Accuracy() {
       {v && <ByGameweek validation={v} comparison={c} preferred={site.meta.model} />}
       {v && <Calibration validation={v} />}
       {v?.simulation && <Ranges sim={v.simulation} season={v.season} live={s?.ranges ?? []} />}
+      {distribution && <DistributionScores rows={distribution.rows} season={distribution.season} />}
+      {data.eda && <WhatGoesWithPoints report={data.eda} />}
       {r && <Robustness report={r} />}
       {t && <Tuning tuning={t} retune={r?.retune} />}
       <Note>

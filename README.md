@@ -135,6 +135,7 @@ xpfpl validate                     # score the model on a season it has never se
 xpfpl compare                      # train every model on the same season and rank them
 xpfpl backtest --season 2024-25    # replay a whole season and count the points
 xpfpl tune                         # set the config.py tuning parameters from replayed seasons (hours)
+xpfpl eda                          # rebuild the "what goes with points" figures (also run by train)
 xpfpl robustness                   # six seasons out of sample: accuracy, calibration, replays, leak probe (~1.5 h)
 xpfpl scorecard                    # score this season's saved forecasts against the results so far
 xpfpl export                       # write the website's data (web/public/data/)
@@ -188,7 +189,7 @@ When a different horizon makes sense:
 | Normal week | **3** | The tuned default |
 | Free Hit week | **1** | The squad reverts afterwards, so only that week counts |
 | Planning a Wildcard | **4-6** | You keep that squad for many weeks, so fixture runs matter more |
-| Blank or double gameweek within the next ~5 weeks | **Long enough to include it** | Otherwise the plan can't see it. This logic hasn't been checked against a real blank or double gameweek yet |
+| Blank or double gameweek within the next ~5 weeks | **Long enough to include it** | Otherwise the plan can't see it. A double's two matches add up and a blank counts 0 (tested on past seasons' doubles and blanks; not yet live) |
 | Banking free transfers for a later move | **Long enough to cover it** | So rolling the transfer shows its value |
 
 A quick check: run the plan at 3 and again at 5. If this week's recommended transfer is the
@@ -211,6 +212,7 @@ dashboard). Each trains to its own file in `models/`, so they can coexist and be
 | `gbm` | LightGBM on the same features: the tabular benchmark the neural nets have to beat. `pip install -e ".[gbm]"`. |
 | `xmins` | Expected minutes first: a softmax over *no minutes / a cameo / 60+*, then the points a cameo and a full game are worth. xP = P(cameo) x points + P(60+) x points. Also reports expected minutes and the chance of playing, shown in `predict` output and the dashboard. |
 | `ensemble` | The average of `mlp`, `gbm` and `xmins` (without `gbm` if LightGBM isn't installed). The default. |
+| `dist` | The chance of every score from -3 to 25 (an MLP ending in a softmax, trained with cross-entropy); its xP is the average of those chances. The direct alternative to the Monte Carlo, scored against it in `xpfpl compare` (see [Is the whole spread right?](#is-the-whole-spread-right)). |
 | `baseline` | Each player's last-5-match average. No learning; the yardstick. |
 
 ```bash
@@ -413,6 +415,27 @@ FPL team selection found simulated forecasts no better than the plain average th
 League*](https://arxiv.org/abs/2505.02170)). Rank- or ownership-aware risk (picking differentials)
 was left out on purpose: it can't be shown to score more points.
 
+### Is the whole spread right?
+
+The checks above test pieces of the spread (the 80% band, the chance of 10+). `distribution.py`
+scores the whole forecast of the chance of every score with two proper scores, lower better: the
+**log score** (minus the log of the chance given to what happened) and the **RPS** (the squared gap
+between the forecast's and the outcome's cumulative distributions, summed over every score: the
+CRPS for whole-number points, so 7 when 8 happened beats 2). Two forecasters against a benchmark
+with no model (the spread of scores past players of the same position and similar 5-match form went
+on to get), on 2025-26 held out, players getting minutes (`xpfpl compare`, 2026-10-03):
+
+| Forecast | Log score | RPS |
+| --- | --- | --- |
+| Monte Carlo around the ensemble's xP | **1.748** | **1.154** |
+| `dist`: one PyTorch network, softmax over every score | 1.784 | 1.166 |
+| Past scores by position and form | 1.947 | 1.276 |
+
+Building the spread from the scoring rules (a clean sheet is worth 4 to a defender and 1 to a
+midfielder, a goal comes with bonus) beats learning it directly from the features, even though
+`dist` was trained on exactly this score. As a points forecast `dist`'s average is mid-table
+(RMSE 2.622 against the ensemble's 2.610), so it stays a benchmark.
+
 ## Tuning
 
 The horizon, discount, bench weight, free-transfer value, hit allowance, price weight and chip
@@ -433,6 +456,17 @@ the season total by about 84 points (`xpfpl robustness`), more than most setting
 same noise for every candidate, so the comparison is paired), and reports a standard error;
 `--workers` runs the replays in parallel; `--confirm-seasons` replays the winner, today's config
 and the original guesses on seasons the search never saw.
+
+**Paired stages.** Even with the same noise, two full replays drift apart after their first
+different transfer, and most of the gap between their totals is which squad each path happened to
+reach. So the stages whose decisions pay off within a few weeks (horizon and discount, bench weight,
+the four chip thresholds) are judged by paired comparison (`backtest.paired`, `--paired-weeks 3`,
+the default): the stage's incumbent is replayed once per season and replay, and at every deadline
+each candidate takes over its exact squad, bank, free transfers and chips for three gameweeks and
+is scored against what the incumbent scored over the same weeks. That measured a setting's gain
+with a third to a tenth of the noise of full replays. Transfer planning, the free-transfer value
+and the price weight work through banked transfers and team value over a whole season, which a
+three-week window misses, so they keep full replays. `--paired-weeks 0` replays every stage in full.
 
 The values in `config.py` come from a first run over 2023-24 and 2024-25 with the MLP (one replay
 per candidate):
@@ -807,6 +841,9 @@ src/xpfpl/
   price_view.py      the dashboard's Prices tab
   optimise.py        squad / transfer / lineup optimiser (PuLP), week by week
   simulate.py        Monte Carlo: thousands of simulated gameweeks per forecast (ranges, team/captain/chip odds)
+  distribution.py    log score and RPS for forecasts of the chance of every score
+  models/dist.py     the chance of every score from one network (softmax head)
+  eda.py             what goes with points, by position: correlations, spread, SHAP (models/eda.json)
   myteam.py          your squad, selling prices, bank, free transfers, chips used
   chips.py           chip rules
   validate.py        held-out-season accuracy report (models/validation.json)

@@ -1,5 +1,6 @@
 // Loading the JSON that `xpfpl export` writes to public/data/, and the shapes it has.
 
+import type { EdaReport } from "./components/Eda";
 import type { Sealed } from "./seal";
 
 /** A column-wise table as exported: {"col": [values...]}. */
@@ -171,6 +172,8 @@ export interface Accuracy {
   validation: any; comparison: any; tuning: any; scorecard: any; rotation?: RotationFit | null;
   /** `xpfpl robustness`: six seasons, each forecast and replayed by a model trained only on earlier ones. */
   robustness?: any;
+  /** models/eda.json: what goes with points, by position (eda.py). */
+  eda?: EdaReport | null;
 }
 
 const cache = new Map<string, Promise<any>>();

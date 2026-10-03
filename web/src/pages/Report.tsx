@@ -86,6 +86,9 @@ function Timeline({ test, walk, current }: { test?: string; walk: string[]; curr
   );
 }
 
+const SPREAD_NAMES: Record<string, string> = {
+  dist: "the network", "Past scores by position and form": "past scores by position and form",
+};
 const COMPARE_COLORS = () => ({ ensemble: color.s1, Baseline: color.s2, baseline: color.s2, "FPL xP": color.s3 });
 
 export default function Report() {
@@ -100,7 +103,8 @@ export default function Report() {
     document.getElementById(`report-${target}`)?.scrollIntoView({ block: "start" });
   }, [target, report]);
 
-  const v = report?.validation, c = report?.comparison, r = report?.robustness, t = report?.tuning;
+  const v = report?.validation, c = report?.comparison, r = report?.robustness, t = report?.tuning, eda = report?.eda;
+  const scores: Row[] = c?.distribution ?? [];
   const model = site.meta.model;
   const models: Row[] = c?.models ?? [];
   const ceiling = c?.ceiling;
@@ -290,6 +294,11 @@ export default function Report() {
           odds as inputs. A penalty-taker adjustment (FPL's penalty order against who took them lately) is recorded with every
           forecast but not applied: on 2025-26 it explained almost none of the error, so this season's results will decide it.
         </p>
+        {eda && <p className="note">
+          Which inputs matter, set against each match's points as they stood before it (<a href="#accuracy">What goes with points?</a>):
+          for every position the strongest link is minutes over the last three matches, and SHAP values for the gradient boosting
+          put the same input first, then recent points, net transfers and ownership. The crowd again.
+        </p>}
       </Section>
 
       <Section id="models" n={++n}>
@@ -313,7 +322,10 @@ export default function Report() {
           </div>
         )}
         <p>
-          Double gameweeks add both matches; blank gameweeks score zero. The neural networks are trained with early stopping: training
+          Double gameweeks add both matches; blank gameweeks score zero, in the forecast, the simulation and the replays (checked on
+          past seasons' doubles and blanks). One more model forecasts the chance of every score directly instead of an average: a
+          PyTorch network ending in one output per score, turned into chances (a softmax) and trained on the log score. It is a
+          benchmark for the simulation (section {SECTIONS.findIndex((s) => s.id === "simulation") + 1}). The neural networks are trained with early stopping: training
           stops when the error on a season it isn't trained on stops improving (see the next section), then it is refitted on
           everything.
         </p>
@@ -334,7 +346,8 @@ export default function Report() {
         <Timeline test={v?.season} walk={replaySeasons} current={site.meta.season} />
         <p>
           <strong>No peeking.</strong> Every input on a training row comes from the matches before it. Inside a replay, all future
-          gameweeks are forecast from one snapshot at the deadline, as a manager would have to. As a check, the inputs were rebuilt from
+          gameweeks are forecast from one snapshot at the deadline, as a manager would have to. In a double gameweek the snapshot is
+          taken before the club's first match of the week, not the second (whose inputs include the first). As a check, the inputs were rebuilt from
           data cut off at a deadline and compared with the full build: they matched, apart from rounding in the club-ratings fit.
         </p>
         <p>
@@ -346,7 +359,9 @@ export default function Report() {
           precisely in pairs: the second setting takes over the first one's exact squad, bank and free transfers at every deadline
           for a few weeks, and the two are scored over the same weeks. Tested with the same 10% noise, that measured a setting's
           worth about five times more precisely than two full replays. It can't see what builds up over a season, such as squad
-          value from price rises, so those are still judged on full replays.
+          value from price rises, so those are still judged on full replays. The settings search uses both: pairs over three weeks
+          for how far to look ahead, the bench and the chip thresholds; full replays for planning transfers, the value of a saved
+          transfer and price rises.
         </p>
       </Section>
 
@@ -405,7 +420,10 @@ export default function Report() {
         ]} />}
         <p>
           The simulations give each player a range and his chances of 10+ and of 2 or fewer, the team's likely score, captain and chip
-          odds. They don't change the picks: with FPL's scoring, the most expected points are the same either way, as{" "}
+          odds.{scores.length > 0 && <> The whole spread is scored too, with the log score and the ranked probability score (both
+          lower-is-better scores for a forecast of every outcome's chance). On {c.season}: {scores.map((r, i) => <span key={r.model}>{i > 0 && (i === scores.length - 1 ? " and " : ", ")}
+          {r.model.startsWith("Monte Carlo") ? "the simulation" : SPREAD_NAMES[r.model] ?? r.model} {dec(r.log_score, 3)} / {dec(r.rps, 3)}</span>)}. Building the spread from the
+          scoring rules beats a network trained to forecast it directly.</>} They don't change the picks: with FPL's scoring, the most expected points are the same either way, as{" "}
           <a href={PAPER}>Ramezani &amp; Dinh (2026)</a> also found.
         </p>
       </Section>
@@ -454,6 +472,7 @@ export default function Report() {
           <li>Transfers made days before the deadline are only partly counted: the crowd input is complete only at the deadline.</li>
           <li>Rule changes take time to learn: defensive contribution points began in 2025-26, so defenders were under-forecast that season.</li>
           <li>Later weeks of a plan assume no new information; only this week's transfer is real.</li>
+          <li>Blank and double gameweeks are checked on past seasons but not yet on a live one this season.</li>
           <li>Price changes are estimated from form and transfers, not FPL's hidden thresholds.</li>
           <li>Free transfers are estimated by replaying the season; one-off top-ups aren't modelled.</li>
           <li>The settings were tuned on some of the same seasons they are reported on, which flatters them a little.</li>
@@ -472,7 +491,8 @@ xpfpl scorecard  # score last week's saved forecast
 xpfpl publish    # this site`}</pre>
         <p>
           Occasional: <code>xpfpl compare</code> (every model on the held-out season), <code>xpfpl robustness</code> (the walk-forward
-          seasons) and <code>xpfpl tune</code> (the settings, by replaying seasons). The archive behind every number is on the{" "}
+          seasons), <code>xpfpl tune</code> (the settings, by replaying seasons) and <code>xpfpl eda</code> (which inputs go with points;
+          also run by <code>xpfpl train</code>). The archive behind every number is on the{" "}
           <a href="#data">Data</a> page.
         </p>
       </Section>

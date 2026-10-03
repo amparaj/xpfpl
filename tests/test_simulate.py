@@ -122,3 +122,12 @@ def test_a_side_fields_the_number_its_chances_add_up_to():
         count = picked[:, side == k].sum(1).double()
         total = float(p[side == k].sum())
         assert count.min() >= np.floor(total) and count.max() <= np.ceil(total)
+
+
+def test_by_gameweek_a_blank_never_plays():
+    rows = pd.DataFrame({"element": [7, 8, 7, 8], "gw": [6, 6, 7, 7]})[[True, True, False, True]]
+    draws = np.array([[3, 5, 1], [2, DNP, 1]], dtype=np.int8)
+    d = simulate.by_gameweek(draws, rows.reset_index(drop=True))
+    assert d.gameweeks == [6, 7]
+    assert (d.points[1, :, 0] == DNP).all()                 # element 7 has no GW7 fixture
+    assert d.pts(7, [7]).sum() == 0

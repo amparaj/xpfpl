@@ -109,9 +109,14 @@ def _snapshot(rows: pd.DataFrame, gw: int) -> tuple[pd.DataFrame, pd.DataFrame]:
 
     A row's own rolling features already exclude that match, so the last row up to and
     including `gw` is the right pre-deadline state. A player blank in `gw` keeps the state
-    from their previous fixture, which is one match stale but never sees the future.
+    from their previous fixture, which is one match stale but never sees the future. In a
+    double gameweek only the first of `gw`'s matches counts: the second's row has the first
+    match in its form, and that was played after the deadline.
     """
-    known = rows[rows["gw"] <= gw].sort_values("kickoff_time")
+    known = rows[rows["gw"] <= gw].sort_values("kickoff_time", kind="stable")
+    now = known["gw"] == gw
+    first = known[now].drop_duplicates("team_code").set_index("team_code")["fixture"]
+    known = known[~now | (known["fixture"] == known["team_code"].map(first))]
     players = known.groupby("element").tail(1).set_index("element")
     teams = known.groupby("team_code").tail(1).set_index("team_code")[[f"team_{c}" for c in TEAM_STATE]]
     return players, teams
@@ -409,8 +414,33 @@ def run(settings: Settings, frame: pd.DataFrame | None = None, predictor=None,
 
 # ---------------------------------------------------------------- paired comparison
 
+@dataclass
+class Reference:
+    """The base's path through a season, for `paired`: its state at every deadline and the
+    points it scored each gameweek."""
+    states: dict
+    points: dict
+
+    @property
+    def total(self) -> float:
+        return float(sum(self.points.values()))
+
+
+def reference(base: Settings, season: Season) -> Reference:
+    """Replay `base` once, keeping its state at every deadline (what `paired` branches from)."""
+    last = min(base.end_gw, max(season.gameweeks))
+    states, points = {}, {}
+    me = Manager({}, base.budget)
+    for gw in [g for g in season.gameweeks if base.start_gw <= g <= last]:
+        states[gw] = me.copy()
+        record, me, _ = play_week(base, season, gw, me)
+        points[gw] = record["points"]
+    return Reference(states, points)
+
+
 def paired(base: Settings, candidate: Settings, season: Season, weeks: int = 1,
-           candidate_season: Season | None = None, verbose: bool = False) -> "Paired":
+           candidate_season: Season | None = None, verbose: bool = False,
+           ref: Reference | None = None) -> "Paired":
     """How many points `candidate` gains over `base`, measured without the chaos of two replays.
 
     Two full replays drift apart after their first different transfer, and from then on they
@@ -424,33 +454,27 @@ def paired(base: Settings, candidate: Settings, season: Season, weeks: int = 1,
     order and chips, short-sighted for transfers bought for the fixtures after. `weeks` = the
     horizon lets a transfer's later weeks count too (each window overlaps the next, which the
     confidence interval allows for). `candidate_season` is needed when the two use different
-    models or price tables.
+    models or price tables. `ref` is the base's path from `reference`, when several candidates
+    are compared against one base (tune.py).
     """
     if base.season != candidate.season:
         raise ValueError("Paired comparisons need the same season.")
     other = candidate_season or season
-    last = min(base.end_gw, max(season.gameweeks))
-    gws = [g for g in season.gameweeks if base.start_gw <= g <= last]
-
-    states, ref = {}, {}
-    me = Manager({}, base.budget)
-    for gw in gws:
-        states[gw] = me.copy()
-        record, me, _ = play_week(base, season, gw, me)
-        ref[gw] = record["points"]
+    ref = ref or reference(base, season)
+    gws = list(ref.states)
 
     rows = []
     for i, gw in enumerate(gws):
         window = gws[i:i + weeks]
-        me, got = states[gw].copy(), 0.0
+        me, got = ref.states[gw].copy(), 0.0
         for g in window:
             record, me, _ = play_week(candidate, other, g, me)
             got += record["points"]
-        had = sum(ref[g] for g in window)
+        had = sum(ref.points[g] for g in window)
         rows.append({"gw": gw, "weeks": len(window), "base": had, "candidate": got, "gain": got - had})
         if verbose:
             print(f"  GW{gw:<3d} base {had:6.1f}  candidate {got:6.1f}  gain {got - had:+6.1f}")
-    return Paired(base, candidate, weeks, pd.DataFrame(rows), sum(ref.values()))
+    return Paired(base, candidate, weeks, pd.DataFrame(rows), ref.total)
 
 
 @dataclass

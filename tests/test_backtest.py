@@ -126,6 +126,50 @@ def test_snapshot_only_looks_backwards(season_frame):
     assert len(teams) == season_frame["team_code"].nunique()
 
 
+def double_and_blank(frame: pd.DataFrame) -> pd.DataFrame:
+    """`frame` with clubs 1 and 2 playing twice in GW3 (their GW4 matches moved forward) and so
+    blank in GW4."""
+    frame = frame.copy()
+    moved = (frame["team_code"].isin([1, 2])) & (frame["gw"] == 4)
+    frame.loc[moved, "gw"] = 3
+    frame.loc[moved, "kickoff_time"] -= pd.Timedelta(days=4)
+    return frame
+
+
+def test_snapshot_in_a_double_takes_the_first_match(season_frame):
+    frame = double_and_blank(season_frame)
+    frame["form"] = frame["gw"] * 10.0 + (frame["kickoff_time"].dt.day % 7)  # differs per match
+    rows = frame[frame["team_code"] == 1]
+    state, teams = backtest._snapshot(frame, gw=3)
+    first = rows[rows["gw"] == 3].sort_values("kickoff_time").groupby("element").head(1).set_index("element")
+    assert (state.loc[first.index, "form"] == first["form"]).all()     # not the second, post-deadline row
+    assert (state.loc[first.index, "kickoff_time"] == first["kickoff_time"]).all()
+    club = frame[(frame["team_code"] == 1) & (frame["gw"] == 3)].sort_values("kickoff_time")
+    assert teams.loc[1, "team_" + TEAM_STATE[0]] == club[f"team_{TEAM_STATE[0]}"].iloc[0]
+
+
+def test_horizon_sums_a_double_and_zeroes_a_blank(season_frame):
+    frame = double_and_blank(season_frame)
+    state, teams = backtest._snapshot(frame, gw=3)
+    players = backtest._predict_horizon(frame, state, teams, [3, 4], None)
+    club = players[players["team"] == 1]
+    other = players[players["team"] == 5]
+    assert (club["xp_4"] == 0).all()                                  # blank
+    assert (other["xp_4"] > 0).any()
+    # a double: the baseline predicts total_points_r5 per match, so twice that
+    r5 = state.loc[club.index, "total_points_r5"].clip(lower=0)
+    assert np.allclose(club["xp_3"], 2 * r5)
+
+
+def test_a_double_scores_both_matches_and_a_blank_scores_nothing(season_frame):
+    frame = double_and_blank(season_frame)
+    season = backtest.Season.prepare(backtest.Settings(season="2099-00", model="baseline"), frame)
+    one = frame[(frame["team_code"] == 1)]["element"].iloc[0]
+    rows = frame[frame["element"] == one]
+    assert season.actual.loc[(3, one), "total_points"] == rows[rows["gw"] == 3]["total_points"].sum()
+    assert (4, one) not in season.actual.index
+
+
 def test_replay_obeys_the_rules_and_the_budget(season_frame):
     settings = backtest.Settings(season="2099-00", start_gw=1, end_gw=4, horizon=2,
                                  model="baseline", pool_size=20, budget=100.0)

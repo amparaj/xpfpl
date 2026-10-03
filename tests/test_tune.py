@@ -70,3 +70,31 @@ def test_replays_are_averaged_with_a_standard_error_and_confirmed(two_seasons, t
         assert trial["se"] is not None and trial["se"] >= 0
     assert [c["label"] for c in report["confirmation"]] == ["tuned", "current config", "pre-tuning"]
     assert all(set(c["points_per_season"]) == {"2099-00"} for c in report["confirmation"])
+
+
+def test_short_term_stages_are_paired_against_the_incumbent(two_seasons, tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "TUNING_PATH", tmp_path / "tuning.json")
+    base = backtest.Settings(model="baseline", start_gw=1, end_gw=4, pool_size=12, horizon=2)
+    stages = [("horizon", {"horizon": [1, 2]}), ("free transfer value", {"ft_value": [1.0, 3.0]})]
+
+    report = tune.tune(["2098-99", "2099-00"], model="baseline", base=base, frame=two_seasons,
+                       stages=stages, chip_stages=[], replays=2, paired_weeks=2)
+
+    horizon = [t for t in report["trials"] if t["stage"] == "horizon"]
+    assert all(t["method"] == "paired" for t in horizon)
+    incumbent = next(t for t in horizon if t["horizon"] == 2)
+    assert incumbent["incumbent"] and incumbent["mean_gain"] == 0
+    other = next(t for t in horizon if t["horizon"] == 1)
+    for s, gain in other["gain_per_season"].items():
+        assert other["points_per_season"][s] == pytest.approx(incumbent["points_per_season"][s] + gain)
+    # Free transfer value works through banking over a season: full replays.
+    assert all("method" not in t for t in report["trials"] if t["stage"] == "free transfer value")
+    assert report["paired_weeks"] == 2
+
+
+def test_paired_weeks_zero_replays_every_stage(two_seasons, tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "TUNING_PATH", tmp_path / "tuning.json")
+    base = backtest.Settings(model="baseline", start_gw=1, end_gw=4, pool_size=12)
+    report = tune.tune(["2098-99"], model="baseline", base=base, frame=two_seasons,
+                       stages=[("horizon", {"horizon": [1, 2]})], chip_stages=[], paired_weeks=0)
+    assert all("method" not in t for t in report["trials"])
