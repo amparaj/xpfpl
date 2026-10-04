@@ -3,7 +3,7 @@
 // About (#about/report, or #about/report/<section> to open at a section).
 
 import * as Plot from "@observablehq/plot";
-import { useCallback, useEffect, type ReactNode } from "react";
+import { Suspense, lazy, useCallback, useEffect, type ReactNode } from "react";
 import { color } from "../colors";
 import { Flow } from "../components/Flow";
 import { PAPER } from "../components/Simulation";
@@ -12,6 +12,9 @@ import type { Accuracy, Row } from "../data";
 import { dec, int, pct } from "../format";
 import { useData, useHash, useSite } from "../site";
 import { Calibration } from "./Accuracy";
+
+// KaTeX is only needed here, so the maths loads as its own chunk.
+const Maths = lazy(() => import("../components/Maths"));
 
 const SECTIONS = [
   { id: "summary", title: "Summary" },
@@ -23,6 +26,7 @@ const SECTIONS = [
   { id: "accuracy", title: "Forecast accuracy" },
   { id: "simulation", title: "Simulation" },
   { id: "selection", title: "Team selection" },
+  { id: "maths", title: "The maths" },
   { id: "limitations", title: "Limitations" },
   { id: "reproduce", title: "Reproducibility" },
 ] as const;
@@ -219,8 +223,8 @@ export default function Report() {
   return (
     <article className="report">
       <p className="lede">
-        How xP-FPL is built and tested: the data, what this {model} model reads, how it is validated, how accurate it is and how
-        the team is picked. Every number on this page is read from the latest reports when the site is published.
+        How xP-FPL is built and tested: the data, what this {model} model reads, how it is validated, how accurate it is, how
+        the team is picked and the maths behind each step. Every number on this page is read from the latest reports when the site is published.
       </p>
       <nav className="report-toc" aria-label="Sections">
         {SECTIONS.map((s, i) => <a key={s.id} href={`#about/report/${s.id}`}>{i + 1}. {s.title}</a>)}
@@ -466,6 +470,14 @@ export default function Report() {
               {seasonMean("oracle") !== undefined && <> Perfect foresight of every result would have scored about {int(seasonMean("oracle"))} a season.</>}</p>
           </div>
         )}
+      </Section>
+
+      <Section id="maths" n={++n}>
+        <Suspense fallback={<Loading />}>
+          <Maths horizon={horizon} discount={t?.chosen?.discount ?? 0.8} bench={t?.chosen?.bench_weight ?? 0.05}
+                 ftValue={t?.chosen?.ft_value ?? 3} priceWeight={t?.chosen?.price_weight ?? 1}
+                 outThreshold={site.meta.out_threshold} calibration={r?.calibration} />
+        </Suspense>
       </Section>
 
       <Section id="limitations" n={++n}>

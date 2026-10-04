@@ -6,7 +6,7 @@ import { POSITIONS, dec, int, money, pts, signed, when } from "../format";
 import { likelihood, pricesUrl, ukDay, type PriceChange, type PriceLog, type PricePlayer } from "../prices";
 import { history, useAllGameweeks } from "../season";
 import { useData, useSite } from "../site";
-import { SquadFilter, SquadTags, inSquad, useSquads, type Squad } from "../squads";
+import { SquadFilter, inSquad, useSquads, type Squad } from "../squads";
 
 /** From this much progress either way, a player counts as close to a move. */
 const NEAR = 70;
@@ -136,8 +136,7 @@ export default function Prices() {
   const selected = selectedId ? log.players.find((p) => p.id === selectedId) : undefined;
   const forecast = (id: number) => site.player.get(id)?.forecast ?? null;
   const columns: Column<PricePlayer>[] = [
-    { key: "name", label: "Player", value: (p) => p.name, render: (p) => (
-      <>{p.name}<SquadTags id={p.id} squads={squads} /></>) },
+    { key: "name", label: "Player", value: (p) => p.name, },
     { key: "team", label: "Club", value: (p) => site.team.get(p.team)?.short, render: (p) => <Club id={p.team} /> },
     { key: "pos", label: "Pos", value: (p) => p.pos, render: (p) => POSITIONS[p.pos] },
     { key: "price", label: "£m", numeric: true, value: (p) => p.cost, render: (p) => dec(p.cost / 10, 1) },
