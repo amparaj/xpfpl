@@ -51,6 +51,18 @@ export function newsUrl(): string {
   return `https://raw.githubusercontent.com/${owner}/${repo}/news/news.json`;
 }
 
+/** Each player's latest headline (the newest NewsNow headline naming him), for a source when FPL gives none. */
+export function latestHeadlines(log: NewsLog | null | undefined): Map<number, Headline> {
+  const out = new Map<number, Headline>();
+  for (const h of log?.headlines?.items ?? []) {
+    for (const id of h.players) {
+      const had = out.get(id);
+      if (!had || (h.t ?? "") > (had.t ?? "")) out.set(id, h);
+    }
+  }
+  return out;
+}
+
 /** What set the chance of playing this model used (data/news.py `availability`). */
 export const NEWS_RULE: Record<string, string> = {
   flag: "FPL's flag",

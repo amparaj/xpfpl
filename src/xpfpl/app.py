@@ -7,6 +7,7 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from html import escape
+from pathlib import Path
 from types import SimpleNamespace
 
 import altair as alt
@@ -60,7 +61,9 @@ PITCH_CSS = """<style>
 ACTIVE_CHIPS = {"None": None, "Wildcard": "wildcard", "Free Hit": "freehit",
                 "Triple Captain": "3xc", "Bench Boost": "bboost"}
 
-st.set_page_config(page_title="xP-FPL", page_icon="⚽", layout="wide")
+LOGO = Path(__file__).parent / "assets" / "logo-mark.png"
+st.set_page_config(page_title="xP-FPL", page_icon=str(LOGO), layout="wide")
+st.logo(str(LOGO), size="large")
 st.markdown("""
 <style>
 [data-testid="stDataFrame"] [role="gridcell"],

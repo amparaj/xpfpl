@@ -76,7 +76,8 @@ def _table(state: dict, team_short: dict, xp: pd.Series | None, avail: pd.DataFr
     now = pd.Timestamp(state["updated"])
     added = pd.to_datetime(t["added"], utc=True, errors="coerce")
     t = t.assign(
-        Status=t["status"].map(news.STATUS_WORDS), Team=t["team"].map(team_short), Pos=t["pos"].map(config.POSITIONS),
+        Status=[news.status_label(s, c) for s, c in zip(t["status"], t["chance"])],
+        Team=t["team"].map(team_short), Pos=t["pos"].map(config.POSITIONS),
         Back=pd.to_datetime(t["back"], errors="coerce").dt.strftime("%a %d %b").fillna(""),
         Updated=added.dt.tz_convert("Europe/London").dt.strftime("%a %d %b %H:%M").fillna(""),
         Age=[_ago(a, now) for a in added], age_days=(now - added).dt.total_seconds() / 86400,
@@ -84,6 +85,8 @@ def _table(state: dict, team_short: dict, xp: pd.Series | None, avail: pd.DataFr
         Ahead=["; ".join(f"GW{r['gw']}: {r['notes']}" for r in risks) if isinstance(risks, list) else ""
                for risks in t["risks"]],
     )
+    latest = news.latest_headlines((state.get("headlines") or {}).get("items", []))
+    t["source"] = t["source"].where(t["source"].fillna("") != "", t["id"].map(lambda i: latest.get(i, {}).get("url")))
     if xp is not None:
         t["xp"] = t["id"].map(xp)
     if avail is not None and "avail" in avail:
@@ -143,7 +146,7 @@ def render(bs: dict, team_short: dict, me=None, xp: pd.Series | None = None,
                f"{config.PRESS_DOUBT_CHANCE:.0%}, IN 100%); for the weeks after, FPL's return dates (0 before, "
                f"{config.RETURN_CHANCE:.0%} from the date, 100% after a ban) and known absences.")
 
-    cols = ["name", "Team", "Pos", "Status", "chance", "used", "rule", "reason", "Back", "Press", "Updated", "Age",
+    cols = ["name", "Team", "Pos", "Status", "used", "rule", "reason", "Back", "Press", "Updated", "Age",
             "xp", "selected", "source", "news", "Ahead"]
     if me is not None and len(t):
         st.markdown("**Your squad**")
@@ -233,12 +236,12 @@ def render(bs: dict, team_short: dict, me=None, xp: pd.Series | None = None,
         st.dataframe(log.assign(
             when=log["t"].dt.tz_convert("Europe/London").dt.strftime("%a %d %b %H:%M"),
             Team=log["team_code"].map(code_team).map(team_short), Pos=log["pos"].map(config.POSITIONS),
-            Status=log["status"].map(news.STATUS_WORDS), news=log["news"].replace("", "Back to full fitness"))[
-            ["when", "name", "Team", "Pos", "Status", "chance", "news", "source"]].rename(columns={
-                "when": "When (UK)", "name": "Player", "chance": "Chance %", "news": "FPL news", "source": "Source"}),
+            Status=[news.status_label(s, c) for s, c in zip(log["status"], log["chance"])],
+            news=log["news"].replace("", "Back to full fitness"))[
+            ["when", "name", "Team", "Pos", "Status", "news", "source"]].rename(columns={
+                "when": "When (UK)", "name": "Player", "news": "FPL news", "source": "Source"}),
             hide_index=True, width="stretch", height=320,
-            column_config={"Source": st.column_config.LinkColumn(display_text="Source"),
-                           "Chance %": st.column_config.NumberColumn(format="%d")})
+            column_config={"Source": st.column_config.LinkColumn(display_text="Source")})
         st.caption("The last 14 days, timed by FPL's own update time.")
 
     st.markdown("**Elsewhere**")

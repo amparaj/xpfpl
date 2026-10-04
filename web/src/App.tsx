@@ -17,17 +17,17 @@ import { SiteContext, useHash, useSiteData, type Site } from "./site";
 // About first (where the site opens), then how far to trust the model, the weeks played and the
 // week ahead with this model's own team and the team I'm planning, research, and the raw data last.
 const PAGES = [
-  { id: "about", label: "About", component: About },
-  { id: "accuracy", label: "This Model's Accuracy", component: Accuracy },
-  { id: "gameweeks", label: "Past Gameweeks", component: Gameweeks },
-  { id: "next", label: "Next Gameweek", component: NextGameweek },
-  { id: "model-team", label: "This Model's Team", component: ModelTeamPage },
-  { id: "my-team", label: "My Team", component: MyTeamPage },
-  { id: "players", label: "Players", component: Players },
-  { id: "news", label: "Team News", component: News },
-  { id: "prices", label: "Prices", component: Prices },
-  { id: "markets", label: "Markets", component: MarketsPage },
-  { id: "data", label: "Data", component: DataPage },
+  { id: "about", label: "About", short: "About", component: About },
+  { id: "accuracy", label: "This Model's Accuracy", short: "Accuracy", component: Accuracy },
+  { id: "gameweeks", label: "Past Gameweeks", short: "Past GWs", component: Gameweeks },
+  { id: "next", label: "Next Gameweek", short: "Next GW", component: NextGameweek },
+  { id: "model-team", label: "This Model's Team", short: "Model's Team", component: ModelTeamPage },
+  { id: "my-team", label: "My Team", short: "My Team", component: MyTeamPage },
+  { id: "players", label: "Players", short: "Players", component: Players },
+  { id: "news", label: "Team News", short: "News", component: News },
+  { id: "prices", label: "Prices", short: "Prices", component: Prices },
+  { id: "markets", label: "Markets", short: "Markets", component: MarketsPage },
+  { id: "data", label: "Data", short: "Data", component: DataPage },
 ] as const;
 
 export default function App() {
@@ -42,7 +42,8 @@ export default function App() {
   }, [page]);
 
   // On a phone the header scrolls away but the page tabs stay pinned: the header sticks at minus
-  // the height above the tabs. On a wide screen the whole header stays.
+  // the height above the tabs. On a wide screen the whole header stays. The phone tabs wrap onto
+  // a few lines with short labels, so every page is in view without scrolling sideways.
   const phone = usePhone();
   const header = useRef<HTMLElement>(null);
   const nav = useRef<HTMLElement>(null);
@@ -66,7 +67,12 @@ export default function App() {
       <header className="top" ref={header} style={offset ? { top: -offset } : undefined}>
         <div className="top-inner">
           <div className="brand">
-            <h1>xP-FPL<span className="brand-sub">: Expected Points for Fantasy Premier League</span></h1>
+            <h1>
+              <a href="#about" className="brand-logo" aria-label="xP-FPL: About">
+                <img src={`${import.meta.env.BASE_URL}logo-mark.png`} alt="" width={40} height={40} />
+              </a>
+              <span>xP-FPL<span className="brand-sub">: Expected Points for Fantasy Premier League</span></span>
+            </h1>
             <span className="byline">Created by Ayush Parajuli</span>
           </div>
           {site && <Status site={site} />}
@@ -74,7 +80,7 @@ export default function App() {
             {PAGES.map((p) => (
               <a key={p.id} href={`#${p.id}`} className={p === page ? "on" : undefined}
                  aria-current={p === page ? "page" : undefined}>
-                {p.label}
+                {phone ? p.short : p.label}
               </a>
             ))}
           </nav>
