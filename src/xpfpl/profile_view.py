@@ -197,8 +197,9 @@ def _render(season: str, element: int, bs: dict, forecast: pd.Series, when: str,
                      column_config={"£m": st.column_config.NumberColumn(format="%.1f"),
                                     "Similarity": st.column_config.NumberColumn(format=PERCENT),
                                     "xP next GW": st.column_config.NumberColumn(format=POINTS)})
-        st.caption("Players at the same position who get the ball and their shots in the most similar places (box touches, "
-                   "final-third passes, chances created, shots, where they come from and how good they are, each against "
-                   f"the position's average; {spatial.MIN_MINUTES}+ minutes). A similar role, not a forecast: that's the xP.")
+        st.caption("Players at the same position with the most similar numbers, on that position's own measures (keepers: "
+                   "shot-stopping; defenders: defending and getting forward; midfielders and forwards: where they get the "
+                   f"ball and shoot), each against the position's average; {spatial.MIN_MINUTES}+ minutes. A similar role, "
+                   "not a forecast: that's the xP.")
     elif me["minutes"] < spatial.MIN_MINUTES:
         st.caption(f"Similar profiles need {spatial.MIN_MINUTES} minutes {when}; he has {me['minutes']:.0f}.")

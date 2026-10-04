@@ -10,7 +10,7 @@ import { POSITIONS, STATUS, dec, flagLabel, money, pct, pts, signed, when } from
 import { ago, latestHeadlines, shortDay, type NewsChange, type NewsLog, type NewsPlayer } from "../news";
 import { history, useAllGameweeks, type PlayerGw } from "../season";
 import { useData, useHash, useSite } from "../site";
-import { SquadFilter, SquadTags, inSquad, useSquads, type Squad } from "../squads";
+import { SquadFilter, inSquad, useSquads, type Squad } from "../squads";
 
 type Status = "all" | "out" | "doubt";
 type Columns = "stats" | "news";
@@ -137,6 +137,9 @@ export default function Players() {
     });
   }, [site.players, pos, club, search, playedOnly, status, cols, since, squad, squads, newsOf, log]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const byNews = useMemo(() => [...list].sort((a, b) => (news(b)?.added ?? "").localeCompare(news(a)?.added ?? "")),
+    [list, newsOf]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const changes = useMemo(() => {
     const cutoff = Date.now() - 14 * 86_400_000;
     return (log?.log ?? []).filter((c) => c.t && Date.parse(c.t) >= cutoff)
@@ -146,26 +149,26 @@ export default function Players() {
   const next = site.meta.next_gw;
   const nameColumn: Column<Player> = { key: "name", label: "Player", value: (p) => p.web_name, render: (p) => (
     <>{p.web_name}{cols === "stats" && statusOf(p) !== "a" && <> <span className="tag warn" title={news(p)?.news ?? p.news}>
-      {statusOf(p) === "d" && chanceOf(p) != null ? `${chanceOf(p)}%` : STATUS[statusOf(p)] ?? "Out"}</span></>}
-      <SquadTags id={p.id} squads={squads} /></>) };
+      {statusOf(p) === "d" && chanceOf(p) != null ? `${chanceOf(p)}%` : STATUS[statusOf(p)] ?? "Out"}</span></>}</>) };
   const clubColumns: Column<Player>[] = [
     { key: "team", label: "Club", value: (p) => site.team.get(p.team)?.short, render: (p) => <Club id={p.team} /> },
     { key: "pos", label: "Pos", value: (p) => p.element_type, render: (p) => POSITIONS[p.element_type] },
   ];
   const forecastColumn: Column<Player> = { key: "forecast", label: next ? `xP GW${next}` : "xP next", short: "Next xP", numeric: true,
     value: (p) => p.forecast, render: (p) => pts(p.forecast), title: "This model's forecast for the next gameweek, saved before its deadline" };
+  // The news view sorts only by its numbers (Chance used, xP, Sel %); its rows start newest news first.
   const newsColumns: Column<Player>[] = [
-    nameColumn, ...clubColumns,
-    { key: "status", label: "Status", sortable: true, value: (p) => chanceOf(p) ?? (statusOf(p) === "a" ? 100 : 0),
+    nameColumn, clubColumns[0], { ...clubColumns[1], sortable: false },
+    { key: "status", label: "Status", sortable: false, value: (p) => chanceOf(p) ?? (statusOf(p) === "a" ? 100 : 0),
       render: (p) => <NewsStatus status={statusOf(p)} chance={chanceOf(p)} />, title: "FPL's status and chance of playing next round" },
     { key: "reason", label: "Reason", value: (p) => news(p)?.reason ?? "", wrap: true },
-    { key: "back", label: "Back", sortable: true, value: (p) => news(p)?.back ?? "", render: (p) => shortDay(news(p)?.back),
+    { key: "back", label: "Back", sortable: false, value: (p) => news(p)?.back ?? "", render: (p) => shortDay(news(p)?.back),
       title: "FPL's expected return date" },
     { key: "press", label: "Press", value: (p) => news(p)?.press ?? "", render: (p) => <PressTag said={news(p)?.press ?? null} />,
       title: "What the manager said at his press conference before this gameweek" },
     { key: "used", label: "Chance used", numeric: true, value: (p) => forecasts.get(p.id)?.avail ?? null,
       render: (p) => pct(forecasts.get(p.id)?.avail), title: "The chance of playing this model used for the next gameweek" },
-    { key: "updated", label: "Updated", sortable: true, value: (p) => news(p)?.added ?? "", render: (p) => (news(p)?.added ? ago(news(p)!.added) : "–"),
+    { key: "updated", label: "Updated", sortable: false, value: (p) => news(p)?.added ?? "", render: (p) => (news(p)?.added ? ago(news(p)!.added) : "–"),
       title: "When FPL last changed this player's news" },
     forecastColumn,
     { key: "sel", label: "Sel %", numeric: true, value: (p) => p.selected_by_percent, render: (p) => dec(p.selected_by_percent, 1) },
@@ -248,13 +251,13 @@ export default function Players() {
                cardSub={["team", "pos"]} cardStats={["points", "forecast"]}
                onRow={(p) => { window.location.hash = `players/${p.id}`; if (!phone) window.scrollTo({ top: 0, behavior: "smooth" }); }} />
       ) : (
-        <Table key="news" columns={newsColumns} data={list} sort="updated" rowKey={(p) => p.id} limit={60} selected={selectedId}
+        <Table key="news" columns={newsColumns} data={byNews} rowKey={(p) => p.id} limit={60} selected={selectedId}
                cardSub={["team", "pos", "reason"]} cardStats={["status", "back"]}
                onRow={(p) => { window.location.hash = `players/${p.id}`; if (!phone) window.scrollTo({ top: 0, behavior: "smooth" }); }} />
       )}
       <Note>
         Prices, ownership and form are as FPL showed them when the site was last updated; the news is checked every hour.
-        The red tag is FPL's flag (a doubt shows its chance of playing next round); "Mine" marks My Team and "MT" this model's team. "Back" is FPL's
+        The red tag is FPL's flag (a doubt shows its chance of playing next round); "Back" is FPL's
         expected return date: he should be available for matches from that day. Source is the article FPL's news came from,
         or failing that the latest headline naming him.
       </Note>

@@ -54,6 +54,10 @@ from xpfpl import config, models
 from xpfpl.data import api, archive
 
 # The per-match columns the site shows (FPL's own names).
+# Bumped when what an earlier season's files hold changes (profiles.json gained keepers' shots faced and
+# FPL's match rows in 2): `_past_season` rebuilds a season whose meta.json has another version.
+EXPORT_VERSION = 2
+
 GW_COLUMNS = ["element", "fixture", "opponent_team", "was_home", "minutes", "total_points", "goals_scored",
               "assists", "clean_sheets", "goals_conceded", "own_goals", "penalties_saved", "penalties_missed",
               "yellow_cards", "red_cards", "saves", "bonus", "bps", "expected_goals", "expected_assists",
@@ -173,7 +177,8 @@ def _past_season(season: str, model: str, out: Path) -> list[Path]:
     sources = [archive.FPL / season, matchstats.ARCHIVE / season, cups.ARCHIVE / season,
                config.ARCHIVE_DIR / "predictions" / season]
     newest = max((f.stat().st_mtime for d in sources if d.exists() for f in d.rglob("*") if f.is_file()), default=0.0)
-    if (root / "meta.json").exists() and (root / "meta.json").stat().st_mtime > newest:
+    if ((root / "meta.json").exists() and (root / "meta.json").stat().st_mtime > newest
+            and json.loads((root / "meta.json").read_text(encoding="utf-8")).get("export_version") == EXPORT_VERSION):
         return sorted(root.rglob("*.json"))
 
     rows, people = archive.season_tables(season)
@@ -186,7 +191,7 @@ def _past_season(season: str, model: str, out: Path) -> list[Path]:
     events = archive.read(archive.FPL / season / "events.parquet")
     by_event = events.set_index("id") if events is not None else None
     meta = {
-        "generated": datetime.now(timezone.utc).isoformat(timespec="seconds"), "season": season, "past": True,
+        "generated": datetime.now(timezone.utc).isoformat(timespec="seconds"), "season": season, "past": True, "export_version": EXPORT_VERSION,
         "model": model, "model_description": models.DESCRIPTIONS.get(model, model),
         "played": played, "next_gw": None, "next_deadline": None,
         "teams": [{"id": t["id"], "code": t["code"], "name": t["name"], "short": t["short_name"]} for t in bs["teams"]],
@@ -306,31 +311,46 @@ def _matches(season: str, gw: int, people: pd.DataFrame | None) -> dict | None:
     return {"gw": gw, "source": "FotMob via FPL-Core-Insights", "fixtures": out}
 
 
-def _profiles(season: str, people: pd.DataFrame | None) -> dict | None:
-    """Every player's spatial profile (spatial.py) by FPL element id, with position averages for
-    context, his shots, and his most similar players."""
+def _profiles(season: str, people: pd.DataFrame | None, matches: pd.DataFrame | None = None) -> dict | None:
+    """Every player's profile (spatial.py) by FPL element id, with position averages for context,
+    his shots, his matches (FPL's defensive contribution, saves, goals conceded), every shot on
+    target with the keeper who faced it, and his most similar players (on his position's metrics)."""
     from xpfpl import spatial
     prof = spatial.profiles(season)
     if prof.empty or people is None:
         return None
+    if matches is None:
+        from xpfpl.data.history import load_matches
+        matches = load_matches()
     ids = people.drop_duplicates("code").set_index("code")
-    prof = prof.join(ids[["id", "element_type"]], how="inner")
+    position = ids["element_type"]
     element = ids["id"]
+    games = spatial.games(season, matches)
+    prof = prof.join(spatial.dc_summary(games, position)).join(ids[["id", "element_type"]], how="inner")
     similar = spatial.similar(prof.drop(columns=["id", "element_type"]), prof["element_type"])
     enough = prof[prof["minutes"] >= spatial.MIN_MINUTES]
-    metrics = [c for c in spatial.SIMILARITY if c in prof]
+    metrics = [c for c in [*spatial.similarity_metrics(), *spatial.SHOT_METRICS, "shot_distance", "dc_p90",
+                           "conceded_p90", "goals_prevented"] if c in prof]
+    metrics = list(dict.fromkeys(metrics))
     averages = {str(int(pos)): {c: _plain(g[c].mean(), 3) for c in metrics} for pos, g in enough.groupby("element_type")}
     s = spatial.shots(season)
     s = s.assign(element=s["code"].map(element)).dropna(subset=["element"])
     shot_cols = ["element", "gw", "fixture", "minute", "start_x", "start_y", "xg", "outcome", "situation", "body_part"]
+    faced = spatial.keeper_shots(season, position)
+    faced = faced.assign(element=faced["keeper"].map(element), shooter=faced["code"].map(element)).dropna(subset=["element"])
+    faced_cols = ["element", "shooter", "gw", "fixture", "minute", "goal_mouth_y", "goal_mouth_z", "xg", "xgot", "outcome"]
+    games = games.assign(element=games["code"].map(element)).dropna(subset=["element"]).drop(columns=["code"])
     return {
         "zones": table_zones(spatial.zones()), "min_minutes": spatial.MIN_MINUTES, "min_shots": spatial.MIN_SHOTS,
+        "dc_threshold": {str(k): v for k, v in spatial.DC_THRESHOLD.items()},
         "players": table(prof.rename(columns={"id": "element"}).reset_index(drop=True)
                          .drop(columns=["element_type"]), digits=3),
         "averages": averages,
         "similar": {str(int(element[c])): [[int(element[o]), v] for o, v in found if o in element.index]
                     for c, found in similar.items() if c in element.index},
         "shots": table(s[shot_cols].astype({"element": int}), digits=3),
+        "faced": table(faced[faced_cols].astype({"element": int}), digits=3),
+        "games": table(games.astype({"element": int}), digits=3),
     }
 
 
@@ -561,7 +581,7 @@ def export(model: str = config.MODEL, out: Path = config.SITE_DATA_DIR) -> list[
         happened = _matches(season, gw, people)
         if happened:
             written.append(_write(happened, out / "matches" / f"gw{gw:02d}.json"))
-    profiles = _profiles(season, people)
+    profiles = _profiles(season, people, matches)
     if profiles:
         written.append(_write(profiles, out / "profiles.json"))
     from xpfpl import modelteam

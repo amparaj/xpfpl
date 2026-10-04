@@ -55,14 +55,14 @@ export function inSquad(squads: ReturnType<typeof useSquads>, squad: Squad, id: 
   return (squad === "mine" ? squads.mine : squads.model)?.has(id) ?? false;
 }
 
-/** All players / My Team / This model's team, with a line saying why My Team is empty when it is. */
+/** All players / My Team / This Model's Team, with a line saying why My Team is empty when it is. */
 export function SquadFilter({ value, onChange, squads }: {
   value: Squad; onChange: (v: Squad) => void; squads: ReturnType<typeof useSquads>;
 }) {
   return (
     <>
       <Segmented label="Team" value={value} onChange={onChange}
-                 options={[{ value: "all", label: "All players" }, { value: "mine", label: "My Team" }, { value: "model", label: "This model's team" }]} />
+                 options={[{ value: "all", label: "All players" }, { value: "mine", label: "My Team" }, { value: "model", label: "This Model's Team" }]} />
       {value === "mine" && squads.why && (
         <span className="muted" style={{ fontSize: 13 }}>
           {squads.why === "locked"
@@ -70,16 +70,6 @@ export function SquadFilter({ value, onChange, squads }: {
             : <>No team saved for this gameweek yet.</>}
         </span>
       )}
-    </>
-  );
-}
-
-/** "MT" / "Mine" tags after a player's name. */
-export function SquadTags({ id, squads }: { id: number; squads: ReturnType<typeof useSquads> }) {
-  return (
-    <>
-      {squads.mine?.has(id) && <> <span className="tag" title="In My Team">Mine</span></>}
-      {squads.model.has(id) && <> <span className="tag" title="In this model's team">MT</span></>}
     </>
   );
 }
