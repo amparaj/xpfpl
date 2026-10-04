@@ -2,11 +2,11 @@ import * as Plot from "@observablehq/plot";
 import { useCallback, useMemo, useState } from "react";
 import { color } from "../colors";
 import { Chart, Club, Legend, Loading, Note, Segmented, Sheet, Table, Tiles, plotDefaults, usePhone, type Column } from "../components/ui";
-import type { ModelTeam } from "../data";
 import { POSITIONS, dec, int, money, pts, signed, when } from "../format";
 import { likelihood, pricesUrl, ukDay, type PriceChange, type PriceLog, type PricePlayer } from "../prices";
 import { history, useAllGameweeks } from "../season";
 import { useData, useSite } from "../site";
+import { SquadFilter, SquadTags, inSquad, useSquads, type Squad } from "../squads";
 
 /** From this much progress either way, a player counts as close to a move. */
 const NEAR = 70;
@@ -106,30 +106,24 @@ export default function Prices() {
   const live = useData<PriceLog>(pricesUrl());
   const local = useData<PriceLog>(live === null ? "prices.json" : null);
   const log = live ?? local;
-  const modelTeam = useData<ModelTeam>("modelteam.json");
   const [view, setView] = useState<View>("rise");
   const [pos, setPos] = useState(0);
   const [club, setClub] = useState(0);
   const [search, setSearch] = useState("");
-  const [modelOnly, setModelOnly] = useState(false);
+  const [squad, setSquad] = useState<Squad>("all");
+  const squads = useSquads();
   const [move, setMove] = useState<Move>("all");
   const selectedId = Number(window.location.hash.split("/")[1]) || null;
   const phone = usePhone();
-
-  const modelSquad = useMemo(() => {
-    const weeks = modelTeam?.gameweeks ?? [];
-    const latest = modelTeam?.next ?? weeks[weeks.length - 1];
-    return new Set(latest?.squad ?? []);
-  }, [modelTeam]);
 
   const list = useMemo(() => {
     if (!log) return [];
     const q = search.trim().toLowerCase();
     return log.players.filter((p) =>
       (view === "all" || (view === "rise" ? (p.pct ?? 0) > 0 : (p.pct ?? 0) < 0)) &&
-      (!pos || p.pos === pos) && (!club || p.team === club) && (!modelOnly || modelSquad.has(p.id)) &&
+      (!pos || p.pos === pos) && (!club || p.team === club) && inSquad(squads, squad, p.id) &&
       (!q || p.name.toLowerCase().includes(q)));
-  }, [log, view, pos, club, search, modelOnly, modelSquad]);
+  }, [log, view, pos, club, search, squad, squads]);
 
   const changes = useMemo(() => (log?.changes ?? [])
     .filter((c) => move === "all" || (move === "rise" ? c.to > c.from : c.to < c.from))
@@ -143,7 +137,7 @@ export default function Prices() {
   const forecast = (id: number) => site.player.get(id)?.forecast ?? null;
   const columns: Column<PricePlayer>[] = [
     { key: "name", label: "Player", value: (p) => p.name, render: (p) => (
-      <>{p.name}{modelSquad.has(p.id) && <> <span className="tag" title="In this model's team">MT</span></>}</>) },
+      <>{p.name}<SquadTags id={p.id} squads={squads} /></>) },
     { key: "team", label: "Club", value: (p) => site.team.get(p.team)?.short, render: (p) => <Club id={p.team} /> },
     { key: "pos", label: "Pos", value: (p) => p.pos, render: (p) => POSITIONS[p.pos] },
     { key: "price", label: "£m", numeric: true, value: (p) => p.cost, render: (p) => dec(p.cost / 10, 1) },
@@ -208,7 +202,7 @@ export default function Prices() {
           {[...site.meta.teams].sort((a, b) => a.name.localeCompare(b.name)).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
         </select>
         <input type="search" placeholder="Search name" aria-label="Search players" value={search} onChange={(e) => setSearch(e.target.value)} />
-        <label><input type="checkbox" checked={modelOnly} onChange={(e) => setModelOnly(e.target.checked)} /> This model's team only</label>
+        <SquadFilter value={squad} onChange={setSquad} squads={squads} />
       </div>
       <Table key={view} columns={columns} data={list} sort="pct" desc={view !== "fall"} rowKey={(p) => p.id} limit={40}
              selected={selectedId} cardSub={["team", "pos", "price"]} cardStats={["pct", "next"]}

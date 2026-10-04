@@ -6,44 +6,20 @@
 // transfers) is encrypted, and the secret word opens it in the browser (seal.ts); after the deadline
 // FPL shows it anyway, so it comes in plain.
 
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 import { Pitch } from "../components/Pitch";
 import { CaptainOddsTable, ScoreChart, band } from "../components/Simulation";
 import { Club, Loading, Note, Segmented, Table, Tiles, type Column, type TileProps } from "../components/ui";
 import { WhyProjection } from "../components/Why";
-import { rows, type Forecast, type MyTeam, type MyTeamPrivate, type MyWeek, type MyWeekNumbers, type PlanSettings, type Player } from "../data";
+import { rows, type Forecast, type MyTeam, type MyWeek, type MyWeekNumbers, type PlanSettings, type Player } from "../data";
 import { POSITIONS, int, money, pct, pts, signed, when } from "../format";
-import { rememberWord, rememberedWord, unseal } from "../seal";
 import { useData, useSite } from "../site";
+import { useMyTeam } from "../squads";
 
 const CHIP_NAMES: Record<string, string> = { wildcard: "Wildcard", freehit: "Free Hit", bboost: "Bench Boost", "3xc": "Triple Captain" };
 
 /** A squad player's row of the saved forecast (myteam.outlook). */
 type SquadRow = Forecast & { player: Player; role: string; order: number };
-
-/** The team: the data's own after the deadline, else what the secret word unlocked (remembered in this browser). */
-function useTeam(data: MyTeam | null | undefined) {
-  const [unlocked, setUnlocked] = useState<MyTeamPrivate | null>(null);
-  const [state, setState] = useState<"idle" | "busy" | "wrong">("idle");
-  const sealed = data?.sealed ?? null;
-
-  const unlock = async (word: string, remember: boolean) => {
-    if (!sealed || !word.trim()) return;
-    setState("busy");
-    const opened = await unseal<MyTeamPrivate>(sealed, word);
-    setUnlocked(opened);
-    setState(opened ? "idle" : "wrong");
-    if (opened && remember) rememberWord(word);
-    if (!opened && !remember) rememberWord(null);          // a remembered word that no longer works
-  };
-  useEffect(() => {
-    const word = rememberedWord();
-    if (sealed && word) void unlock(word, false);
-  }, [sealed]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const lock = () => { rememberWord(null); setUnlocked(null); setState("idle"); };
-  return { team: data?.private ?? unlocked, unlocked: !!unlocked, state, unlock, lock };
-}
 
 /** The week's transfers, one "out → in" row each (both sorted by position when saved). */
 function Transfers({ moves, hits }: { moves: { out: number; in: number }[]; hits: number }) {
@@ -121,7 +97,7 @@ function Unlock({ gw, busy, wrong, onUnlock }: { gw: number; busy: boolean; wron
 export default function MyTeamPage() {
   const site = useSite();
   const data = useData<MyTeam>("myteam.json");
-  const { team, unlocked, state, unlock, lock } = useTeam(data);
+  const { team, unlocked, state, unlock, lock } = useMyTeam(data);
   const [chosen, setChosen] = useState<number | null>(null);
   const name = (id: number) => site.player.get(id)?.web_name ?? String(id);
 

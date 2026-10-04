@@ -5,6 +5,12 @@ export const POSITIONS: Record<number, string> = { 1: "GKP", 2: "DEF", 3: "MID",
 /** FPL's player status codes, in words ("a", available, has none). */
 export const STATUS: Record<string, string> = { d: "Doubtful", i: "Injured", s: "Suspended", u: "Unavailable", n: "Not in squad" };
 
+/** FPL's flag in words: "Doubtful 75%", but just "Injured" (or Suspended, ...): FPL gives those 0%, which says nothing more. */
+export function flagLabel(status: string, chance: number | null | undefined): string {
+  const word = STATUS[status] ?? "Available";
+  return status === "d" && chance != null ? `${word} ${chance}%` : word;
+}
+
 const missing = (v: unknown): v is null | undefined => v === null || v === undefined || Number.isNaN(v as number);
 
 export const pts = (v: number | null | undefined) => (missing(v) ? "–" : v.toFixed(2));

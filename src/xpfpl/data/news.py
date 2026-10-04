@@ -74,6 +74,22 @@ STATUSES = ("OUT", "DOUBT", "IN")
 # FPL's status codes in words.
 STATUS_WORDS = {"a": "Available", "d": "Doubtful", "i": "Injured", "s": "Suspended", "u": "Unavailable",
                 "n": "Not available"}
+
+
+def status_label(status: str, chance) -> str:
+    """FPL's flag in words: "Doubtful 75%", but just "Injured" (or Suspended, ...): FPL gives those 0%."""
+    word = STATUS_WORDS.get(status, "Available")
+    return f"{word} {int(chance)}%" if status == "d" and chance is not None and chance == chance else word
+
+
+def latest_headlines(items: list[dict]) -> dict[int, dict]:
+    """Each player's newest headline naming him (a source when FPL's news has none)."""
+    out: dict[int, dict] = {}
+    for h in items:
+        for i in h.get("players", []):
+            if i not in out or (h.get("t") or "") > (out[i].get("t") or ""):
+                out[i] = h
+    return out
 _HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; xpfpl personal research project; "
                           "+https://github.com/amparaj/xpfpl)"}
 _MONTHS = {m: i for i, m in enumerate(["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep",

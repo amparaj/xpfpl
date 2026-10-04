@@ -5,7 +5,7 @@
 
 import { useMemo, type ReactNode } from "react";
 import type { Forecast, Player } from "../data";
-import { POSITIONS, STATUS, dec, money, pct, pts, risk, signed } from "../format";
+import { POSITIONS, STATUS, dec, flagLabel, money, pct, pts, risk, signed } from "../format";
 import { ROTATION } from "../midweek";
 import { NEWS_RULE } from "../news";
 import { fairResult, oddsUrl, type OddsSnapshot } from "../polymarket";
@@ -188,7 +188,7 @@ export function WhyProjection({ player, forecast, gw, gameweeks }: {
           ...(forecast?.p_play != null && forecast.xmins == null ? [{ label: "Chance he plays", value: pct(forecast.p_play) }] : []),
           { label: "Starts this season", value: `${player.starts} of ${site.meta.played.length}` },
           ...(last5.length ? [{ label: `Minutes, last ${last5.length}`, value: dec(mean(last5.map((g) => g.minutes)), 0) + " a game" }] : []),
-          { label: "FPL flag", value: status ? <span className="bad">{status}{player.chance_of_playing_next_round != null && ` ${player.chance_of_playing_next_round}%`}</span> : "None" },
+          { label: "FPL flag", value: status ? <span className="bad">{flagLabel(player.status, player.chance_of_playing_next_round)}</span> : "None" },
           ...(forecast?.rotation ? [{ label: "Midweek factor", value: <span className={(forecast.rotation_factor ?? 1) >= 1 ? "good" : "bad"}>×{dec(forecast.rotation_factor)}</span>,
                                        title: ROTATION[forecast.rotation] ?? forecast.rotation }] : []),
         ]} />
@@ -200,7 +200,7 @@ export function WhyProjection({ player, forecast, gw, gameweeks }: {
               ({NEWS_RULE[forecast.news_rule ?? "flag"]}). </>}
           </p>
         )}
-        {(player.news || forecast?.press) && <p><a className="link" href={`#news/${player.id}`}>Team news →</a></p>}
+        {(player.news || forecast?.press) && !window.location.hash.startsWith("#players") && <p><a className="link" href={`#players/${player.id}`}>Team news →</a></p>}
       </Group>
 
       <Group title="Underlying numbers" hint="what his play is worth">
