@@ -129,3 +129,23 @@ def test_price_moves_are_per_gameweek_and_stale_shifts_them():
     assert now["price_change_start"].tolist() == pytest.approx([0.0, 0.1, 0.1, 0.3])
     ahead = features._price_moves(m, shift=2)
     assert ahead["price_change_gw"].tolist() == pytest.approx([0.0, 0.0, 0.0, 0.1])   # as known a gameweek earlier
+
+
+def test_excused_matches_leave_a_players_form():
+    m = make_matches()
+    last = m[m["code"] == 100].sort_values("kickoff_time").tail(1)
+    m.loc[last.index, ["minutes", "total_points"]] = 0.0
+    excused = pd.Series(m.index.isin(last.index), index=m.index)
+    before = features.latest_player_state(m.drop(last.index))
+    after = features.latest_player_state(m, excused)
+    cols = ["minutes_r3", "total_points_r5", "minutes_lag1", "played_r20"]
+    assert after.loc[100, cols].tolist() == before.loc[100, cols].tolist()
+    assert after.loc[101, cols].tolist() == features.latest_player_state(m).loc[101, cols].tolist()
+
+
+def test_blend_state_moves_by_weight():
+    full = pd.DataFrame({"minutes_r3": [60.0, 30.0, 90.0]}, index=[1, 2, 3])
+    without = pd.DataFrame({"minutes_r3": [90.0, 90.0]}, index=[1, 2])
+    out = features.blend_state(full, without, pd.Series({1: 1.0, 2: 0.5}))
+    assert out["minutes_r3"].tolist() == [90.0, 60.0, 90.0]
+    assert features.blend_state(full, without)["minutes_r3"].tolist() == [90.0, 90.0, 90.0]

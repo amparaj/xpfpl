@@ -18,7 +18,8 @@ def predict_upcoming(horizon: int = config.HORIZON, model: str = config.MODEL,
     model, one column per scoring component, so the dashboard can show where an xP comes from;
     `pen_order`/`pen_xp` for the penalty takers (setpieces.py); the team news behind next week's
     chance of playing (`avail`, `news_rule`, `press`, `back`: data/news.py; `press` is today's
-    press conferences, read from the web when not given); and for a model with a minutes
+    press conferences, read from the web when not given) and `excused`, the matches this season
+    left out of his form because he missed them injured or banned; and for a model with a minutes
     head (xmins, ensemble), `xmins`, `p_play` and `p_full` (60+ minutes) for the next GW; for the ensemble, how far its members disagree on the next GW
     (`xp_sd`) and the `confidence` that gives (config.CONFIDENCE_CUTS).
     With config.SIM_RUNS > 0, the next GW's simulated range (simulate.py): `pts_p10`/`pts_p50`/
@@ -36,13 +37,18 @@ def predict_upcoming(horizon: int = config.HORIZON, model: str = config.MODEL,
 
     matches = load_matches()
     market, scorers = _live_odds(bs, fixtures)
-    frame = build_future_frame(matches, bs, fixtures, gameweeks, api.current_season(bs), market)
+    # Matches missed injured or banned this season (data/news.py), always recorded (`excused`);
+    # with config.EXCUSE_ABSENCES they also stay out of the players' form, so the flag below
+    # prices the next absence and a zero from the last one isn't counted twice.
+    from xpfpl.data import news
+    excused = news.excused_absences(matches, api.current_season(bs), bs)
+    frame = build_future_frame(matches, bs, fixtures, gameweeks, api.current_season(bs), market,
+                               excused if config.EXCUSE_ABSENCES else None, news.excuse_weight(bs))
 
     predictor = models.load(model)
     raw = pd.Series(predictor.predict(frame), index=frame.index).astype(float).clip(lower=0.0)
     # Each match's chance the player is available (data/news.py): FPL's flag, a newer press
     # conference for the next gameweek, return dates and known absences for the weeks after.
-    from xpfpl.data import news
     press = news.press_now(bs) if press is None and config.PRESS_NEWS else press
     frame = frame.join(news.availability(frame, bs, next_gw, press))
     frame["xp"] = raw * frame["avail"]
@@ -91,6 +97,8 @@ def predict_upcoming(horizon: int = config.HORIZON, model: str = config.MODEL,
     out = out.join(_rotation(frame, next_gw, gameweeks))
     out = out.join(_penalties(frame, next_gw))
     out = out.join(_news(frame, next_gw, bs, press))
+    # How many of his matches this season were left out of his form as injured or banned.
+    out["excused"] = matches[excused].groupby("element").size().reindex(out.index).fillna(0).astype(int)
     out = out.join(ranges)
     out.index.name = "element"
 

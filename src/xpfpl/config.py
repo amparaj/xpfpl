@@ -72,6 +72,27 @@ PRESS_DOUBT_CHANCE = 0.5
 # player just back), instead of the flag recovering 25 points a week.
 NEWS_RETURN_DATES = True
 RETURN_CHANCE = 0.75
+# A match a player missed (0 minutes) while flagged - by FPL's news, a deadline snapshot or a press
+# conference - is left out of his form and minutes for the forecast (data/news.py
+# `excused_absences`). The minutes model can't tell an injury from being dropped, so a nailed
+# starter back from a knock read as a rotation risk on top of his flag (João Pedro, GW6: 4 x 90
+# minutes, 0 injured, then 56 expected minutes once fit). The flag prices the risk of missing the
+# next match; his form should be the form he had while fit. Prediction only: the training seasons
+# have no news to tell the two apart.
+# Replayed on 2026-27 GW6 (2026-10-11), the only week the news can date yet: 5 players fit at
+# their own kick-off after a flagged absence (James, injured on the day, and Pau, still flagged,
+# are out once each player's own kick-off and FPL's undated status changes are read right).
+# Points MAE 1.96 without it; 1.72 excusing everything, 1.83 with the gate and weight below.
+# João Pedro: 63 -> 80 expected minutes, played 71, scored 12. Five players can't tune anything:
+# the gate and the weight are the safe side of the change, and the per-player `excused` count in
+# every forecast is there to check it as the weeks come in.
+EXCUSE_ABSENCES = True
+# Only after this many matches played this season: before then there's no fit form this season to
+# fall back on, and leaving the zeros out would hand the player last season's form instead.
+EXCUSE_MIN_FIT = 2
+# How far the form moves (data/news.py `excuse_weight`): ownership / this, capped at 1, so a
+# player the crowd kept through the injury gets all of it and one barely owned little.
+EXCUSE_FULL_OWNERSHIP = 10.0
 # The component model's clean-sheet and goals-conceded heads, moved this far towards the match
 # odds where there are any (models/components.py `_blend_market`): out of sample RMSE -0.0011
 # on 2024-25 and -0.0041 on 2025-26 at 0.5, against 0. Goals and assists stay the model's own.
