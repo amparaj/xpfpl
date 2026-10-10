@@ -265,3 +265,71 @@ def test_full_name_beats_a_namesake(bs):
     item = news.match_headlines([{"id": "1", "title": "Jurrien Timber delivers fitness update", "t": None,
                                   "publisher": None, "url": ""}], bs)[0]
     assert item["players"] == [6]
+
+
+def _matches(*rows):
+    return pd.DataFrame([{"season": "2026-27", "code": c, "kickoff_time": pd.Timestamp(t, tz="UTC"), "minutes": mins}
+                         for c, t, mins in rows])
+
+
+@pytest.fixture
+def no_archive(monkeypatch):
+    from xpfpl.data import archive
+    monkeypatch.setattr(news, "archived_log", lambda season: news.change_log(None))
+    monkeypatch.setattr(news, "archived_press", lambda season: {})
+    monkeypatch.setattr(archive, "deadline_snapshots", lambda season: {})
+    return monkeypatch
+
+
+def _log(*rows):
+    return pd.DataFrame([{"code": c, "t": pd.Timestamp(t, tz="UTC"), "seen": pd.Timestamp(s, tz="UTC"), "status": st}
+                         for c, t, s, st in rows])
+
+
+def test_only_zeros_while_flagged_are_excused(no_archive):
+    # Flagged on 16 Sep, cleared (FPL keeps the old news_added) and seen fit on 3 Oct.
+    no_archive.setattr(news, "archived_log", lambda season: _log(
+        (7, "2026-09-16T19:00Z", "2026-09-17T00:00Z", "d"), (7, "2026-09-16T19:00Z", "2026-10-03T00:00Z", "a")))
+    m = _matches((7, "2026-09-12T14:00Z", 0),     # before any news: dropped, not excused
+                 (7, "2026-09-18T19:00Z", 0),     # flagged: excused
+                 (7, "2026-09-25T19:00Z", 90),    # played: nothing to excuse
+                 (7, "2026-10-04T14:00Z", 0),     # fit again and left out: the manager's call
+                 (8, "2026-09-18T19:00Z", 0))     # never flagged
+    assert news.excused_absences(m, "2026-27", min_fit=0).tolist() == [False, True, False, False, False]
+
+
+def test_press_and_snapshots_fill_the_logs_gaps(no_archive):
+    from xpfpl.data import archive
+    no_archive.setattr(archive, "deadline_snapshots", lambda season: {5: pd.DataFrame(
+        {"code": [7], "status": ["i"], "taken_at": [pd.Timestamp("2026-09-18T09:00Z")]})})
+    no_archive.setattr(news, "archived_press", lambda season: {"2026-09-26": {"updated": "2026-09-26", "clubs": [
+        {"players": [{"code": 8, "status": "OUT"}, {"code": 7, "status": "IN"}]}]}})
+    m = _matches((7, "2026-09-18T19:00Z", 0), (7, "2026-09-27T14:00Z", 0), (8, "2026-09-27T14:00Z", 0))
+    assert news.excused_absences(m, "2026-27", min_fit=0).tolist() == [True, False, True]
+
+
+def test_no_excuse_without_fit_matches_this_season(no_archive):
+    no_archive.setattr(news, "archived_log", lambda season: _log(
+        (7, "2026-08-01T00:00Z", "2026-08-01T00:00Z", "i"), (8, "2026-09-10T00:00Z", "2026-09-10T00:00Z", "i")))
+    m = _matches(*[(7, f"2026-09-{d:02d}T14:00Z", 0) for d in (1, 8, 15)],     # injured since the summer
+                 (8, "2026-09-01T14:00Z", 90), (8, "2026-09-08T14:00Z", 90), (8, "2026-09-15T14:00Z", 0))
+    assert news.excused_absences(m, "2026-27", min_fit=0).tolist() == [True, True, True, False, False, True]
+    assert news.excused_absences(m, "2026-27", min_fit=2).tolist() == [False, False, False, False, False, True]
+    assert news.excused_absences(m, "2026-27", min_fit=3).sum() == 0
+
+
+def test_a_status_change_on_old_news_added_is_dated_when_seen(no_archive):
+    # Injured on 12 Sep; FPL moved him to 75% on 9 Oct without moving news_added.
+    no_archive.setattr(news, "archived_log", lambda season: _log(
+        (7, "2026-09-12T18:00Z", "2026-10-03T14:00Z", "i"), (7, "2026-09-12T18:00Z", "2026-10-09T16:00Z", "d")))
+    tl = news.news_timeline("2026-27")
+    assert tl[["t", "status"]].values.tolist() == [[pd.Timestamp("2026-09-12T18:00Z"), "i"],
+                                                   [pd.Timestamp("2026-10-09T16:00Z"), "d"]]
+
+
+def test_excuse_weight_follows_ownership(bs, monkeypatch):
+    monkeypatch.setattr(config, "EXCUSE_FULL_OWNERSHIP", 10.0)
+    bs["elements"][0]["selected_by_percent"] = "65.0"
+    bs["elements"][1]["selected_by_percent"] = "2.5"
+    w = news.excuse_weight(bs)
+    assert w[1001] == 1.0 and w[1002] == 0.25

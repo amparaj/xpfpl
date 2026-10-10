@@ -537,6 +537,101 @@ def availability(frame: pd.DataFrame, bs: dict, next_gw: int, press: dict | None
     return pd.DataFrame({"avail": p.astype(float), "news_rule": rule}, index=frame.index)
 
 
+# ---------------------------------------------------------------- past absences
+
+# FPL statuses that mean a player wasn't available: doubtful, injured, suspended, not available,
+# unavailable. A press conference's OUT and DOUBT read as injured and doubtful, IN as available.
+FLAGGED = {"d", "i", "s", "n", "u"}
+PRESS_STATUS = {"OUT": "i", "DOUBT": "d", "IN": "a"}
+
+
+def news_timeline(season: str, bs: dict | None = None) -> pd.DataFrame:
+    """Every reading of a player's fitness known this season: `code`, `t` (when it was known) and
+    FPL `status`, from the change log (FPL's own time), every deadline snapshot (when it was
+    taken), every archived press conference (its day) and `bs` now (`news_added`). Each source
+    fills the others' gaps: the log only starts with the hourly Action, a snapshot only sees
+    the deadline it was taken for, and press conferences only name the players asked about.
+
+    FPL doesn't always move `news_added`: not when it clears a player's news, and not always when
+    it changes only the status (Pau, 2026-27: "injured" to "75%" on the same `news_added`). So a log
+    entry is dated by `news_added` only where it moved since the player's previous entry, and
+    otherwise by when it was seen; a "fit again" reading in `bs` now says nothing about the past
+    and is left out."""
+    from xpfpl.data import archive
+    parts = []
+    log = archived_log(season)
+    if len(log):
+        log = log.sort_values("seen", kind="stable")
+        moved = log["t"].ne(log.groupby("code")["t"].shift())
+        fresh = moved & (log["status"].isin(FLAGGED) | log.duplicated("code"))
+        parts.append(log[["code", "status"]].assign(t=log["t"].where(fresh, log["seen"])))
+    for snap in archive.deadline_snapshots(season).values():
+        if "taken_at" in snap:
+            parts.append(snap[["code", "status"]].assign(t=snap["taken_at"]))
+    for day, press in archived_press(season).items():
+        t = pd.Timestamp(press.get("updated") or day, tz="UTC")
+        rows = [{"code": p["code"], "t": t, "status": PRESS_STATUS.get(p["status"])}
+                for c in press.get("clubs", []) for p in c.get("players", []) if p.get("code") is not None]
+        parts.append(pd.DataFrame(rows, columns=["code", "t", "status"]))
+    if bs is not None and api.current_season(bs) == season:
+        now = pd.DataFrame(bs["elements"])
+        if "news_added" in now:
+            now = now[now["status"].isin(FLAGGED)]
+            parts.append(now[["code", "status"]].assign(t=now["news_added"]))
+    if not parts:
+        return pd.DataFrame(columns=["code", "t", "status"])
+    tl = pd.concat(parts, ignore_index=True)
+    tl["t"] = pd.to_datetime(tl["t"], utc=True, errors="coerce").astype("datetime64[ns, UTC]")
+    tl = tl.dropna(subset=["code", "t", "status"])
+    tl["code"] = tl["code"].astype("int64")
+    return tl.sort_values("t", ignore_index=True)
+
+
+def excuse_weight(bs: dict) -> pd.Series:
+    """How far each player's form moves to leave his excused matches out (by `code`, 0-1): his
+    ownership over config.EXCUSE_FULL_OWNERSHIP, capped at 1. The crowd sticking with an injured
+    player (João Pedro, 65% through his GW5 knee injury) says he walks back into the side; one
+    barely owned has no such vote, and keeps more of the zeros' doubt."""
+    players = pd.DataFrame(bs["elements"])
+    own = pd.to_numeric(players["selected_by_percent"], errors="coerce").fillna(0.0)
+    return pd.Series((own / config.EXCUSE_FULL_OWNERSHIP).clip(0.0, 1.0).to_numpy(),
+                     index=players["code"].astype("int64"))
+
+
+def excused_absences(matches: pd.DataFrame, season: str, bs: dict | None = None,
+                     min_fit: int | None = None) -> pd.Series:
+    """True for each match of `season` in `matches` that the player missed (0 minutes) while the
+    latest news before kick-off (`news_timeline`) had him flagged: an injury or a ban, not the
+    manager's choice. Unknown (no news before the match) counts as available.
+
+    Only once he has played `min_fit` (config.EXCUSE_MIN_FIT) matches this season before it:
+    with less, there's no fit form this season to fall back on, and leaving his zeros out would
+    only hand his place to last season's form (a player injured since the summer, or one who
+    has barely played). Whether `predict` uses them is config.EXCUSE_ABSENCES; they're found and
+    recorded either way."""
+    min_fit = config.EXCUSE_MIN_FIT if min_fit is None else min_fit
+    out = pd.Series(False, index=matches.index)
+    missed = (matches["season"] == season) & (matches["minutes"].fillna(0) <= 0)
+    if not missed.any():
+        return out
+    tl = news_timeline(season, bs)
+    if tl.empty:
+        return out
+    rows = matches[missed]
+    left = pd.DataFrame({"code": rows["code"].astype("int64").to_numpy(),
+                         "t": pd.to_datetime(rows["kickoff_time"], utc=True).astype("datetime64[ns, UTC]")
+                         .reset_index(drop=True),
+                         "i": np.flatnonzero(missed.to_numpy())}).sort_values("t")
+    got = pd.merge_asof(left, tl, on="t", by="code", direction="backward")
+    hit = got.loc[got["status"].isin(FLAGGED), "i"].to_numpy()
+    values = out.to_numpy().copy()
+    values[hit] = True
+    flagged = pd.Series(values, index=matches.index)
+    rows = matches.loc[matches["season"] == season, ["code", "kickoff_time", "minutes"]].sort_values("kickoff_time")
+    fit_before = (rows["minutes"].fillna(0) > 0).astype(int).groupby(rows["code"]).cumsum()
+    return flagged & (fit_before >= min_fit).reindex(matches.index, fill_value=False)
+
+
 # ---------------------------------------------------------------- the hourly log
 
 LOG_FIELDS = ["status", "chance", "news"]

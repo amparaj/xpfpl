@@ -821,7 +821,16 @@ snapshot and every headline seen into `archive/news/<season>/`.
 Each forecast records `avail`, `news_rule` (which rule set it), `press` and `back`, and `xpfpl scorecard`
 reports, for each kind of news, the chance the forecast gave against how many played. None of it could be
 tested beforehand: nothing kept FPL's news or press conferences before 2026-27. `config.PRESS_NEWS` and
-`config.NEWS_RETURN_DATES` switch the two parts off. Fantasy Football Scout's injury table isn't read
+`config.NEWS_RETURN_DATES` switch the two parts off.
+
+The news also reaches back. A match a player missed (0 minutes) while flagged before kick-off (by
+the news log, a deadline snapshot or a press conference: `news.excused_absences`) is left out of his
+form and minutes, because the minutes model can't tell an injury from being dropped and would mark a
+starter back from a knock down twice: once by the flag, once by the zero. Only after he has played
+`EXCUSE_MIN_FIT` (2) matches this season, so last season's form isn't handed back to someone injured
+since the summer, and only as far as the crowd backs him: ownership over `EXCUSE_FULL_OWNERSHIP` (10%),
+capped at 1. Each forecast records how many of his matches were excused (`excused`);
+`config.EXCUSE_ABSENCES` switches it off. Fantasy Football Scout's injury table isn't read
 (its terms forbid automated extraction): the pages link to it.
 
 ```bash

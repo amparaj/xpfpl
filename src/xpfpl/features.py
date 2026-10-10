@@ -530,8 +530,15 @@ def build_horizon_frames(matches: pd.DataFrame, horizons=(1, 2, 3)) -> dict[int,
     return {k: build_training_frame(matches, stale=k) for k in horizons}
 
 
-def latest_player_state(matches: pd.DataFrame) -> pd.DataFrame:
-    """Every PLAYER_STATE column per player `code`, including their most recent match."""
+def latest_player_state(matches: pd.DataFrame, excused: pd.Series | None = None) -> pd.DataFrame:
+    """Every PLAYER_STATE column per player `code`, including their most recent match.
+
+    `excused` (bool, on `matches`' index; data/news.py `excused_absences`) marks matches a player
+    missed injured or banned: they're left out, as if they hadn't happened, so his form and
+    minutes are the ones he had while fit and the windows reach further back instead.
+    """
+    if excused is not None:
+        matches = matches[~excused.reindex(matches.index, fill_value=False)]
     m = _add_derived(matches).sort_values("kickoff_time")
     rolled = _rolling(m, "code", PLAYER_STATS, WINDOWS, shift=0)
     rolled = rolled.join(_rates(m, shift=0))
@@ -543,6 +550,20 @@ def latest_player_state(matches: pd.DataFrame) -> pd.DataFrame:
     state = rolled.groupby("code").tail(1).set_index("code")  # rows are time-sorted
     state["experience"] = m.groupby("code").size()
     return state
+
+
+def blend_state(full: pd.DataFrame, without: pd.DataFrame, weight: pd.Series | None = None) -> pd.DataFrame:
+    """`full` moved towards `without` by `weight` (0-1, by code; missing = 0; None = 1 for all),
+    for the players in both. Every PLAYER_STATE column is a mean, rate or count, so a
+    weighted mix of two is a fair reading in between."""
+    codes = full.index.intersection(without.index)
+    w = pd.Series(1.0, index=codes) if weight is None else weight.reindex(codes).fillna(0.0).clip(0.0, 1.0)
+    out = full.copy()
+    cols = [c for c in full.columns if c in without.columns and pd.api.types.is_numeric_dtype(full[c])]
+    out[cols] = out[cols].astype(float)            # counts and minute lags become fractions
+    a, b = out.loc[codes, cols], without.loc[codes, cols].astype(float)
+    out.loc[codes, cols] = a + (b.fillna(a) - a).mul(w, axis=0)
+    return out
 
 
 def latest_team_state(matches: pd.DataFrame) -> pd.DataFrame:
@@ -571,8 +592,13 @@ def prices_now(bs: dict) -> pd.DataFrame:
 
 
 def build_future_frame(matches: pd.DataFrame, bs: dict, fixtures: list[dict], gameweeks: list[int],
-                       season: str, market: pd.DataFrame | None = None) -> pd.DataFrame:
-    """One row per current player per upcoming fixture in `gameweeks`, ready for the model."""
+                       season: str, market: pd.DataFrame | None = None,
+                       excused: pd.Series | None = None, weight: pd.Series | None = None) -> pd.DataFrame:
+    """One row per current player per upcoming fixture in `gameweeks`, ready for the model.
+
+    `excused`: matches left out of the players' form (`latest_player_state`). Club form keeps them.
+    `weight` (0-1, by player `code`) moves each player's form only that far from his full record
+    towards the one without them (`blend_state`); without it, all the way."""
     players = pd.DataFrame(bs["elements"])
     team_code = {t["id"]: t["code"] for t in bs["teams"]}
 
@@ -593,6 +619,8 @@ def build_future_frame(matches: pd.DataFrame, bs: dict, fixtures: list[dict], ga
     df["season"] = season
 
     player_state = latest_player_state(matches)
+    if excused is not None and excused.any():
+        player_state = blend_state(player_state, latest_player_state(matches, excused), weight)
     df = df.merge(player_state, left_on="code", right_index=True, how="left")
     df = df.join(crowd_now(bs), on="element")
     df = df.join(prices_now(bs), on="element")
