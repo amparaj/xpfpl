@@ -14,7 +14,7 @@ dependencies = [
     "pyarrow",
     "requests",
     "torch>=2.2",
-    "pulp>=2.7",
+    "pulp[cbc]>=4,<5",   # [cbc]: the CBC solver binary, no longer bundled with PuLP itself
     "cryptography",   # My Team's secret word on the website (export.seal)
 ]
 

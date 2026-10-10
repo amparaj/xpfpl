@@ -28,14 +28,11 @@ from xpfpl import config
 
 
 def _solver(time_limit: int) -> pulp.LpSolver:
-    """A system CBC install (COIN_CMD) if present, else the CBC binary bundled with PuLP."""
-    coin = pulp.COIN_CMD(msg=False, timeLimit=time_limit)
-    if coin.available():
-        return coin
-    return pulp.PULP_CBC_CMD(msg=False, timeLimit=time_limit)
+    """CBC: a system install if there is one, else the binary from `pulp[cbc]` (cbcbox)."""
+    return pulp.COIN_CMD(msg=False, timeLimit=time_limit)
 
 
-def _run(prob: pulp.LpProblem, time_limit: int, attempts: int = 2) -> int:
+def _run(prob: pulp.LpProblem, time_limit: int, attempts: int = 2) -> pulp.LpSolveStats:
     """Solve `prob`, trying again if the CBC process itself fails. It very occasionally exits
     with an error on a model it solves fine the next time (once in ~500 season replays run in
     parallel by `xpfpl tune`), and one crash shouldn't end a whole run."""
@@ -193,7 +190,7 @@ def solve(players: pd.DataFrame, gameweeks: list[int], *,
         x = squad_vars[gameweeks[0]]
         transfers_in = pulp.lpSum(x[p] for p in ids if p not in owned)
         hits_first = prob.add_variable("hits", lowBound=0, cat="Integer")
-        saved_ft = prob.add_variable("saved_ft", lowBound=0, upBound=1)
+        saved_ft = prob.add_variable("saved_ft", cat="Binary")
         prob += pulp.lpSum(cost[p] * x[p] for p in ids) <= budget
         if current_squad is None or unlimited_transfers:
             prob += hits_first == 0
@@ -203,8 +200,10 @@ def solve(players: pd.DataFrame, gameweeks: list[int], *,
             prob += hits_first <= max(max_hits, (transfers or 0) - free_transfers)
             if transfers is not None:
                 prob += transfers_in == transfers
-            # Rolling an unused free transfer has some value, unless already at the cap.
-            prob += saved_ft <= free_transfers - transfers_in
+            # Rolling an unused free transfer has some value, unless already at the cap. Rolling
+            # needs one left over; not rolling leaves the whole squad open, hits and all.
+            squad_size = sum(config.SQUAD_SIZE.values())
+            prob += transfers_in <= free_transfers - 1 + (squad_size + 1 - free_transfers) * (1 - saved_ft)
             if free_transfers >= config.MAX_FREE_TRANSFERS:
                 prob += saved_ft == 0
         ft_end = saved_ft
@@ -227,11 +226,12 @@ def solve(players: pd.DataFrame, gameweeks: list[int], *,
             objective.append(-w * config.HIT_COST * hit_terms[i])
     prob += pulp.lpSum(objective) + ft_value * ft_end
 
-    status = pulp.LpStatus[_run(prob, time_limit)]
+    stats = _run(prob, time_limit)
+    status = stats.status.name
     first = gameweeks[0]
-    if squad_vars[first][ids[0]].value() is None:
+    if not stats.has_solution:
         raise RuntimeError(f"Solver status: {status} - check budget/squad inputs.")
-    notes = [] if status == "Optimal" else [
+    notes = [] if stats.status == pulp.LpSolveStatus.Optimal else [
         f"Solver stopped at '{status}' after {time_limit}s; this plan is feasible but may not be optimal."]
 
     squads = {gw: [p for p in ids if squad_vars[gw][p].value() > 0.5] for gw in gameweeks}
