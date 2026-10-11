@@ -9,7 +9,7 @@ import { POSITIONS, STATUS, dec, flagLabel, money, pct, pts, risk, signed } from
 import { ROTATION } from "../midweek";
 import { NEWS_RULE } from "../news";
 import { fairResult, oddsUrl, type OddsSnapshot } from "../polymarket";
-import { matchPlayer, ours } from "../ratings";
+import { ours } from "../ratings";
 import { history, useAllGameweeks } from "../season";
 import { useData, useSite } from "../site";
 import { band } from "./Simulation";
@@ -118,14 +118,12 @@ export function WhyProjection({ player, forecast, gw, gameweeks }: {
     const gf = home ? o.ours_home : o.ours_away, ga = home ? o.ours_away : o.ours_home;
     const market = odds?.matches.find((m) => m.home_code === code(f.home) && m.away_code === code(f.away));
     const fair = market ? fairResult(market.prices) : null;
-    const scorer = market ? odds?.scorers.find((s) => s.slug === market.slug && matchPlayer(site, s)?.id === player.id) : undefined;
     return {
       id: f.id, opponent: home ? f.away : f.home, home,
       win: home ? o.ours_home_win : o.ours_away_win, gf, ga, cs: ga === null ? null : Math.exp(-ga),
       market: market && {
         win: fair?.[home ? "home_win" : "away_win"] ?? null,
         gf: home ? market.lam_home : market.lam_away, ga: home ? market.lam_away : market.lam_home,
-        scorer: scorer && scorer.volume > 0 ? scorer.p : null,
       },
     };
   });
@@ -241,9 +239,6 @@ export function WhyProjection({ player, forecast, gw, gameweeks }: {
           <Stats key={m.id} items={[
             { label: "Win chance", value: pct(m.market!.win) },
             { label: "Goals for – against", value: `${dec(m.market!.gf, 1)} – ${dec(m.market!.ga, 1)}` },
-            { label: "To score", value: m.market!.scorer != null
-                ? <span className={m.market!.scorer <= site.meta.out_threshold ? "bad" : undefined}>{pct(m.market!.scorer, 1)}</span>
-                : "no market", title: `At ${pct(site.meta.out_threshold)} or less, this model treats him as ruled out` },
           ]} />
         ))}
       </Group>

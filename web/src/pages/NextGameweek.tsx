@@ -7,8 +7,7 @@ import { Chart, Club, Legend, Loading, MidweekBadge, Note, Opponent, Segmented, 
 import { rows, type Forecast, type ModelTeam, type NextGw, type Player } from "../data";
 import { POSITIONS, dec, int, money, pct, pts, when } from "../format";
 import { ROTATION, clubMidweek, competition } from "../midweek";
-import { oddsUrl, type OddsSnapshot } from "../polymarket";
-import { matchPlayer, ours } from "../ratings";
+import { ours } from "../ratings";
 import { useData, useSite, type Site } from "../site";
 
 type Row = Forecast & { player: Player };
@@ -37,7 +36,6 @@ export default function NextGameweek() {
   const site = useSite();
   const next = useData<NextGw>("next.json");
   const team = useData<ModelTeam>("modelteam.json");
-  const odds = useData<OddsSnapshot>(oddsUrl());
   const [position, setPosition] = useState(0);
 
   const players: Row[] = useMemo(() => rows<Forecast>(next?.players)
@@ -89,13 +87,6 @@ export default function NextGameweek() {
     const wins = byGw.flat().map((m) => m.win).filter((w): w is number => w !== null);
     return { team: t.id, byGw, avg: wins.length ? wins.reduce((a, b) => a + b, 0) / wins.length : null };
   }), [next, site]);
-
-  const out = useMemo(() => {
-    if (!odds) return null;
-    const nextMatches = new Set(odds.matches.filter((m) => new Date(m.kickoff).getTime() > Date.now()).map((m) => m.slug));
-    return odds.scorers.filter((s) => nextMatches.has(s.slug) && s.p <= site.meta.out_threshold)
-      .map((s) => ({ ...s, fpl: matchPlayer(site, s) }));
-  }, [odds, site]);
 
   if (next === undefined) return <Loading />;
   if (next === null) {
@@ -230,22 +221,6 @@ export default function NextGameweek() {
         {midweekAhead && <> A badge such as <span className="tag cup">{competition("champions-league").short} Tue</span>
           marks a cup or European match in the week before that gameweek (hover for the opponent).</>}
       </Note>
-
-      <h3>Ruled out by the betting markets</h3>
-      {out === undefined ? <Loading />
-        : !out || !odds?.scorers.length ? <p className="muted">Goalscorer markets for GW{gw} aren't open yet. They usually open a day or two before kick-off.</p>
-        : !out.length ? <p className="muted">No player's goalscorer odds are down at {pct(site.meta.out_threshold)} or less.</p>
-        : (
-          <ul>
-            {out.map((s) => (
-              <li key={`${s.slug}-${s.player}`}>
-                {s.fpl ? <><Club id={s.fpl.team} /> {s.fpl.web_name}</> : s.player}: {pct(s.p, 1)} to score
-                {s.fpl?.forecast != null && <span className="muted"> (xP {pts(s.fpl.forecast)})</span>}
-              </li>
-            ))}
-          </ul>
-        )}
-      <Note>Goalscorer odds of {pct(site.meta.out_threshold)} or less almost always mean the player has been ruled out, which the FPL flags may not show yet.</Note>
     </>
   );
 }

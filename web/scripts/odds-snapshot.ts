@@ -50,9 +50,9 @@ if (flag >= 0) {
   }
   console.log(`Refreshing: ${reason}.`);
 }
-const [{ matches, scorers }, outrights] = await Promise.all([liveOdds(meta.polymarket_teams), liveOutrights()]);
+const [matches, outrights] = await Promise.all([liveOdds(meta.polymarket_teams), liveOutrights()]);
 const history: Record<string, MatchHistory> = {};
 for (const m of matches) history[m.slug] = await fetchHistory(m, now);   // one match at a time: gentle on the API
-const snapshot: OddsSnapshot = { fetched_at: now.toISOString(), matches, scorers, outrights, history };
+const snapshot: OddsSnapshot = { fetched_at: now.toISOString(), matches, outrights, history };
 writeFileSync(outPath, JSON.stringify(snapshot));
-console.log(`${matches.length} matches, ${scorers.length} scorer markets, ${outrights.length} season outcomes.`);
+console.log(`${matches.length} matches, ${outrights.length} season outcomes.`);

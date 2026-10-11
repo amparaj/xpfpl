@@ -31,7 +31,6 @@ export interface LiveMatch {
   tokens: Record<string, string>;          // the same names -> CLOB token id (for price history)
   lam_home: number; lam_away: number;      // expected goals fitted to all the prices
 }
-export interface LiveScorer { slug: string; player: string; p: number; volume: number; home_code: number; away_code: number }
 
 async function getJson<T>(url: string, tries = 3): Promise<T> {
   for (let i = 1; ; i++) {
@@ -171,8 +170,10 @@ export function fitRates(prices: Record<string, number>): [number, number] {
 
 // ---------------------------------------------------------------- the live view
 
-/** Every EPL match Polymarket lists that hasn't kicked off: prices, fitted goals, scorer odds. */
-export async function liveOdds(teamCodes: Record<string, number>): Promise<{ matches: LiveMatch[]; scorers: LiveScorer[] }> {
+/** Every EPL match Polymarket lists that hasn't kicked off: prices and fitted goals. (Not its
+ * anytime-goalscorer markets: since GW6 of 2026-27 they open under an hour before kick-off, after
+ * the FPL deadline.) */
+export async function liveOdds(teamCodes: Record<string, number>): Promise<LiveMatch[]> {
   const since = new Date(Date.now() - 86400e3).toISOString().slice(0, 19) + "Z";
   const all = await events({ tag_id: EPL_TAG, end_date_min: since });
   const games = new Map<string, GammaEvent[]>();
@@ -184,7 +185,7 @@ export async function liveOdds(teamCodes: Record<string, number>): Promise<{ mat
     }
   }
   const now = Date.now();
-  const matches: LiveMatch[] = [], scorers: LiveScorer[] = [];
+  const matches: LiveMatch[] = [];
   for (const [slug, group] of games) {
     const main = group.find((e) => e.slug === slug);
     if (!main?.startTime || new Date(main.startTime).getTime() <= now) continue;
@@ -199,18 +200,11 @@ export async function liveOdds(teamCodes: Record<string, number>): Promise<{ mat
     const fair = fairResult(prices);
     if (!("home_win" in fair)) continue;
     const [lam_home, lam_away] = fitRates(fair);
-    const codes = { home_code: teamCodes[home.name], away_code: teamCodes[away.name] };
-    matches.push({ slug, kickoff: main.startTime, ...codes,
+    matches.push({ slug, kickoff: main.startTime, home_code: teamCodes[home.name], away_code: teamCodes[away.name],
                    volume: group.reduce((s, e) => s + Number(e.volume ?? 0), 0), prices: fair, tokens, lam_home, lam_away });
-    for (const e of group) for (const m of e.markets ?? []) {
-      if (m.sportsMarketType === "soccer_anytime_goalscorer" && !m.closed) {
-        scorers.push({ slug, player: (m.question ?? "").split(":")[0].trim(), p: yesPrice(m),
-                       volume: Number(m.volume ?? 0), ...codes });
-      }
-    }
   }
   matches.sort((a, b) => a.kickoff.localeCompare(b.kickoff));
-  return { matches, scorers };
+  return matches;
 }
 
 export interface Outright { event: string; outcome: string; probability: number; volume: number }
@@ -271,7 +265,7 @@ export function resultHistory(history: MatchHistory, end: Date, days: number): {
 /** What the scheduled GitHub Action saves as odds.json: the browser never calls Polymarket
  * itself, because some networks block it (Australia does). */
 export interface OddsSnapshot {
-  fetched_at: string; matches: LiveMatch[]; scorers: LiveScorer[]; outrights: Outright[];
+  fetched_at: string; matches: LiveMatch[]; outrights: Outright[];
   history: Record<string, MatchHistory>;
 }
 

@@ -445,7 +445,7 @@ def _markets(matches: pd.DataFrame) -> dict | None:
     from xpfpl.data import markets
     from xpfpl.features import _poisson_win
 
-    market, scorers = markets.load()
+    market, _ = markets.load()
     if market is None or market.empty:
         return None
     m = market[[c for c in MARKET_COLUMNS if c in market] + [c for c in market if c.endswith(("_90m", "d"))
@@ -472,13 +472,6 @@ def _markets(matches: pd.DataFrame) -> dict | None:
     from xpfpl.data import bookmakers
     accuracy = markets.accuracy(market, matches, bookmakers.market(matches))
     out = {"matches": table(m, digits=4), "accuracy": table(accuracy, digits=4)}
-    if scorers is not None and len(scorers) and "code" in scorers:
-        actual = matches.groupby(["season", "fixture", "code"], as_index=False).agg(
-            goals=("goals_scored", "sum"), minutes=("minutes", "sum"))
-        s = scorers.merge(actual, on=["season", "fixture", "code"], how="left")
-        keep = ["season", "gw", "fixture", "slug", "player", "code", "team_code", "volume", "p_anytime",
-                *[c for c in s if c.startswith("p_anytime_")], "goals", "minutes"]
-        out["scorers"] = table(s[keep], digits=4)
     snaps = archive.outrights()
     if snaps is not None and len(snaps):
         last = snaps[snaps["snapshot"] == snaps["snapshot"].max()]
