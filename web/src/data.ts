@@ -165,7 +165,7 @@ export interface Forecast {
 /** The forecast saved for the next gameweek: xP per player for each gameweek of its horizon. */
 export interface NextGw { gw: number; deadline: string; model: string; gameweeks: number[]; players: Columns }
 export interface Markets {
-  matches: Columns; accuracy: Columns; scorers?: Columns;
+  matches: Columns; accuracy: Columns;
   outrights?: Columns & { snapshot: string };
 }
 /** The midweek rotation factors on next week's xP, per group (data/cups.py `fit`). */

@@ -3,9 +3,9 @@ import { useCallback, useMemo, useState } from "react";
 import { color } from "../colors";
 import { Chart, Club, Legend, Loading, Note, Segmented, Table, plotDefaults, useClubName, type Column } from "../components/ui";
 import { rows, type Markets as MarketsFile, type Row } from "../data";
-import { dec, pct, pts, signed, when } from "../format";
-import { resultHistory, oddsUrl, type LiveScorer, type MatchHistory, type OddsSnapshot, type Outright } from "../polymarket";
-import { matchPlayer, ours } from "../ratings";
+import { dec, pct, when } from "../format";
+import { resultHistory, oddsUrl, type MatchHistory, type OddsSnapshot, type Outright } from "../polymarket";
+import { ours } from "../ratings";
 import { useData, useSite, type Site } from "../site";
 
 const LIVE = "live";
@@ -177,9 +177,7 @@ export default function MarketsPage() {
   const live = useMemo(() => {
     if (!odds) return odds;
     const upcoming = odds.matches.filter((m) => new Date(m.kickoff).getTime() > Date.now());
-    const slugs = new Set(upcoming.map((m) => m.slug));
     return {
-      scorers: odds.scorers.filter((s) => slugs.has(s.slug)),
       matches: upcoming.map((m): MatchView => ({
         slug: m.slug, kickoff: m.kickoff, gw: fixtureGw(site, m.home_code, m.away_code, m.kickoff),
         home_code: m.home_code, away_code: m.away_code, home_win: m.prices.home_win, draw: m.prices.draw ?? NaN,
@@ -294,9 +292,6 @@ export default function MarketsPage() {
             ratings{isLive ? ` for GW${site.meta.next_gw}` : " before that gameweek"}.
           </Note>
           <Movement key={`${season}-${pick}`} matches={matches} end={deadline} histories={histories} />
-          <h3>Anytime goalscorer odds</h3>
-          {isLive ? <LiveScorers scorers={live?.scorers ?? []} />
-                  : <PlayedScorers scorers={rows(file?.scorers).filter((s) => s.season === season && s.gw === pick)} />}
         </>
       )}
 
@@ -324,54 +319,6 @@ function favourite(m: MatchView): boolean | null {
   const fav = m.home_win >= m.away_win && m.home_win >= m.draw ? "h" : m.away_win >= m.draw ? "a" : "d";
   const result = m.goals_home > m.goals_away ? "h" : m.goals_home < m.goals_away ? "a" : "d";
   return fav === result;
-}
-
-function LiveScorers({ scorers }: { scorers: LiveScorer[] }) {
-  const site = useSite();
-  const list = useMemo(() => scorers.map((s) => ({ ...s, fpl: matchPlayer(site, s) })), [scorers, site]);
-  if (!list.length) return <p className="muted">No scorer markets listed yet (they usually open a day or two before kick-off).</p>;
-  type L = (typeof list)[number];
-  const columns: Column<L>[] = [
-    { key: "player", label: "Player", value: (s) => s.fpl?.web_name ?? s.player },
-    { key: "club", label: "Club", value: (s) => s.fpl?.team, render: (s) => (s.fpl ? <Club id={s.fpl.team} /> : "–") },
-    { key: "p", label: "Scores", numeric: true, value: (s) => (s.volume > 0 ? s.p : null),
-      render: (s) => (s.volume > 0 ? pct(s.p) : <span className="muted" title="Opening price, never traded">untraded</span>) },
-    { key: "out", label: "Market says", value: (s) => (s.p <= site.meta.out_threshold ? 1 : 0),
-      render: (s) => (s.p <= site.meta.out_threshold ? <span className="tag warn">Likely out</span> : "") },
-    { key: "xp", label: `xP GW${site.meta.next_gw}`, numeric: true, value: (s) => s.fpl?.forecast, render: (s) => pts(s.fpl?.forecast) },
-  ];
-  return (
-    <>
-      <Table columns={columns} data={list} sort="p" rowKey={(s) => `${s.slug}-${s.player}`} limit={30} cardSub={["club", "out"]} cardStats={["p", "xp"]} />
-      <Note>
-        Odds of {pct(site.meta.out_threshold)} or less almost always mean the player has been ruled out: in 2025-26, 3 of the 62 players
-        priced that low played. This model cuts that week's xP to 10% for them.
-      </Note>
-    </>
-  );
-}
-
-function PlayedScorers({ scorers }: { scorers: Row[] }) {
-  const site = useSite();
-  if (!scorers.length) return <p className="muted">No scorer markets for this gameweek (they started in January 2026).</p>;
-  const name = (s: Row) => site.players.find((p) => p.code === s.code)?.web_name ?? s.player;
-  const columns: Column<Row>[] = [
-    { key: "player", label: "Player", value: name },
-    { key: "club", label: "Club", value: (s) => s.team_code, render: (s) => <Club code={s.team_code} /> },
-    { key: "p", label: "Odds at deadline", numeric: true, value: (s) => (s.volume > 0 ? s.p_anytime : null),
-      render: (s) => (s.volume > 0 ? pct(s.p_anytime) : <span className="muted" title="Opening price, never traded">untraded</span>) },
-    { key: "move", label: "3-day move", numeric: true, value: (s) => (s.p_anytime_3d == null ? null : s.p_anytime - s.p_anytime_3d),
-      render: (s) => (s.p_anytime_3d == null ? "–" : signed((s.p_anytime - s.p_anytime_3d) * 100, 0) + " pts") },
-    { key: "min", label: "Mins", numeric: true, value: (s) => s.minutes, render: (s) => s.minutes ?? "–" },
-    { key: "goals", label: "Scored?", value: (s) => s.goals,
-      render: (s) => (s.goals == null ? "–" : s.goals > 0 ? <span className="good">Yes{s.goals > 1 ? ` (${s.goals})` : ""}</span> : "No") },
-  ];
-  return (
-    <>
-      <Table columns={columns} data={scorers} sort="p" rowKey={(s) => `${s.slug}-${s.player}`} limit={30} cardSub={["club", "goals"]} cardStats={["p", "move"]} />
-      <Note>Scorer markets open at about 50% and drift to a real price once traded, so an untraded one shows no odds.</Note>
-    </>
-  );
 }
 
 /** One season's scores, the market's and this model's side by side. */
