@@ -10,6 +10,8 @@ import { useData, useHash, useSite } from "../site";
 import Match from "./Match";
 
 type Row = LivePlayer & { name: string; team: number; pos: number };
+/** A row of the tables: a player, and where he was picked when it's a team's table. */
+type PickRow = Row & { role?: LivePick["role"]; counted?: boolean; multiplier?: number };
 
 const PARTS = [
   { key: "minutes", label: "Minutes", what: "played when he might not have (+), or didn't play (−), against the chance he was given" },
@@ -119,28 +121,43 @@ function Overview({ live }: { live: Live | null | undefined }) {
     ] : []),
   ];
 
-  const done = players.filter((r) => r.state === "done");
+  // Everyone else: the players in the teams above are in their own tables.
+  const inTeams = new Set([...(model?.picks ?? []), ...(mine?.picks ?? [])].map((p) => p.element));
+  const done = players.filter((r) => r.state === "done" && !inTeams.has(r.element));
   const surprises = done.filter((r) => side === "all" || (side === "beat" ? r.error > 0 : r.error < 0))
     .sort((a, b) => Math.abs(b.error) - Math.abs(a.error)).slice(0, 30);
 
-  const playerColumns: Column<Row>[] = [
-    { key: "name", label: "Player", value: (r) => r.name },
+  // One set of columns for the teams and for everyone else; a team's table adds where he was picked.
+  const team = teamKey === "mine" ? mine : model;
+  const subbedIn = new Set(team?.subs.map((s) => s.in)), subbedOut = new Set(team?.subs.map((s) => s.out));
+  const settled = (r: Row) => r.state === "done";
+  const columns = (picked: boolean): Column<PickRow>[] => [
+    { key: "name", label: "Player", value: (r) => r.name,
+      render: (r) => !picked ? r.name : <>{r.name}
+        {r.element === team?.armband && <span className="tag" style={{ marginLeft: 6 }}>{team?.chip === "3xc" ? "TC" : "C"}</span>}
+        {subbedIn.has(r.element) && <span className="tag good-tag" style={{ marginLeft: 6 }}>Sub on</span>}
+        {subbedOut.has(r.element) && <span className="tag warn" style={{ marginLeft: 6 }}>Subbed off</span>}</> },
     { key: "club", label: "Club", value: (r) => site.team.get(r.team)?.short, render: (r) => <Club id={r.team} /> },
     { key: "pos", label: "Pos", value: (r) => r.pos, render: (r) => POSITIONS[r.pos] },
+    ...(picked ? [{ key: "role", label: "Picked", value: (r: PickRow) => r.role ?? "" } as Column<PickRow>] : []),
     { key: "xp", label: "xP", numeric: true, value: (r) => r.xp, render: (r) => pts(r.xp), title: `This model's forecast for GW${gw}, saved before the deadline` },
     { key: "range", label: "Range", numeric: true, value: (r) => r.pts_p90, render: (r) => band(r.pts_p10, r.pts_p90),
       title: "The middle 80% of his simulated scores" },
-    { key: "points", label: "Points", numeric: true, value: (r) => r.points, render: (r) => <strong>{int(r.points)}</strong> },
-    { key: "mins", label: "Mins", numeric: true, value: (r) => r.minutes, render: (r) => int(r.minutes) },
-    { key: "diff", label: "Diff", numeric: true, value: (r) => r.error,
-      render: (r) => <span className={r.error >= 0 ? "good" : "bad"}>{signed(r.error, 1)}</span>, title: "Points minus xP" },
+    { key: "points", label: "Points", numeric: true, value: (r) => (picked ? r.points * (r.multiplier ?? 1) : r.points),
+      render: (r) => !picked || r.counted ? <strong>{int(r.points * (picked ? r.multiplier ?? 1 : 1))}</strong> : <span className="muted">{int(r.points)}</span>,
+      title: picked ? "As counted: captain doubled, the bench not counted (unless subbed on or Bench Boost)" : undefined },
+    { key: "mins", label: "Mins", numeric: true, value: (r) => r.minutes,
+      render: (r) => settled(r) || r.minutes ? int(r.minutes) : <span className="muted">{STATE[r.state]}</span> },
+    { key: "diff", label: "Diff", numeric: true, value: (r) => (settled(r) ? r.error : null),
+      render: (r) => settled(r) ? <span className={r.error >= 0 ? "good" : "bad"}>{signed(r.error, 1)}</span> : null,
+      title: "His points minus his xP (before the armband), once his matches are over" },
     { key: "verdict", label: "Mainly", value: (r) => r.verdict ?? "",
       render: (r) => r.verdict ? <span className={`tag${r.verdict === "News changed" ? " warn" : ""}`}>{r.verdict}</span> : null,
       title: "The biggest of the three parts of the difference (see below)" },
     { key: "why", label: "Why", wrap: true, value: (r) => r.reasons.join("; "), render: (r) => r.reasons.join(" · ") },
   ];
 
-  const detail = (r: Row) => (
+  const detail = (r: PickRow) => settled(r) ? (
     <div className="card">
       <strong>Points minus xP: {signed(r.error)}</strong>
       <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
@@ -148,29 +165,12 @@ function Overview({ live }: { live: Live | null | undefined }) {
       </ul>
       {r.reasons.length > 0 && <p className="note">{r.reasons.join(". ")}.</p>}
     </div>
-  );
+  ) : <p className="muted">{r.state === "live" ? "His match is still on." : "He hasn't played yet."}</p>;
 
-  const team = teamKey === "mine" ? mine : model;
-  type PickRow = LivePick & { name: string; team: number; pos: number; why: string[] };
   const picks: PickRow[] = (team?.picks ?? []).flatMap((p) => {
-    const pl = site.player.get(p.element);
-    return pl ? [{ ...p, name: pl.web_name, team: pl.team, pos: pl.element_type, why: byId.get(p.element)?.reasons ?? [] }] : [];
+    const r = byId.get(p.element);
+    return r ? [{ ...r, role: p.role, counted: p.counted, multiplier: p.multiplier, points: p.points, minutes: p.minutes, state: p.state }] : [];
   });
-  const subbedIn = new Set(team?.subs.map((s) => s.in)), subbedOut = new Set(team?.subs.map((s) => s.out));
-  const pickColumns: Column<PickRow>[] = [
-    { key: "name", label: "Player", value: (r) => r.name,
-      render: (r) => <>{r.name}{r.element === team?.armband && <span className="tag" style={{ marginLeft: 6 }}>{team?.chip === "3xc" ? "TC" : "C"}</span>}
-        {subbedIn.has(r.element) && <span className="tag good-tag" style={{ marginLeft: 6 }}>Sub on</span>}
-        {subbedOut.has(r.element) && <span className="tag warn" style={{ marginLeft: 6 }}>Subbed off</span>}</> },
-    { key: "club", label: "Club", value: (r) => site.team.get(r.team)?.short, render: (r) => <Club id={r.team} /> },
-    { key: "role", label: "Picked", value: (r) => r.role },
-    { key: "xp", label: "xP", numeric: true, value: (r) => r.xp, render: (r) => pts(r.xp) },
-    { key: "points", label: "Points", numeric: true, value: (r) => r.points * Math.max(r.multiplier, 0),
-      render: (r) => r.counted ? <strong>{int(r.points * r.multiplier)}</strong> : <span className="muted">{int(r.points)}</span>,
-      title: "As counted: captain doubled, the bench not counted (unless subbed on or Bench Boost)" },
-    { key: "mins", label: "Mins", numeric: true, value: (r) => r.minutes, render: (r) => r.state === "done" || r.minutes ? int(r.minutes) : <span className="muted">{STATE[r.state]}</span> },
-    { key: "why", label: "Why", wrap: true, value: (r) => r.why.join("; "), render: (r) => r.why.join(" · ") },
-  ];
 
   const name = (e: number) => byId.get(e)?.name ?? site.player.get(e)?.web_name ?? String(e);
   const lessonItems: { key: keyof typeof live.lessons; title: string; text: ReactNode; show: (r: Row | undefined) => string }[] = [
@@ -195,7 +195,7 @@ function Overview({ live }: { live: Live | null | undefined }) {
 
   return (
     <>
-      <h2>Live Gameweek: GW{gw}</h2>
+      <h2 className="live-title">Live Gameweek: GW{gw} <StatusBadge live={live} /></h2>
       <p className="lede">
         GW{gw} as it happens, against this {live.model} model's forecast saved before the deadline ({when(live.deadline)}):
         who beat it or fell short, and why. {live.done} of {live.total} matches over{finished ? "" : " so far"}; updated {when(live.generated)}.
@@ -231,7 +231,8 @@ function Overview({ live }: { live: Live | null | undefined }) {
             </div>
           )}
           {team && <>
-            <Table columns={pickColumns} data={picks} rowKey={(r) => r.element} cardSub={["club", "role"]} cardStats={["xp", "points"]} />
+            <Table columns={columns(true)} data={picks} rowKey={(r) => r.element} cardSub={["club", "pos", "role", "verdict"]}
+                   cardStats={["xp", "points", "mins"]} detail={detail} />
             <Note>
               {team.subs.length > 0 && <>Automatic substitutions so far: {team.subs.map((s) => `${name(s.in)} for ${name(s.out)}`).join(", ")}. </>}
               {team.armband !== team.captain && team.armband !== null && <>The captain didn't play, so {name(team.armband)} has the armband. </>}
@@ -262,10 +263,13 @@ function Overview({ live }: { live: Live | null | undefined }) {
                    options={[{ value: "missed", label: "Fell short" }, { value: "beat", label: "Beat it" }, { value: "all", label: "Biggest either way" }]} />
       </div>
       {surprises.length ? (
-        <Table columns={playerColumns} data={surprises} rowKey={(r) => r.element} sort="diff" desc={side !== "missed"}
+        <Table columns={columns(false)} data={surprises} rowKey={(r) => r.element} sort="diff" desc={side !== "missed"}
                cardSub={["club", "pos", "verdict"]} cardStats={["xp", "points", "diff"]} detail={detail} />
       ) : <p className="muted">No matches are over yet.</p>}
-      <Note>The 30 biggest differences among players whose matches are over. Click a player for the split of his difference.</Note>
+      <Note>
+        The 30 biggest differences among everyone else whose matches are over{inTeams.size > 0 && ": players in the teams above are in their own tables"}.
+        Click a player for the split of his difference.
+      </Note>
 
       <div className="card">
         <h3 style={{ marginTop: 0 }}>Before the next deadline</h3>
@@ -375,4 +379,19 @@ function LiveMatchPage({ live, match }: { live: Live; match: LiveMatch }) {
       </div>
     </Match>
   );
+}
+
+// ---------------------------------------------------------------- where the gameweek is
+
+/** Red while a match is on, amber between matches and while FPL adds the bonus and checks the data, green once it's done. */
+function StatusBadge({ live }: { live: Live }) {
+  const playing = live.matches.filter((m) => m.state === "live").length;
+  const next = live.matches.find((m) => m.state === "to play");
+  const [cls, label, title] =
+    playing ? ["live", "Live", `${playing} match${playing > 1 ? "es" : ""} being played now`]
+    : next ? ["pending", "In progress", `${live.done} of ${live.total} matches over; next kick-off ${when(next.kickoff)}`]
+    : live.phase === "complete" ? ["complete", "Complete", "Every match is over and FPL has confirmed the points"]
+    : live.phase === "checking" ? ["pending", "Checking", "Every match is over; FPL is confirming the points"]
+    : ["pending", "Bonus to come", "Every match is over; FPL is still adding the bonus"];
+  return <span className={`status-badge ${cls}`} title={title}><span className="status-dot" />{label}</span>;
 }

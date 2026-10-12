@@ -170,15 +170,19 @@ def news_changed(t: pd.DataFrame) -> pd.Series:
     return known & ((t["status"].fillna("a") != t["status_deadline"].fillna("a")) | (before - after).abs().gt(0))
 
 
-def reasons(r: pd.Series) -> list[str]:
-    """A few short sentences on why player row `r` scored what he did against his xP."""
+def reasons(r: pd.Series, final: bool = True) -> list[str]:
+    """A few short sentences on why player row `r` scored what he did against his xP. With `final`
+    False (his match is still on) only what has happened so far: no verdict on his minutes, his
+    range or his news, which can't be judged yet."""
     out = []
-    if r.get("news_changed"):
+    if final and r.get("news_changed"):
         out.append(f"Was {_flag(r.get('status'), r.get('chance'))} when this forecast was made, "
                    f"{_flag(r.get('status_deadline'), r.get('chance_deadline'))} at the deadline")
     p, m = r.get("p_play"), r["minutes"]
     has_p = p is not None and p == p
-    if m == 0:
+    if not final:
+        pass
+    elif m == 0:
         out.append(f"Didn't play (given {p:.0%} to play)" if has_p else "Didn't play")
     elif has_p and p < 0.5:
         out.append(f"Played {m:.0f} minutes though given only {p:.0%} to play")
@@ -219,7 +223,7 @@ def reasons(r: pd.Series) -> list[str]:
             out.append("Missed a penalty")
         if r["penalties_saved"]:
             out.append("Saved a penalty")
-    band = r.get("band")
+    band = r.get("band") if final else None
     if band == "above":
         out.append("Above his simulated range (fewer than 1 in 10 simulated weeks)")
     elif band == "below":
@@ -352,10 +356,11 @@ def lessons(t: pd.DataFrame, featured: pd.Series, notable: pd.Series) -> dict[st
 
 
 def analyse(forecast: dict, live: dict, fixtures: list[dict], teams: dict[str, dict] | None = None,
-            now: datetime | None = None) -> dict:
+            now: datetime | None = None, phase: str | None = None) -> dict:
     """live.json: `forecast` is the site's current.json (players as columns: element, team,
     position, xp_<gw>, p_play, pts_p10/p90, p_haul, p_blank, status/chance at the forecast and at
-    the deadline), `live` FPL's event/<gw>/live, `teams` name -> team (see `team_live`)."""
+    the deadline), `live` FPL's event/<gw>/live, `teams` name -> team (see `team_live`), `phase`
+    api.gameweek_status's ("live", "checking", "complete") for the page's status badge."""
     gw = int(forecast["gw"])
     f = pd.DataFrame(forecast["players"]).set_index("element")
     f.index = f.index.astype(int)
@@ -387,7 +392,9 @@ def analyse(forecast: dict, live: dict, fixtures: list[dict], teams: dict[str, d
     week["positions"] = {config.POSITIONS[p]: _summary(g) for p, g in done.groupby("position")}
 
     shown = t[(t["xp"] >= 0.5) | (t["minutes"] > 0) | t.index.isin(list(picked)) | t["news_changed"]].copy()
-    shown["reasons"] = [reasons(r) for _, r in shown.iterrows()]
+    # Reasons once his matches are over; while one is on, only what has happened so far; none before.
+    shown["reasons"] = [reasons(r) if r["state"] == DONE else reasons(r, final=False) if r["state"] == LIVE else []
+                        for _, r in shown.iterrows()]
     shown["verdict"] = [verdict(r) if r["state"] == DONE else None for _, r in shown.iterrows()]
     keep = ["team", "xp", "total_points", "minutes", "state", "p_play", "pts_p10", "pts_p90", "p_haul", "p_blank",
             "goals_scored", "assists", "expected_goals", "expected_assists", "bonus", "bps", "saves",
@@ -398,7 +405,7 @@ def analyse(forecast: dict, live: dict, fixtures: list[dict], teams: dict[str, d
     fx = matches(fixtures, gw)
     return {
         "generated": (now or datetime.now(timezone.utc)).isoformat(timespec="seconds"),
-        "gw": gw, "deadline": forecast.get("deadline"), "model": forecast.get("model"),
+        "gw": gw, "deadline": forecast.get("deadline"), "model": forecast.get("model"), "phase": phase,
         "forecast_made": forecast.get("made_at"),
         "matches": fx, "done": sum(m["state"] == DONE for m in fx), "total": len(fx),
         "week": week,
@@ -519,7 +526,8 @@ def update(site: Path, out: Path, previous: Path | None = None) -> Path | None:
         add_deadline_news(forecast, bs)
     decision = forecast.get("model_team") or (_read(site / "modelteam.json") or {}).get("next")
     teams = {"model": model_team(decision, current), "mine": my_team(_read(site / "myteam.json"), current)}
-    result = analyse(forecast, api.event_live(current), fixtures, {k: v for k, v in teams.items() if v}, now)
+    result = analyse(forecast, api.event_live(current), fixtures, {k: v for k, v in teams.items() if v}, now,
+                     api.gameweek_status(bs, fixtures)["phase"])
     out.mkdir(parents=True, exist_ok=True)
     path = out / "live.json"
     path.write_text(json.dumps(result, separators=(",", ":"), allow_nan=False), encoding="utf-8")
@@ -577,7 +585,8 @@ def local(bs: dict, fixtures: list[dict], model: str = config.MODEL) -> dict | N
             week = next((w for w in out["weeks"] if int(w["gw"]) == gw), None)
             if week:
                 teams["mine"] = my_team({"gw": gw, "private": {"weeks": [week], "chip": team["chip"]}}, gw)
-    return analyse(forecast, api.event_live(gw), fixtures, {k: v for k, v in teams.items() if v})
+    return analyse(forecast, api.event_live(gw), fixtures, {k: v for k, v in teams.items() if v},
+                   phase=api.gameweek_status(bs, fixtures)["phase"])
 
 
 FORECAST_COLUMNS = ("xmins", "p_play", "p_full", "mkt_anytime", "market_out", "rotation", "rotation_factor",
