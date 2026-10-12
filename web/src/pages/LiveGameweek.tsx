@@ -3,10 +3,11 @@ import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { color } from "../colors";
 import { band } from "../components/Simulation";
 import { Chart, Club, Legend, Loading, Note, Segmented, Table, Tiles, plotDefaults, type Column, type TileProps } from "../components/ui";
-import { rows, type Accuracy } from "../data";
+import { rows, type Accuracy, type Gameweek } from "../data";
 import { POSITIONS, dec, int, pct, pts, signed, when } from "../format";
-import { useLive, type LivePick, type LivePlayer, type LiveSummary, type LiveTeam } from "../live";
-import { useData, useSite } from "../site";
+import { useLive, type Live, type LiveEvents, type LiveMatch, type LivePick, type LivePlayer, type LiveSummary, type LiveTeam } from "../live";
+import { useData, useHash, useSite } from "../site";
+import Match from "./Match";
 
 type Row = LivePlayer & { name: string; team: number; pos: number };
 
@@ -31,8 +32,17 @@ function before(earlier: string | null | undefined, later: string | null | undef
 const beat = (d: number | null) => (d === null ? "" : Math.abs(d) < 0.5 ? "right on it" : `${int(Math.abs(d))} ${d > 0 ? "more" : "fewer"} than forecast`);
 
 export default function LiveGameweek() {
-  const site = useSite();
   const live = useLive();
+  const fixture = Number(useHash().split("/")[1]);
+  if (live && fixture) {
+    const m = live.matches.find((x) => x.id === fixture);
+    if (m) return <LiveMatchPage live={live} match={m} />;
+  }
+  return <Overview live={live} />;
+}
+
+function Overview({ live }: { live: Live | null | undefined }) {
+  const site = useSite();
   const accuracy = useData<Accuracy>("accuracy.json");
   const [side, setSide] = useState<"beat" | "missed" | "all">("missed");
   const [teamKey, setTeamKey] = useState<"model" | "mine">("model");
@@ -194,17 +204,18 @@ export default function LiveGameweek() {
       {(madeBefore || staleTeam) && (
         <p className="note">
           {madeBefore && <>This forecast was saved {madeBefore} before the deadline. </>}
-          {staleTeam && <span className="tag warn">This model's team was picked {teamBefore} before the deadline</span>}
-          {staleTeam && <> and not picked again since, so it missed any team news in between.</>}
+          {staleTeam && <><span className="tag warn"><a href="#model-team">This Model's Team</a> was picked {teamBefore} before the deadline</span>
+            {" "}and not picked again since, so it missed any team news in between.</>}
         </p>
       )}
 
       <div className="match-strip">
         {live.matches.map((m) => (
-          <span key={m.id} className={`match-chip ${m.state.replace(" ", "-")}`} title={m.state === "to play" ? when(m.kickoff) : STATE[m.state]}>
+          <a key={m.id} href={`#live/${m.id}`} className={`match-chip ${m.state.replace(" ", "-")}`}
+             title={m.state === "to play" ? when(m.kickoff) : `${STATE[m.state]}: open the match`}>
             <Club id={m.home} /> {m.state === "to play" ? "v" : `${m.home_score ?? 0}–${m.away_score ?? 0}`} <Club id={m.away} />
             {m.state === "live" && <span className="tag warn">{m.minutes ?? 0}'</span>}
-          </span>
+          </a>
         ))}
       </div>
 
@@ -275,7 +286,7 @@ export default function LiveGameweek() {
           </div>
         ))}
         {!Object.values(live.lessons).some((l) => l.length) && <p className="muted">Nothing stands out yet.</p>}
-        {staleTeam && <p className="note">This model's team: run <code>xpfpl recommend</code> on deadline day, so its picks see the latest team news.</p>}
+        {staleTeam && <p className="note">This Model's Team: run <code>xpfpl recommend</code> on deadline day, so its picks see the latest team news.</p>}
       </div>
 
       {history.length > 0 && (
@@ -294,5 +305,74 @@ export default function LiveGameweek() {
         </>
       )}
     </>
+  );
+}
+
+// ---------------------------------------------------------------- one match
+
+const EVENT_ROWS: { key: keyof LiveEvents; label: string; count?: boolean }[] = [
+  { key: "goals_scored", label: "Goals", count: true }, { key: "assists", label: "Assists", count: true },
+  { key: "own_goals", label: "Own goals", count: true }, { key: "penalties_missed", label: "Penalties missed", count: true },
+  { key: "penalties_saved", label: "Penalties saved", count: true }, { key: "yellow_cards", label: "Yellow cards" },
+  { key: "red_cards", label: "Red cards" }, { key: "saves", label: "Saves", count: true }, { key: "bonus", label: "Bonus", count: true },
+];
+
+/** A match of the gameweek in progress: FPL's live events, then the match page (shot map, xG and the rest) once
+ * `xpfpl fetch` has its match data, with each player's points against his xP from live.json. */
+function LiveMatchPage({ live, match }: { live: Live; match: LiveMatch }) {
+  const site = useSite();
+  const players = useMemo(() => rows<LivePlayer>(live.players), [live]);
+  // The match page's players table reads a gameweek file: build one from live.json for this match's two clubs.
+  const week: Gameweek = useMemo(() => {
+    const here = players.filter((r) => (r.team === match.home || r.team === match.away) && r.minutes > 0);
+    const col = <K extends string>(k: K, f: (r: LivePlayer) => unknown) => [k, here.map(f)] as const;
+    return {
+      gw: live.gw, xp_source: "live", fixtures: [],
+      players: Object.fromEntries([
+        col("element", (r) => r.element), col("fixture", () => match.id), col("was_home", (r) => r.team === match.home),
+        col("minutes", (r) => r.minutes), col("total_points", (r) => r.points), col("goals_scored", (r) => r.goals_scored),
+        col("assists", (r) => r.assists), col("bonus", (r) => r.bonus), col("bps", (r) => r.bps ?? null),
+        col("saves", (r) => r.saves ?? null), col("defensive_contribution", (r) => r.defensive_contribution ?? null),
+        col("expected_goals", (r) => r.expected_goals), col("expected_assists", (r) => r.expected_assists), col("xp", (r) => r.xp),
+      ]),
+    };
+  }, [players, match, live.gw]);
+  const name = (e: number) => site.player.get(e)?.web_name ?? String(e);
+  const ev = match.events ?? {};
+  const shown = EVENT_ROWS.filter((r) => (ev[r.key] as any)?.h?.length || (ev[r.key] as any)?.a?.length);
+  const list = (pairs: [number, number][] | undefined, count?: boolean) =>
+    (pairs ?? []).map(([e, v]) => (count && v > 1 ? `${name(e)} ${v}` : name(e))).join(", ") || "–";
+  return (
+    <Match gw={live.gw} fixture={match.id} back={{ href: "#live", label: `← Live Gameweek ${live.gw}` }}
+           score={match.state === "to play" ? [null, null] : [match.home_score, match.away_score]} week={week}>
+      <div className="card">
+        <h3 style={{ marginTop: 0 }}>
+          {match.state === "live" ? <>Live: {match.minutes ?? 0}' <span className="tag warn">playing</span></>
+            : match.state === "done" ? "Full time" : `Kicks off ${when(match.kickoff)}`}
+        </h3>
+        {shown.length > 0 ? (
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th /><th><Club id={match.home} /></th><th><Club id={match.away} /></th></tr></thead>
+              <tbody>
+                {shown.map((r) => (
+                  <tr key={r.key}>
+                    <td>{r.label}{r.key === "bonus" && ev.bonus_provisional && <span className="muted"> (provisional)</span>}</td>
+                    <td>{list((ev[r.key] as any)?.h, r.count)}</td>
+                    <td>{list((ev[r.key] as any)?.a, r.count)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : <p className="muted" style={{ margin: 0 }}>{match.state === "to play" ? "Not started." : "Nothing yet."}</p>}
+        {ev.bps && ev.bps.length > 0 && (
+          <p className="note">BPS leaders: {ev.bps.map(([e, v]) => `${name(e)} ${v}`).join(", ")}.
+            {ev.bonus_provisional && " Bonus is worked out from the BPS until FPL adds it (3, 2 and 1 for the top three; ties share)."}</p>
+        )}
+        <p className="note">FPL's own match events, as of {when(live.generated)}. The players table below has each player's points against
+          his xP; the shot map and match stats follow once the match data is published, a few hours to a day after the match.</p>
+      </div>
+    </Match>
   );
 }

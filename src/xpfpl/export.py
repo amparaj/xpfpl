@@ -602,6 +602,11 @@ def export(model: str = config.MODEL, out: Path = config.SITE_DATA_DIR) -> list[
     _write_or_remove(mine, out / "myteam.json", written)     # don't leave a finished week's plan on the site
     now = _forecast(bs, season, model, "is_current")
     _write_or_remove(now, out / "current.json", written)
+    if now and now["gw"] not in played:
+        # The gameweek in progress: its finished matches' pages (Live Gameweek), once `xpfpl fetch` has them.
+        happened = _matches(season, now["gw"], people)
+        if happened:
+            written.append(_write(happened, out / "matches" / f"gw{now['gw']:02d}.json"))
     _write_or_remove(_live(now, mine, fx), out / "live.json", written)
     market = _markets(matches)
     if market:

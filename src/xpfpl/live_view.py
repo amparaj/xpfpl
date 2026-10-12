@@ -72,7 +72,7 @@ def render(bs: dict, fx: list[dict], team_short: dict[int, str], model: str = co
     if model_team and model_team.get("made_at") and data.get("deadline"):
         gap = pd.Timestamp(data["deadline"]) - pd.Timestamp(model_team["made_at"])
         if gap > pd.Timedelta(days=2):
-            st.warning(f"This model's team was picked {gap.days} days before the deadline and not again since, so it missed "
+            st.warning(f"This Model's Team was picked {gap.days} days before the deadline and not again since, so it missed "
                        "the team news in between. Run `xpfpl recommend` (or Plan Ahead) on deadline day.")
 
     teams = {label: data["teams"][k] for k, label in (("model", "This Model's Team"), ("mine", "My Team")) if data["teams"].get(k)}

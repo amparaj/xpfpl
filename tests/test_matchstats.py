@@ -95,7 +95,7 @@ def test_fetch_downloads_only_finished_matches_not_already_archived(tmp_path, mo
     fixtures = pd.DataFrame({"fixture": [1, 2, 3], "gw": pd.array([1, 1, 2], dtype="Int64"), "home_code": [1, 3, 5],
                              "away_code": [2, 4, 6], "finished": [True, True, False]})
     monkeypatch.setattr(matchstats, "ARCHIVE", tmp_path)
-    monkeypatch.setattr(matchstats, "fpl_fixtures", lambda season: fixtures)
+    monkeypatch.setattr(matchstats, "fpl_fixtures", lambda season, live=None: fixtures)
     monkeypatch.setattr(matchstats.archive, "has_season", lambda season: True)
     asked = []
 
@@ -123,3 +123,19 @@ def test_fetch_downloads_only_finished_matches_not_already_archived(tmp_path, mo
             tmp_path / "2026-27" / table / "gw01.parquet")
     matchstats.fetch("2026-27")
     assert asked == []
+
+
+def test_fpl_fixtures_adds_the_gameweek_in_progress(tmp_path, monkeypatch):
+    # The archive has GW5 only; the live list adds GW6, where full time (finished_provisional) counts.
+    archived = pd.DataFrame({"id": [1], "event": [5], "team_h": [1], "team_a": [2], "finished": [True]})
+    monkeypatch.setattr(matchstats.archive, "fixtures", lambda season: archived)
+    monkeypatch.setattr(matchstats.archive, "FPL", tmp_path)
+    (tmp_path / "2026-27").mkdir()
+    pd.DataFrame({"id": [1, 2, 3, 4], "code": [10, 20, 30, 40]}).to_parquet(tmp_path / "2026-27" / "teams.parquet")
+    live = [{"id": 1, "event": 5, "team_h": 1, "team_a": 2, "finished": True, "finished_provisional": True},
+            {"id": 2, "event": 6, "team_h": 3, "team_a": 4, "finished": False, "finished_provisional": True},
+            {"id": 3, "event": 6, "team_h": 2, "team_a": 1, "finished": False, "finished_provisional": False}]
+    fx = matchstats.fpl_fixtures("2026-27", live).set_index("fixture")
+    assert fx["finished"].to_dict() == {1: True, 2: True, 3: False}
+    assert fx.at[2, "home_code"] == 30
+    assert len(matchstats.fpl_fixtures("2026-27")) == 1             # without the live list: the archive only

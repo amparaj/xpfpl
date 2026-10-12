@@ -140,3 +140,24 @@ def test_analyse_end_to_end():
     assert out["players"]["verdict"][out["players"]["element"].index(3)] is None   # his match is still on
     assert out["week"]["n"] == 1                            # only finished matches are scored
     assert out["lessons"]["lucky"] == [1] and out["lessons"]["stale"] == [1]
+
+
+def test_provisional_bonus_follows_fpl_ties():
+    assert live.provisional_bonus([(1, 30), (2, 25), (3, 20), (4, 10)]) == [(1, 3), (2, 2), (3, 1)]
+    # A tie for first: both 3, the next 1.
+    assert live.provisional_bonus([(1, 30), (2, 30), (3, 20), (4, 10)]) == [(1, 3), (2, 3), (3, 1)]
+    # A tie for second: both 2, no 1.
+    assert live.provisional_bonus([(1, 30), (2, 25), (3, 25), (4, 10)]) == [(1, 3), (2, 2), (3, 2)]
+
+
+def test_match_events():
+    f = fixture(1, 1, 2, done=False)
+    f["stats"] = [{"identifier": "goals_scored", "h": [{"value": 2, "element": 10}], "a": []},
+                  {"identifier": "bonus", "h": [], "a": []},
+                  {"identifier": "bps", "h": [{"value": 40, "element": 10}, {"value": 20, "element": 11}],
+                   "a": [{"value": 25, "element": 20}]}]
+    m = live.matches([f], 6)[0]
+    assert m["events"]["goals_scored"] == {"h": [[10, 2]], "a": []}
+    assert m["events"]["bps"][0] == [10, 40, "h"]
+    assert m["events"]["bonus_provisional"]
+    assert m["events"]["bonus"] == {"h": [[10, 3], [11, 1]], "a": [[20, 2]]}

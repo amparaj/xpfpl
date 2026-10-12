@@ -631,3 +631,5 @@ pre.code {
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .lesson-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; padding: 3px 8px; border-radius: 6px;
   background: var(--chip); }
+a.match-chip { color: inherit; text-decoration: none; }
+a.match-chip:hover { border-color: var(--s1); }
