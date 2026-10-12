@@ -126,6 +126,14 @@ export interface MyTeamPrivate {
   weeks: MyWeek[]; captains: CaptainOdds[];
   /** The squad: each player's row of the saved forecast (xP per gameweek, minutes, simulated range, confidence). */
   players: Columns;
+  /** The players the team is most exposed to against the field (field.py); absent in older files. */
+  field?: { threats: FieldExposure[]; differentials: FieldExposure[] } | null;
+}
+/** A player where the team's share of his points (0 / 1 / 2 captain) differs from the field's effective ownership. */
+export interface FieldExposure { element: number; eo: number; share: number; exposure: number; swing: number }
+/** The team's first gameweek against the average manager in the same simulated weeks (field.py; display only). */
+export interface FieldNumbers {
+  gw: number; field: number; team: number; margin: number; sd: number; p10: number; p50: number; p90: number; p_beat: number;
 }
 /** My Team (export._my_team): the team for the gameweek in progress, until it's finished, or the next
  * one. The numbers are public. The team itself is `private` once the deadline has passed; before it,
@@ -137,6 +145,8 @@ export interface MyTeam {
   total: { xp: number; points: Spread | null };
   /** The team against keeping last week's squad (its best XI and captain each week), in the same simulated weeks. */
   against: { xp: number; p_better?: number; p_tie?: number; mean?: number; p10?: number; p50?: number; p90?: number } | null;
+  /** Against the field (absent in older files). */
+  field?: FieldNumbers | null;
   private: MyTeamPrivate | null;
   sealed: Sealed | null;
 }

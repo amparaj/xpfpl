@@ -151,7 +151,7 @@ def simulation(season: str, gw: int, model: str, players: pd.DataFrame, gws: lis
     score next to it once the week is played: the team's simulated score (auto-subs, vice,
     chip), its captain options' odds (the five highest xP in the XI), and the chance Triple
     Captain / Bench Boost would clear their thresholds. None without saved simulations."""
-    from xpfpl import simulate
+    from xpfpl import field, simulate
     draws = simulate.load(season, gw, model)
     if draws is None or gw not in draws.gameweeks or not set(plan.squad) <= set(draws.elements):
         return None
@@ -164,7 +164,9 @@ def simulation(season: str, gw: int, model: str, players: pd.DataFrame, gws: lis
     return {"sims": draws.sims, "points": simulate.spread(week["points"]),
             "captains": [{"element": int(e), **{k: round(float(v), 4) for k, v in r.items()}}
                          for e, r in odds.iterrows()],
-            "chips": simulate.chip_odds(draws, plan, [g for g in gws if g in draws.gameweeks], available, position)}
+            "chips": simulate.chip_odds(draws, plan, [g for g in gws if g in draws.gameweeks], available, position),
+            # Against the average manager (field.py, display only): checkable once the week is played.
+            "field": field.against(draws, gw, field.plan_team(plan, gw), players, chip=chip) if "selected_by" in players else None}
 
 
 def describe(decision: dict, players: pd.DataFrame) -> str:

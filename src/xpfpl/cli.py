@@ -571,6 +571,15 @@ def _monte_carlo(players: pd.DataFrame, gameweeks: list[int], plan, model: str, 
     for e, r in simulate.captain_odds(draws, gw, options).iterrows():
         print(f"    {players.at[e, 'name'][:16]:16s} {players.at[e, f'xp_{gw}']:5.2f}   {r['pts_p10']:3.0f} to {r['pts_p90']:3.0f}"
               f"   {r['p_haul']:4.0%}   {r['p_blank']:4.0%}        {r['p_best']:4.0%}")
+    if "selected_by" in players:
+        from xpfpl import field
+        f = field.against(draws, gw, field.plan_team(plan, gw), players)
+        print(f"  Against the field (the average manager, from ownership; display only, the plan still maximises xP):")
+        print(f"    beats it in {f['p_beat']:.0%} of simulated weeks, margin {f['p10']:+.0f} to {f['p90']:+.0f} "
+              f"(middle 80%), average {f['margin']:+.1f} by this model's xP (which flatters its own picks)")
+        for key, text in (("threats", "popular, and you're under the field on"), ("differentials", "your differentials")):
+            if f[key]:
+                print(f"    {text}: " + ", ".join(f"{players.at[r['element'], 'name']} (EO {r['eo']:.0%})" for r in f[key][:4]))
     rivals = simulate.transfer_odds(draws, players, gameweeks, plan, **solve_kwargs)
     if rivals:
         print(f"  The recommendation against the alternatives, over GW{gameweeks[0]}-{draws.gameweeks[-1]} "
@@ -579,6 +588,10 @@ def _monte_carlo(players: pd.DataFrame, gameweeks: list[int], plan, model: str, 
             print(f"    vs {r['label'].lower()} ({r['moves']}): ahead in {r['p_better']:.0%} of simulations "
                   f"(behind in {1 - r['p_better'] - r['p_tie']:.0%}), by {r['mean']:+.1f} on average, "
                   f"{r['p10']:+.0f} to {r['p90']:+.0f}")
+            if "field" in r:
+                a, b = r["field"]["a"], r["field"]["b"]
+                print(f"      against the field in GW{gw}: the recommendation beats it in {a['p_beat']:.0%} (spread sd {a['sd']:.1f}), "
+                      f"the alternative in {b['p_beat']:.0%} (sd {b['sd']:.1f})")
         print("    Near 50% means a coin flip: either choice is fine.")
     return draws
 

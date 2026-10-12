@@ -16,7 +16,7 @@ import pandas as pd
 import requests
 import streamlit as st
 
-from xpfpl import (chips, config, guide, live_view, market_view, match_view, models, myteam, news_view, price_view,
+from xpfpl import (chips, config, field, guide, live_view, market_view, match_view, models, myteam, news_view, price_view,
                    profile_view, review, simulate)
 from xpfpl.data import api, cups
 from xpfpl.data.history import load_matches
@@ -251,6 +251,59 @@ def show_monte_carlo(players: pd.DataFrame, plan, gw: int, gameweeks: tuple[int,
                      "optimiser and after transfer penalties. Near 50% is a coin flip: either choice is fine.")
     else:
         c[1].caption("Nothing to compare: no alternative plan differs from this one.")
+    if "selected_by" in players:
+        show_field(field.against(draws, gw, field.plan_team(plan, gw), players, chip=chip), players, odds)
+
+
+def show_field(f: dict | None, players: pd.DataFrame, odds: list[dict] | None = None) -> None:
+    """Against the field (field.py): the team's GW next to the average manager's in the same simulated
+    weeks, the players it's most exposed to, and (Plan Ahead) each alternative's numbers. Display only."""
+    if not f:
+        return
+    gw = f["gw"]
+    st.markdown(f"**Against the field in GW{gw}** (display only: the plan still maximises xP)")
+    m = st.columns(3)
+    m[0].metric("Beats the average manager", f"{f['p_beat']:.0%}",
+                help="How often this team outscores the field (every player's points x his effective ownership) "
+                     "in the same simulated week: the weeks you gain rank.")
+    m[1].metric("Margin, middle 80%", f"{f['p10']:+.0f} to {f['p90']:+.0f}",
+                help=f"Average {f['margin']:+.1f}, by this model's xP: it rates the crowd's players lower than its "
+                     "own picks, so the average flatters any team it picked. The spread is the rank risk.")
+    m[2].metric("Swing", f"±{f['sd']:.1f}", help="The standard deviation of the margin: bigger = a bolder team, "
+                "more rank gained or lost either way.")
+    name = players["name"].to_dict()
+    c = st.columns(2)
+    for col, key, title in ((c[0], "threats", "Popular players you're under the field on"),
+                            (c[1], "differentials", "Your differentials")):
+        rows = f.get(key) or []
+        col.markdown(f"*{title}*")
+        if rows:
+            col.dataframe(pd.DataFrame({"Player": [name.get(r["element"], r["element"]) for r in rows],
+                                        "Field EO": [r["eo"] for r in rows], "Yours": [r["share"] for r in rows],
+                                        "Swing": [r["swing"] for r in rows]}),
+                          hide_index=True, width="stretch",
+                          column_config={"Field EO": st.column_config.NumberColumn(format=PERCENT),
+                                         "Yours": st.column_config.NumberColumn(format="%.0f"),
+                                         "Swing": st.column_config.NumberColumn(format="%+.2f")})
+        else:
+            col.caption("None.")
+    if odds and any("field" in o for o in odds):
+        st.dataframe(pd.DataFrame({
+            "Against": [o["label"] for o in odds if "field" in o],
+            "Their moves": [o["moves"] for o in odds if "field" in o],
+            "This plan beats the field": [o["field"]["a"]["p_beat"] for o in odds if "field" in o],
+            "They beat the field": [o["field"]["b"]["p_beat"] for o in odds if "field" in o],
+            "This plan's swing": [o["field"]["a"]["sd"] for o in odds if "field" in o],
+            "Their swing": [o["field"]["b"]["sd"] for o in odds if "field" in o],
+        }), hide_index=True, width="stretch",
+            column_config={k: st.column_config.NumberColumn(format=PERCENT)
+                           for k in ("This plan beats the field", "They beat the field")}
+                          | {k: st.column_config.NumberColumn(format="±%.1f") for k in ("This plan's swing", "Their swing")})
+    st.caption("Effective ownership (EO) = the share of managers counting a player's points, a captain twice: "
+               "ownership x his chance of playing (scaled to 11 starters a manager) plus an estimated captaincy "
+               "share (FPL publishes it only after the deadline). Yours: 0 benched or not owned, 1 started, 2 captain. "
+               "Swing = (yours - EO) x the spread of his points: negative = you lose ground when he hauls. "
+               "Use it for close calls, when the xP between two options is about a point.")
 
 
 def settings_text(settings: dict | None, name: dict) -> str:
@@ -925,6 +978,7 @@ with tab_myteam:
                         f"GW{show_gw - 1} squad (its best XI and captain each week)"
                         + (f"; ahead in {a['p_better']:.0%} of the same simulated weeks (middle 80%: "
                            f"{a['p10']:+.0f} to {a['p90']:+.0f})." if "p_better" in a else "."))
+        show_field(out.get("field"), players)
 
         view = st.segmented_control("Show team for", [f"GW{g}" for g in gameweeks], default=f"GW{show_gw}",
                                     key="myteam_week")

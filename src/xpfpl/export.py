@@ -438,10 +438,13 @@ def _my_team(bs: dict, season: str, model: str) -> dict | None:
         "model": used, "team_name": api.entry(team_id)["name"], "gameweeks": out["gameweeks"], "sims": out["sims"],
         "weeks": [{k: w[k] for k in ("gw", "xp", "points", "target", "p_target") if k in w} for w in out["weeks"]],
         "total": {"xp": out["total"]["xp"], "points": out["total"]["points"]}, "against": out["against"],
+        # Against the field (field.py): the numbers are public, the players exposed to stay private.
+        "field": {k: v for k, v in out["field"].items() if k not in ("threats", "differentials")} if out.get("field") else None,
     }
     private = {"source": team["source"], "saved_at": team["saved_at"], "chip": team["chip"],
                "transfers": team["transfers"], "hits": team["hits"], "bank": team["bank"], "settings": team.get("settings"),
-               "weeks": out["weeks"], "captains": out["captains"], "players": table(out["players"], digits=3)}
+               "weeks": out["weeks"], "captains": out["captains"], "players": table(out["players"], digits=3),
+               "field": {k: out["field"][k] for k in ("threats", "differentials")} if out.get("field") else None}
     secret = myteam.site_secret()
     if locked:
         return public | {"private": private, "sealed": None}

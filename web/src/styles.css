@@ -631,3 +631,6 @@ pre.code {
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .lesson-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; padding: 3px 8px; border-radius: 6px;
   background: var(--chip); }
+
+/* My Team: against the field, threats and differentials side by side (stacked on a phone). */
+.field-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin: 8px 0; }
