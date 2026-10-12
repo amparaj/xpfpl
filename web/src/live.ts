@@ -43,6 +43,8 @@ export interface LiveTeam {
 
 export interface Live {
   generated: string; gw: number; deadline: string | null; model: string | null; forecast_made: string | null;
+  /** api.gameweek_status: "live" (matches to play or bonus to add), "checking" (FPL confirming), "complete". */
+  phase?: "live" | "checking" | "complete" | "pre-season" | null;
   matches: LiveMatch[]; done: number; total: number;
   week: LiveSummary & { positions?: Record<string, LiveSummary> };
   teams: { model?: LiveTeam; mine?: LiveTeam };

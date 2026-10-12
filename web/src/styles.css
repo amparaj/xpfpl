@@ -17,6 +17,7 @@
   --neutral: #b9b8b3; /* draw, "our odds" */
   --good: #006300;
   --bad: #b42323;
+  --warn: #9a6400;     /* in between: amber */
   --focus: #2a78d6;
 }
 @media (prefers-color-scheme: dark) {
@@ -39,6 +40,7 @@
     --neutral: #6b6a65;
     --good: #0ca30c;
     --bad: #e66767;
+    --warn: #e0a42e;
     --focus: #3987e5;
   }
 }
@@ -61,6 +63,7 @@
   --neutral: #6b6a65;
   --good: #0ca30c;
   --bad: #e66767;
+    --warn: #e0a42e;
   --focus: #3987e5;
 }
 
@@ -636,3 +639,15 @@ a.match-chip:hover { border-color: var(--s1); }
 
 /* My Team: against the field, threats and differentials side by side (stacked on a phone). */
 .field-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin: 8px 0; }
+
+/* Live Gameweek: where the gameweek is, next to the title (red live, amber in between, green done). */
+.live-title { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.status-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; padding: 3px 10px;
+  border-radius: 999px; background: var(--chip); color: var(--ink-2); }
+.status-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.status-badge.live { background: color-mix(in srgb, var(--bad) 14%, transparent); color: var(--bad); }
+.status-badge.live .status-dot { animation: status-pulse 1.6s ease-in-out infinite; }
+.status-badge.pending { background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); }
+.status-badge.complete { background: color-mix(in srgb, var(--good) 14%, transparent); color: var(--good); }
+@keyframes status-pulse { 50% { opacity: 0.3; } }
+@media (prefers-reduced-motion: reduce) { .status-badge.live .status-dot { animation: none; } }

@@ -161,3 +161,15 @@ def test_match_events():
     assert m["events"]["bps"][0] == [10, 40, "h"]
     assert m["events"]["bonus_provisional"]
     assert m["events"]["bonus"] == {"h": [[10, 3], [11, 1]], "a": [[20, 2]]}
+
+
+def test_reasons_wait_for_the_match():
+    r = pd.Series({"news_changed": True, "status": "d", "chance": 75, "status_deadline": "a", "chance_deadline": 100,
+                   "p_play": 0.97, "minutes": 0, "position": 3, "goals_scored": 0, "assists": 0, "expected_goals": 0.0,
+                   "expected_assists": 0.0, "bonus": 0, "red_cards": 0, "own_goals": 0, "penalties_missed": 0,
+                   "penalties_saved": 0, "goals_conceded": 0, "saves": 0, "band": "below"})
+    assert any("Didn't play" in x for x in live.reasons(r))
+    assert live.reasons(r, final=False) == []                        # no verdicts while his match is on
+    on = r.copy()
+    on[["minutes", "goals_scored", "expected_goals"]] = [30, 1, 0.4]
+    assert live.reasons(on, final=False) == ["Scored 1 from 0.40 xG"]  # what has happened so far, nothing more

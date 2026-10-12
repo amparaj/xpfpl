@@ -19,6 +19,21 @@ LESSONS = {
 }
 
 
+STATES = {live.LIVE: "Playing", live.TO_PLAY: "To play", live.BLANK: "No match"}
+
+
+def status(data: dict) -> tuple[str, str]:
+    """Where the gameweek is, as a badge: red while a match is on, orange in between and while FPL adds
+    the bonus and checks the data, green once it's confirmed."""
+    states = [m["state"] for m in data["matches"]]
+    if live.LIVE in states:
+        return f"Live: {states.count(live.LIVE)} playing now", "red"
+    if live.TO_PLAY in states:
+        return "In progress: more matches to come", "orange"
+    return {"complete": ("Complete", "green"), "checking": ("Checking: FPL confirming the points", "orange")}.get(
+        data.get("phase"), ("Matches over: bonus to come", "orange"))
+
+
 @st.cache_data(ttl=120, show_spinner="Loading the live gameweek...")
 def analysis(_bs: dict, _fx: list[dict], gw: int | None, model: str) -> dict | None:
     """live.local, cached two minutes (`gw` keys the cache)."""
@@ -46,7 +61,9 @@ def render(bs: dict, fx: list[dict], team_short: dict[int, str], model: str = co
     t["Why"] = t["reasons"].map(lambda r: " · ".join(r))
     name = lambda e: players.at[e, "web_name"] if e in players.index else str(e)   # noqa: E731
 
+    label, colour = status(data)
     st.subheader(f"GW{gw}: {data['done']} of {data['total']} matches over")
+    st.badge(label, color=colour)
     st.caption(f"Against the {data['model']} forecast saved before the deadline"
                + (f" ({data['forecast_made'][:16].replace('T', ' ')} UTC)" if data.get("forecast_made") else "")
                + f". Live points from FPL, as of {data['generated'][:16].replace('T', ' ')} UTC (cached two minutes; "
@@ -84,11 +101,16 @@ def render(bs: dict, fx: list[dict], team_short: dict[int, str], model: str = co
         picks["Player"] = picks.index.map(name)
         picks["Club"] = players["team"].reindex(picks.index).map(team_short)
         picks["Counted"] = picks["points"] * picks["multiplier"]
-        picks["Why"] = t["Why"].reindex(picks.index)
-        st.dataframe(picks[["Player", "Club", "role", "xp", "points", "Counted", "minutes", "state", "Why"]]
-                     .rename(columns={"role": "Picked", "xp": "xP", "points": "Points", "minutes": "Mins", "state": "Match"}),
+        picks = picks.join(t.reindex(columns=["Pos", "pts_p10", "pts_p90", "error", "verdict", "Why"]), how="left")
+        settled = picks["state"] == live.DONE
+        picks["Range"] = [f"{a:.0f}-{b:.0f}" if a == a and b == b else "" for a, b in zip(picks["pts_p10"], picks["pts_p90"])]
+        picks["Diff"] = picks["error"].where(settled)
+        picks["Mins"] = [f"{m:.0f}" if s == live.DONE or m else STATES.get(s, s) for m, s in zip(picks["minutes"], picks["state"])]
+        st.dataframe(picks[["Player", "Club", "Pos", "role", "xp", "Range", "Counted", "Mins", "Diff", "verdict", "Why"]]
+                     .rename(columns={"role": "Picked", "xp": "xP", "Counted": "Points", "verdict": "Mainly"}),
                      hide_index=True, width="stretch",
-                     column_config={"xP": st.column_config.NumberColumn(format=style.POINTS)})
+                     column_config={"xP": st.column_config.NumberColumn(format=style.POINTS),
+                                    "Diff": st.column_config.NumberColumn(format="%+.1f", help="His points minus xP, once his matches are over")})
         notes = [f"{name(s['in'])} on for {name(s['out'])}" for s in team["subs"]]
         if team["armband"] not in (None, team["captain"]):
             notes.append(f"armband to {name(team['armband'])} (the captain didn't play)")
@@ -108,15 +130,21 @@ def render(bs: dict, fx: list[dict], team_short: dict[int, str], model: str = co
                    "defensive contribution, cards. A minutes or rest part that stays on one side week after week is "
                    "what to fix in the model; finishing evens out.")
 
-    done = t[t["state"] == live.DONE].copy()
+    # Everyone else: the players in the teams are in their own table.
+    in_teams = {p["element"] for team in data["teams"].values() for p in team["picks"]}
+    done = t[(t["state"] == live.DONE) & ~t.index.isin(list(in_teams))].copy()
     if len(done):
         st.markdown("#### Who beat the forecast, and who fell short")
+        if in_teams:
+            st.caption("Everyone else: the players in the teams above are in their table.")
         side = st.segmented_control("Show", ["Fell short", "Beat it", "Biggest either way"], default="Fell short", key="live_side") or "Fell short"
         shown = done[done["error"] < 0] if side == "Fell short" else done[done["error"] > 0] if side == "Beat it" else done
         shown = shown.reindex(shown["error"].abs().sort_values(ascending=False).index).head(30)
+        shown = shown.reindex(columns=[*shown.columns, *{"pts_p10", "pts_p90"} - set(shown.columns)])
+        shown["Range"] = [f"{a:.0f}-{b:.0f}" if a == a and b == b else "" for a, b in zip(shown["pts_p10"], shown["pts_p90"])]
         shown = shown.rename(columns={"xp": "xP", "points": "Points", "minutes": "Mins", "error": "Diff", "verdict": "Mainly",
                                       "minutes_part": "Minutes", "finishing": "Finishing", "other": "Chances & the rest"})
-        st.dataframe(shown[["Player", "Club", "Pos", "xP", "Points", "Mins", "Diff", "Mainly", "Minutes", "Finishing",
+        st.dataframe(shown[["Player", "Club", "Pos", "xP", "Range", "Points", "Mins", "Diff", "Mainly", "Minutes", "Finishing",
                             "Chances & the rest", "Why"]], hide_index=True, width="stretch",
                      column_config={c: st.column_config.NumberColumn(format=style.POINTS)
                                     for c in ("xP", "Diff", "Minutes", "Finishing", "Chances & the rest")})

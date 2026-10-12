@@ -401,7 +401,7 @@ def _write_or_remove(obj, path: Path, written: list[Path]) -> None:
         path.unlink(missing_ok=True)
 
 
-def _live(current: dict | None, mine: dict | None, fixtures: list[dict]) -> dict | None:
+def _live(current: dict | None, mine: dict | None, fixtures: list[dict], phase: str | None = None) -> dict | None:
     """live.json for the gameweek in progress (live.py), as of now. The `live` branch's copy,
     refreshed every ten minutes during matches by .github/workflows/live-snapshot.yml, is newer
     whenever there's one for the same gameweek: the page reads whichever is."""
@@ -410,7 +410,7 @@ def _live(current: dict | None, mine: dict | None, fixtures: list[dict]) -> dict
     from xpfpl import live
     gw = current["gw"]
     teams = {"model": live.model_team(current.get("model_team"), gw), "mine": live.my_team(mine, gw)}
-    return live.analyse(current, api.event_live(gw), fixtures, {k: v for k, v in teams.items() if v})
+    return live.analyse(current, api.event_live(gw), fixtures, {k: v for k, v in teams.items() if v}, phase=phase)
 
 
 def _my_team(bs: dict, season: str, model: str) -> dict | None:
@@ -610,7 +610,7 @@ def export(model: str = config.MODEL, out: Path = config.SITE_DATA_DIR) -> list[
         happened = _matches(season, now["gw"], people)
         if happened:
             written.append(_write(happened, out / "matches" / f"gw{now['gw']:02d}.json"))
-    _write_or_remove(_live(now, mine, fx), out / "live.json", written)
+    _write_or_remove(_live(now, mine, fx, api.gameweek_status(bs, fx)["phase"]), out / "live.json", written)
     market = _markets(matches)
     if market:
         written.append(_write(market, out / "markets.json"))
