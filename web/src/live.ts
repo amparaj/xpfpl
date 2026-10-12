@@ -6,9 +6,19 @@ import { useMemo } from "react";
 import type { Columns, Spread } from "./data";
 import { useData } from "./site";
 
+/** FPL's events in a match, per side ("h", "a") as [element, value] pairs. */
+export type LiveEvents = Partial<Record<"goals_scored" | "assists" | "own_goals" | "penalties_saved" | "penalties_missed" |
+  "yellow_cards" | "red_cards" | "saves" | "bonus", { h: [number, number][]; a: [number, number][] }>> & {
+  /** The match's BPS leaders: [element, BPS, side]. */
+  bps?: [number, number, "h" | "a"][];
+  /** The bonus was worked out from the BPS: FPL hasn't awarded it yet. */
+  bonus_provisional?: boolean;
+};
+
 export interface LiveMatch {
   id: number; home: number; away: number; kickoff: string | null;
   home_score: number | null; away_score: number | null; minutes: number | null; state: "done" | "live" | "to play";
+  events?: LiveEvents;
 }
 
 /** Players' average over a group: points minus xP split into minutes, finishing and the rest. */
@@ -42,7 +52,7 @@ export interface Live {
 }
 
 export interface LivePlayer {
-  element: number; xp: number; points: number; minutes: number; state: string; p_play: number | null;
+  element: number; team: number; xp: number; bps?: number; saves?: number; defensive_contribution?: number; points: number; minutes: number; state: string; p_play: number | null;
   pts_p10: number | null; pts_p90: number | null; p_haul: number | null; p_blank: number | null;
   goals_scored: number; assists: number; expected_goals: number; expected_assists: number; bonus: number;
   error: number; minutes_part: number; finishing: number; other: number; band: "inside" | "above" | "below" | null;

@@ -805,6 +805,12 @@ side week after week shows up there. `xpfpl export` warns when the team news has
 gameweek's forecast was saved, and the Next Gameweek page says so too: re-run `xpfpl recommend` on
 deadline day. The dashboard has the same view in its Live Gameweek tab.
 
+Each match of the gameweek opens from its score (`#live/<fixture>`): FPL's own events as they happen
+(scorers, assists, cards, saves, bonus, worked out from the BPS until FPL adds it), refreshed with the
+rest, then the same match page as Past Gameweeks (shot map, xG race, team stats, every player's points
+against his xP) once the match data is in. `xpfpl fetch` now picks that up for each match as it ends,
+not only once the whole gameweek is confirmed, so run it and `xpfpl publish` during a gameweek too.
+
 ### Team news
 
 The Team News page reads `news.json` from the `news` branch the same way. A scheduled Action

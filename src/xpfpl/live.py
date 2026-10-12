@@ -79,12 +79,49 @@ def club_state(fixtures: list[dict], gw: int) -> dict[int, str]:
             for club, fs in out.items()}
 
 
+EVENTS = ["goals_scored", "assists", "own_goals", "penalties_saved", "penalties_missed", "yellow_cards",
+          "red_cards", "saves", "bonus"]
+BPS_LEADERS = 5
+
+
+def provisional_bonus(bps: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    """(element, bonus) from a match's (element, BPS): 3, 2 and 1 for the top three, FPL's way with
+    ties (a tie for first gets 3 each and the next player 1; a tie for second 2 each and no 1)."""
+    ranked = sorted(bps, key=lambda x: -x[1])
+    out = []
+    for e, v in ranked:
+        rank = 1 + sum(1 for _, w in ranked if w > v)
+        if rank <= 3:
+            out.append((e, 4 - rank))
+    return out
+
+
+def _events(f: dict) -> dict:
+    """FPL's own match stats for one fixture: each event as {"h": [[element, value]], "a": [...]},
+    the BPS leaders, and the bonus: FPL's once it's awarded, else worked out from the BPS
+    (`bonus_provisional` true)."""
+    stats = {s["identifier"]: s for s in f.get("stats") or []}
+    pairs = lambda key, side: [[int(x["element"]), int(x["value"])] for x in stats.get(key, {}).get(side, [])]   # noqa: E731
+    out = {key: {"h": pairs(key, "h"), "a": pairs(key, "a")} for key in EVENTS if key in stats}
+    bps = [(e, v, "h") for e, v in pairs("bps", "h")] + [(e, v, "a") for e, v in pairs("bps", "a")]
+    bps.sort(key=lambda x: -x[1])
+    out["bps"] = [[e, v, side] for e, v, side in bps[:BPS_LEADERS]]
+    if not (out.get("bonus", {}).get("h") or out.get("bonus", {}).get("a")) and bps and f.get("started"):
+        sides = {e: side for e, _, side in bps}
+        bonus = provisional_bonus([(e, v) for e, v, _ in bps])
+        out["bonus"] = {side: [[e, b] for e, b in bonus if sides[e] == side] for side in ("h", "a")}
+        out["bonus_provisional"] = True
+    return out
+
+
 def matches(fixtures: list[dict], gw: int) -> list[dict]:
-    """The gameweek's matches with their score and state, in kick-off order."""
+    """The gameweek's matches with their score and state, in kick-off order, and FPL's events in
+    each one (`events`: who scored, assisted, was booked, made saves, the BPS leaders and bonus)."""
     fs = sorted((f for f in fixtures if f.get("event") == gw), key=lambda f: f.get("kickoff_time") or "")
     return [{"id": f["id"], "home": f["team_h"], "away": f["team_a"], "kickoff": f.get("kickoff_time"),
              "home_score": f.get("team_h_score"), "away_score": f.get("team_a_score"), "minutes": f.get("minutes"),
-             "state": DONE if _done(f) else LIVE if f.get("started") else TO_PLAY} for f in fs]
+             "state": DONE if _done(f) else LIVE if f.get("started") else TO_PLAY,
+             "events": _events(f) if f.get("started") else {}} for f in fs]
 
 
 # ---------------------------------------------------------------- forecast against result
@@ -329,7 +366,7 @@ def analyse(forecast: dict, live: dict, fixtures: list[dict], teams: dict[str, d
     for c in STATS:
         t[c] = t[c].fillna(0.0) if c in t else 0.0
     t = t[t["position"].notna() & t["team"].notna()].copy()
-    t["position"] = t["position"].astype(int)
+    t["position"], t["team"] = t["position"].astype(int), t["team"].astype(int)
     states = club_state(fixtures, gw)
     t["state"] = t["team"].astype(int).map(states).fillna(BLANK)
     parts = decompose(t)
@@ -352,8 +389,9 @@ def analyse(forecast: dict, live: dict, fixtures: list[dict], teams: dict[str, d
     shown = t[(t["xp"] >= 0.5) | (t["minutes"] > 0) | t.index.isin(list(picked)) | t["news_changed"]].copy()
     shown["reasons"] = [reasons(r) for _, r in shown.iterrows()]
     shown["verdict"] = [verdict(r) if r["state"] == DONE else None for _, r in shown.iterrows()]
-    keep = ["xp", "total_points", "minutes", "state", "p_play", "pts_p10", "pts_p90", "p_haul", "p_blank",
-            "goals_scored", "assists", "expected_goals", "expected_assists", "bonus", "error", "minutes_part",
+    keep = ["team", "xp", "total_points", "minutes", "state", "p_play", "pts_p10", "pts_p90", "p_haul", "p_blank",
+            "goals_scored", "assists", "expected_goals", "expected_assists", "bonus", "bps", "saves",
+            "defensive_contribution", "error", "minutes_part",
             "finishing", "other", "band", "news_changed", "verdict", "reasons"]
     shown = shown[[c for c in keep if c in shown]].rename(columns={"total_points": "points"})
 

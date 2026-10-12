@@ -4,7 +4,7 @@
 // FotMob's, via FPL-Core-Insights (export.py `_matches`, data/matchstats.py).
 
 import * as Plot from "@observablehq/plot";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { color } from "../colors";
 import { Chart, Club, Legend, Loading, Note, Segmented, Table, Tiles, plotDefaults, type Column } from "../components/ui";
 import { gwFile, rows, type Gameweek, type GwRow, type Markets } from "../data";
@@ -58,12 +58,20 @@ function clock(s: Shot): { label: string; t: number } {
 
 // ---------------------------------------------------------------- the page
 
-export default function Match({ gw, fixture }: { gw: number; fixture: number }) {
+/** A match page. Past Gameweeks gives just `gw` and `fixture`. Live Gameweek (a gameweek not yet in
+ * Past Gameweeks) also gives `back`, the live `score`, the players' points and xP as a `week` built
+ * from live.json, and `children`: FPL's live events, shown above the match data. */
+export default function Match({ gw, fixture, back, score, week: liveWeek, children }: {
+  gw: number; fixture: number; back?: { href: string; label: string }; score?: [number | null, number | null];
+  week?: Gameweek; children?: ReactNode;
+}) {
   const site = useSite();
-  const week = useData<Gameweek>(site.root + gwFile(gw));
+  const saved = useData<Gameweek>(liveWeek ? null : site.root + gwFile(gw));
+  const week = liveWeek ?? saved;
   const file = useData<MatchFile>(site.root + matchFile(gw));
   const markets = useData<Markets>("markets.json");
-  const fx = site.fixtures.find((f) => f.id === fixture);
+  const fixed = site.fixtures.find((f) => f.id === fixture);
+  const fx = fixed && score ? { ...fixed, home_score: score[0], away_score: score[1] } : fixed;
   const data = file?.fixtures[String(fixture)];
 
   const shots: Placed[] = useMemo(() => {
@@ -97,14 +105,16 @@ export default function Match({ gw, fixture }: { gw: number; fixture: number }) 
 
   return (
     <>
-      <p className="crumb"><a href={gameweekHref(site, gw)}>← Gameweek {gw}{site.meta.past ? `, ${site.meta.season}` : ""}</a></p>
+      <p className="crumb">{back ? <a href={back.href}>{back.label}</a>
+        : <a href={gameweekHref(site, gw)}>← Gameweek {gw}{site.meta.past ? `, ${site.meta.season}` : ""}</a>}</p>
       <h2 className="match-title">
         <Club id={fx.home} /> {home?.name} <span className="score">{fx.home_score ?? "–"} – {fx.away_score ?? "–"}</span> {away?.name} <Club id={fx.away} />
       </h2>
       <p className="lede">{when(fx.kickoff)} · Gameweek {gw}</p>
+      {children}
       {file === undefined && <Loading />}
       {file !== undefined && !data && (
-        <p>No shot data for this match yet: it arrives a day or two after the match, with the next <code>xpfpl fetch</code>.</p>
+        <p>No shot data for this match yet: it arrives a few hours to a day or two after the match, with the next <code>xpfpl fetch</code>.</p>
       )}
       {data && (
         <Tiles tiles={[

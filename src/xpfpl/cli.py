@@ -43,7 +43,8 @@ def _fetch_cups() -> None:
     try:
         season = api.current_season(api.bootstrap())
         print(f"Cup and European matches: {cups.fetch(season)} archive file(s) written for {season}.")
-        print(f"Shots and match stats: {matchstats.fetch(season)} archive file(s) written for {season}.")
+        # The live fixture list lets the gameweek in progress in: its match pages appear as each match ends.
+        print(f"Shots and match stats: {matchstats.fetch(season, live=api.fixtures())} archive file(s) written for {season}.")
     except Exception as exc:          # a missing source shouldn't stop the FPL fetch
         print(f"  (cup and European matches / match stats not updated: {exc})")
 
