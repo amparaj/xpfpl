@@ -62,11 +62,21 @@ def long_stats(raw: pd.DataFrame) -> pd.DataFrame:
     return pd.concat(parts, ignore_index=True).dropna(subset=["home", "away"], how="all")
 
 
-def fpl_fixtures(season: str) -> pd.DataFrame:
+def fpl_fixtures(season: str, live: list[dict] | None = None) -> pd.DataFrame:
     """The season's FPL fixtures: (fixture, gw, home_code, away_code, finished). `finished` is
-    FPL's own flag: the result is in (bonus may still be provisional)."""
+    FPL's own flag: the result is in (bonus may still be provisional).
+
+    The archive only has the gameweeks FPL has checked. `live` (api.fixtures(), this season only)
+    adds the rest, so a gameweek in progress has its matches fetched as they end: there a match
+    counts as finished at full time (`finished_provisional`), before FPL confirms the bonus. The
+    source's own `finished` flag must agree too (`link`), so a match in play is never fetched."""
     fx = archive.fixtures(season)
     teams = pd.read_parquet(archive.FPL / season / "teams.parquet").set_index("id")["code"]
+    if live:
+        extra = pd.DataFrame([{"id": f["id"], "event": f["event"], "team_h": f["team_h"], "team_a": f["team_a"],
+                               "finished": bool(f.get("finished") or f.get("finished_provisional"))}
+                              for f in live if f.get("event") is not None])
+        fx = pd.concat([fx, extra[~extra["id"].isin(fx["id"])]], ignore_index=True) if fx is not None else extra
     fx = fx.drop_duplicates("id", keep="last")
     return pd.DataFrame({"fixture": fx["id"].astype(int), "gw": fx["event"].astype("Int64"),
                          "home_code": fx["team_h"].map(teams).astype(int),
@@ -307,7 +317,7 @@ def attribute(shots: pd.DataFrame, players: pd.DataFrame, home_code: pd.Series) 
     return shots
 
 
-def fetch(season: str, gameweeks=None, refresh: bool = False) -> int:
+def fetch(season: str, gameweeks=None, refresh: bool = False, live: list[dict] | None = None) -> int:
     """Download the match data of the season's finished matches into archive/matchstats. Returns
     the files written.
 
@@ -316,10 +326,11 @@ def fetch(season: str, gameweeks=None, refresh: bool = False) -> int:
     requests, and one still in progress gets its finished matches now and the rest on a later
     fetch. A finished match the source hasn't published yet (it lags a day or two) is simply
     tried again next time. `refresh` re-downloads every finished match (FotMob occasionally
-    corrects its numbers); FotMob's own shot lists, once archived, are kept even then."""
+    corrects its numbers); FotMob's own shot lists, once archived, are kept even then. `live`
+    (api.fixtures(), this season only) lets the gameweek in progress in (`fpl_fixtures`)."""
     if season < FIRST_SEASON or not archive.has_season(season):
         return 0
-    fixtures, written = fpl_fixtures(season), 0
+    fixtures, written = fpl_fixtures(season, live), 0
     done = set() if refresh else archived(season)
     wanted = fixtures[fixtures["finished"] & ~fixtures["fixture"].isin(done) & fixtures["gw"].notna()]
     if gameweeks is not None:
