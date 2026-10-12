@@ -743,7 +743,7 @@ each result opens a match page: a shot map with every shot on hover, where the s
 expected goals and momentum through the match, the team stats, the odds before the deadline, and
 each player's FPL points and xP next to his match stats; a season picker goes back to earlier
 seasons, exported to `seasons/<season>/` with their own clubs, players and fixtures),
-**Next Gameweek** (the forecast saved for the coming gameweek: captain picks with each one's simulated range and chance of 10+, the top players over
+**Live Gameweek** (from a deadline to the next: the gameweek being played against the forecast saved before it, both teams' live scores with automatic substitutions, who beat the forecast or fell short and why, split into minutes, finishing and the rest, and what to look at before the next deadline; see below), **Next Gameweek** (always FPL's next gameweek, empty until a forecast is saved for it: the forecast saved for the coming gameweek: captain picks with each one's simulated range and chance of 10+, the top players over
 the horizon with any midweek factor on their xP, each club's fixtures with our win chances and a
 badge for its cup or European matches, and anyone the betting markets have ruled out), **My Team** (the team I'm
 playing in the coming gameweek, as on the dashboard's My Team tab, with its simulated score this week and over the
@@ -790,6 +790,20 @@ three days of each player's progress and one full snapshot a day (`daily/<date>.
 replaces the branch with one commit. FPL's API only shows the present, so these runs are the only
 record of when prices moved and how FPL's projections did; `xpfpl fetch` copies them into
 `archive/prices/<season>/`.
+
+### Live gameweek
+
+The Live Gameweek page reads `live.json` from the `live` branch the same way. A scheduled Action
+(`.github/workflows/live-snapshot.yml`) runs `python -m xpfpl.live update` every ten minutes: it only
+fetches while a match is on, while FPL is still adding bonus, or when the file is six hours old. It
+needs no model: the forecast comes from the site's own `current.json` (or `next.json`, if the site was
+last published before the deadline), and FPL's `event/<gw>/live` gives every player's points item by
+item. Each player's points minus xP are split into **minutes** (he played or didn't, against the chance
+he was given), **finishing** (goals and assists beyond the match's xG and xA) and **the rest**. `xpfpl
+scorecard` records the same split for every scored gameweek (`diagnosis`), so a part that stays on one
+side week after week shows up there. `xpfpl export` warns when the team news has changed since the next
+gameweek's forecast was saved, and the Next Gameweek page says so too: re-run `xpfpl recommend` on
+deadline day. The dashboard has the same view in its Live Gameweek tab.
 
 ### Team news
 

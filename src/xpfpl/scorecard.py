@@ -15,7 +15,11 @@ against how often it happened. Forecasts that record the penalty-taker adjustmen
 (setpieces.py, `pen_xp`) are scored on it too (`penalties`): the points each player scored beyond
 his xP, against the adjustment, for the players it would have moved. Forecasts that record the
 team news (data/news.py: `avail`, `press`) are scored on it (`news`): for each kind of news, the
-chance of playing the forecast gave against how many played.
+chance of playing the forecast gave against how many played. Every forecast is also split into
+where its misses came from (`diagnosis`, live.decompose): minutes (played or not, against the
+chance given), finishing (goals and assists beyond the match's xG and xA) and the rest. Finishing
+is mostly luck and averages out; a minutes or "rest" part that stays on one side week after week
+is something to fix in the model (or a rule change).
 """
 
 import json
@@ -33,9 +37,10 @@ ACTIVE_LOOKBACK = 5            # "getting minutes" = played in one of the previo
 
 
 def _actuals(matches: pd.DataFrame, season: str, gw: int) -> pd.DataFrame:
-    """Points and minutes per player in `gw` (a double gameweek sums both matches)."""
+    """Points, minutes, goals, assists, xG and xA per player in `gw` (a double gameweek sums both matches)."""
     rows = matches[(matches["season"] == season) & (matches["gw"] == gw)]
-    return rows.groupby("element")[["total_points", "minutes"]].sum()
+    cols = ["total_points", "minutes", "goals_scored", "assists", "expected_goals", "expected_assists"]
+    return rows.groupby("element")[[c for c in cols if c in rows]].sum(min_count=1)
 
 
 def _active(matches: pd.DataFrame, season: str, gw: int) -> pd.Index:
@@ -47,7 +52,7 @@ def score(matches: pd.DataFrame, season: str) -> dict:
     """Score every saved forecast for `season` whose gameweek has been played."""
     folder = config.PREDICTIONS_DIR / season
     played = set(matches.loc[matches["season"] == season, "gw"].unique())
-    rows, positions, ranges, penalties, news = [], [], [], [], []
+    rows, positions, ranges, penalties, news, diagnosis = [], [], [], [], [], []
     for path in sorted(folder.glob("gw*_*.csv")) if folder.exists() else []:
         match = FILE.search(path.name)
         if not match:
@@ -59,7 +64,8 @@ def score(matches: pd.DataFrame, season: str) -> dict:
         pred = pd.read_csv(path, index_col="element")
         if column not in pred:
             continue
-        actual = _actuals(matches, season, gw).reindex(pred.index).fillna(0.0)   # blank GW -> 0
+        actual = _actuals(matches, season, gw).reindex(pred.index)
+        actual[["total_points", "minutes"]] = actual[["total_points", "minutes"]].fillna(0.0)   # blank GW -> 0
         y = actual["total_points"].to_numpy(dtype=float)
         p = pred[column].to_numpy(dtype=float)
         active = pred.index.isin(_active(matches, season, gw))
@@ -81,6 +87,7 @@ def score(matches: pd.DataFrame, season: str) -> dict:
                                   "beyond_xp": (y - p)[moved].round(3).tolist()})
         if "avail" in pred:
             news += _news_rows(pred, actual, gw, model)
+        diagnosis.append({"gw": gw, "model": model, **_diagnose(pred, actual, column, active)})
         for pos, name in config.POSITIONS.items():
             mask = active & (pred["position"].to_numpy() == pos)
             if mask.any():
@@ -88,7 +95,21 @@ def score(matches: pd.DataFrame, season: str) -> dict:
                                   "predicted": float(p[mask].mean()), "actual": float(y[mask].mean()),
                                   "n": int(mask.sum())})
     return {"generated": datetime.now().isoformat(timespec="seconds"), "season": season,
-            "gameweeks": rows, "positions": positions, "ranges": ranges, "penalties": penalties, "news": news}
+            "gameweeks": rows, "positions": positions, "ranges": ranges, "penalties": penalties, "news": news,
+            "diagnosis": diagnosis}
+
+
+def _diagnose(pred: pd.DataFrame, actual: pd.DataFrame, column: str, active: np.ndarray) -> dict:
+    """Mean points minus xP over the players getting minutes, split into minutes, finishing and
+    the rest (live.decompose), overall and by position."""
+    from xpfpl import live
+    t = actual.join(pred[["position", column] + [c for c in ("p_play",) if c in pred]]).rename(columns={column: "xp"})
+    t = t[active]
+    parts = live.decompose(t)
+    out = {"n": int(len(t)), **{k: float(v) for k, v in parts.mean().items()}}
+    out["positions"] = {config.POSITIONS[pos]: {k: float(v) for k, v in g.mean().items()}
+                        for pos, g in parts.groupby(t["position"])}
+    return out
 
 
 def _news_rows(pred: pd.DataFrame, actual: pd.DataFrame, gw: int, model: str) -> list[dict]:
@@ -162,6 +183,12 @@ def summarise(report: dict) -> str:
         if fit:
             lines.append(f"\nPenalty takers ({model}): best weight {fit['weight']:.2f} (se {fit['se']:.2f}) over "
                          f"{fit['n']} player-weeks; config.PENALTY_WEIGHT is {config.PENALTY_WEIGHT:g}")
+    diag = pd.DataFrame([{k: v for k, v in d.items() if k != "positions"} for d in report.get("diagnosis", [])])
+    if len(diag):
+        lines.append("\nWhere the misses came from (points minus xP per player getting minutes; finishing = goals and "
+                     "assists beyond the match's xG/xA, mostly luck):\n"
+                     + diag[["gw", "model", "n", "error", "minutes", "finishing", "other"]].sort_values(["model", "gw"])
+                     .round(3).to_string(index=False))
     news = pd.DataFrame(report.get("news", []))
     if len(news):
         pooled = news.assign(a=news["avail"] * news["n"], p=news["played"] * news["n"]).groupby(["model", "kind"])[

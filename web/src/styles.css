@@ -621,3 +621,13 @@ pre.code {
 .bands-labels > div { display: grid; grid-template-columns: auto 1fr; column-gap: 6px; align-items: center; }
 .bands-labels small { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
 .bands-labels b { grid-column: 2; font-size: 16px; font-variant-numeric: tabular-nums; }
+
+/* Live Gameweek: the week's matches as a strip of score chips, and the players in each lesson. */
+.match-strip { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 10px; }
+.match-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; padding: 3px 8px; border-radius: 6px;
+  background: var(--surface); border: 1px solid var(--grid); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.match-chip.live { border-color: var(--bad); }
+.match-chip.to-play { color: var(--muted); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.lesson-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; padding: 3px 8px; border-radius: 6px;
+  background: var(--chip); }

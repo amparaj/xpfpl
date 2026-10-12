@@ -16,7 +16,7 @@ import pandas as pd
 import requests
 import streamlit as st
 
-from xpfpl import (chips, config, guide, market_view, match_view, models, myteam, news_view, price_view,
+from xpfpl import (chips, config, guide, live_view, market_view, match_view, models, myteam, news_view, price_view,
                    profile_view, review, simulate)
 from xpfpl.data import api, cups
 from xpfpl.data.history import load_matches
@@ -607,9 +607,9 @@ if not config.MATCHES_PATH.exists():
     st.stop()
 
 # The Guide's weekly routine, left to right: look back at the week, research, plan; then the season.
-tab_guide, tab_review, tab_players, tab_news, tab_prices, tab_markets, tab_plan, tab_myteam, tab_season = st.tabs(
-    ["Guide", "Gameweek Review", "Players & Fixtures", "Team News", "Prices", "Markets", "Plan Ahead", "My Team",
-     "My Season"])
+tab_guide, tab_live, tab_review, tab_players, tab_news, tab_prices, tab_markets, tab_plan, tab_myteam, tab_season = st.tabs(
+    ["Guide", "Live Gameweek", "Gameweek Review", "Players & Fixtures", "Team News", "Prices", "Markets", "Plan Ahead",
+     "My Team", "My Season"])
 
 with tab_guide:
     guide.render()
@@ -1375,6 +1375,13 @@ with tab_players:
             unsafe_allow_html=True)
     st.dataframe(ticker.style.apply(colour).format({"Average Fixture Difficulty Rating": "{:.2f}"}), width="stretch",
                  height=38 * (len(ticker) + 1))
+
+
+# ---------------------------------------------------------------- live gameweek
+
+with tab_live:
+    live_bs, live_fx = live_data()
+    live_view.render(live_bs, live_fx, team_short)
 
 
 # ---------------------------------------------------------------- team news
