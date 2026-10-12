@@ -12,7 +12,7 @@ import { CaptainOddsTable, ScoreChart, band } from "../components/Simulation";
 import { Club, Loading, Note, Segmented, Table, Tiles, type Column, type TileProps } from "../components/ui";
 import { WhyProjection } from "../components/Why";
 import { rows, type Forecast, type MyTeam, type MyWeek, type MyWeekNumbers, type PlanSettings, type Player } from "../data";
-import { POSITIONS, int, money, pct, pts, signed, when } from "../format";
+import { POSITIONS, dec, int, money, pct, pts, signed, when } from "../format";
 import { useData, useSite } from "../site";
 import { useMyTeam } from "../squads";
 
@@ -280,6 +280,44 @@ export default function MyTeamPage() {
             <ScoreChart spread={data.total.points} forecast={data.total.xp} gw={data.gw}
                         label={`Simulated ${span} points, after transfer hits`} />
           </>}
+        </div>
+      )}
+
+      {data.field && (
+        <div className="card">
+          <h3 style={{ marginTop: 0 }}>Against the field, GW{data.field.gw}</h3>
+          <p style={{ marginTop: 0 }}>
+            In the same simulated weeks the team beats the average manager in <strong>{pct(data.field.p_beat)}</strong> of them, by{" "}
+            {signed(data.field.p10, 0)} to {signed(data.field.p90, 0)} points in the middle 80% (a swing of ±{dec(data.field.sd, 1)}).
+            The average margin, {signed(data.field.margin, 1)}, is by this model's own xP, which rates the crowd's players lower than its
+            own picks: read the chance and the spread rather than the average.
+          </p>
+          {team?.field && (
+            <div className="field-grid">
+              {([["threats", "Popular players I'm under the field on"], ["differentials", "My differentials"]] as const).map(([key, title]) => (
+                <div key={key}>
+                  <strong>{title}</strong>
+                  <div className="chips" style={{ marginTop: 6 }}>
+                    {team.field![key].length ? team.field![key].map((r) => {
+                      const p = site.player.get(r.element);
+                      return (
+                        <span key={r.element} className="lesson-chip" title={`Field effective ownership ${pct(r.eo)}, mine ${r.share}`}>
+                          {p && <Club id={p.team} />} {p?.web_name ?? r.element}{" "}
+                          <span className="muted">EO {pct(r.eo)}, mine {r.share === 2 ? "C" : r.share === 3 ? "TC" : r.share}</span>
+                        </span>
+                      );
+                    }) : <span className="muted">None.</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          <p className="note">
+            Display only: the team is still picked for the most expected points. The field is every player's points times his
+            effective ownership (EO), the share of managers counting them, a captain twice: ownership times his chance of playing,
+            scaled to 11 starters a manager, plus an estimated captaincy share (FPL publishes it only after the deadline). A popular
+            player I don't own costs ground when he hauls; a differential gains it.
+          </p>
         </div>
       )}
 

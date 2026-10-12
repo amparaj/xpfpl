@@ -268,7 +268,9 @@ def outlook(team: dict, players: pd.DataFrame, gameweeks: list[int], draws=None,
     the simulated score's spread (before transfer hits); the `total` over the horizon (after
     hits); the first week's captain options' odds (`captains`); `against`, the team against
     keeping the squad it was planned from (its best XI each week) in the same simulated weeks,
-    if it made any; and `players`, the squads' xP per week and next week's simulated range."""
+    if it made any; `field`, the first week against the average manager (field.py: display only,
+    None without simulations or ownership); and `players`, the squads' xP per week and next week's
+    simulated range."""
     from xpfpl import simulate
     first = gameweeks[0]
     squad = list(team["lineup"]) + list(team["bench"])
@@ -325,6 +327,11 @@ def outlook(team: dict, players: pd.DataFrame, gameweeks: list[int], draws=None,
                         "mean": round(float(diff.mean()), 2), "p10": float(q[0]), "p50": float(q[1]),
                         "p90": float(q[2])}
 
+    rank = None
+    if first in sims and "selected_by" in players:
+        from xpfpl import field
+        rank = field.against(draws, first, weeks[first], players, chip=team["chip"])
+
     # Next week's row as Next Gameweek has it, for the site's "Why this projection?" panel. An older
     # forecast takes the outcome bands and the horizon's range from its simulations (as export does).
     if "p_3_5" not in players and simulated and first in draws.gameweeks:
@@ -338,5 +345,5 @@ def outlook(team: dict, players: pd.DataFrame, gameweeks: list[int], draws=None,
     table["xp_total"] = table[cols].sum(axis=1)
     table.index.name = "element"
     return {"gw": int(first), "gameweeks": [int(g) for g in gameweeks], "sims": draws.sims if simulated else None,
-            "weeks": out_weeks, "total": total, "captains": captain_odds, "against": against,
+            "weeks": out_weeks, "total": total, "captains": captain_odds, "against": against, "field": rank,
             "players": table.reset_index()}
