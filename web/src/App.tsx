@@ -5,6 +5,7 @@ import About from "./pages/About";
 import Accuracy from "./pages/Accuracy";
 import DataPage from "./pages/Data";
 import Gameweeks from "./pages/Gameweeks";
+import LiveGameweek from "./pages/LiveGameweek";
 import MarketsPage from "./pages/Markets";
 import ModelTeamPage from "./pages/ModelTeam";
 import MyTeamPage from "./pages/MyTeam";
@@ -14,12 +15,13 @@ import Players from "./pages/Players";
 import Prices from "./pages/Prices";
 import { SiteContext, useHash, useSiteData, type Site } from "./site";
 
-// About first (where the site opens), then how far to trust the model, the weeks played and the
-// week ahead with this model's own team and the team I'm planning, research, and the raw data last.
+// About first (where the site opens), then how far to trust the model, the weeks played, the
+// week being played and the week ahead with this model's own team and the team I'm planning, research, and the raw data last.
 const PAGES = [
   { id: "about", label: "About", short: "About", component: About },
   { id: "accuracy", label: "This Model's Accuracy", short: "Accuracy", component: Accuracy },
   { id: "gameweeks", label: "Past Gameweeks", short: "Past GWs", component: Gameweeks },
+  { id: "live", label: "Live Gameweek", short: "Live GW", component: LiveGameweek },
   { id: "next", label: "Next Gameweek", short: "Next GW", component: NextGameweek },
   { id: "model-team", label: "This Model's Team", short: "This Model's Team", component: ModelTeamPage },
   { id: "my-team", label: "My Team", short: "My Team", component: MyTeamPage },

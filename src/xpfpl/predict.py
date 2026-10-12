@@ -100,6 +100,7 @@ def predict_upcoming(horizon: int = config.HORIZON, model: str = config.MODEL,
     # How many of his matches this season were left out of his form as injured or banned.
     out["excused"] = matches[excused].groupby("element").size().reindex(out.index).fillna(0).astype(int)
     out = out.join(ranges)
+    out["made_at"] = pd.Timestamp.now(tz="UTC").isoformat(timespec="seconds")    # the Live Gameweek page shows it
     out.index.name = "element"
 
     folder = config.PREDICTIONS_DIR / api.current_season(bs)

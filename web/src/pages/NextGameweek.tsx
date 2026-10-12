@@ -5,8 +5,9 @@ import { band } from "../components/Simulation";
 import { ConfidenceBadge, WhyProjection } from "../components/Why";
 import { Chart, Club, Legend, Loading, MidweekBadge, Note, Opponent, Segmented, Table, Tiles, plotDefaults, type Column, type TileProps } from "../components/ui";
 import { rows, type Forecast, type ModelTeam, type NextGw, type Player } from "../data";
-import { POSITIONS, dec, int, money, pct, pts, when } from "../format";
+import { POSITIONS, dec, flagLabel, int, money, pct, pts, when } from "../format";
 import { ROTATION, clubMidweek, competition } from "../midweek";
+import { newsUrl, type NewsLog } from "../news";
 import { ours } from "../ratings";
 import { useData, useSite, type Site } from "../site";
 
@@ -36,6 +37,7 @@ export default function NextGameweek() {
   const site = useSite();
   const next = useData<NextGw>("next.json");
   const team = useData<ModelTeam>("modelteam.json");
+  const news = useData<NewsLog>(newsUrl());
   const [position, setPosition] = useState(0);
 
   const players: Row[] = useMemo(() => rows<Forecast>(next?.players)
@@ -88,12 +90,30 @@ export default function NextGameweek() {
     return { team: t.id, byGw, avg: wins.length ? wins.reduce((a, b) => a + b, 0) / wins.length : null };
   }), [next, site]);
 
+  // Players whose FPL flag now isn't the one this forecast was made with: its xP for them is out of date.
+  const stale = useMemo(() => {
+    if (!news || !next || !next.players.status) return [];
+    const now = new Map(news.players.map((p) => [p.id, p]));
+    const chance = (status: string | null | undefined, c: number | null | undefined) => ((status ?? "a") === "a" ? 100 : c ?? 100);
+    return rows<{ element: number; status: string | null; chance: number | null; xp_total: number }>(next.players).flatMap((r) => {
+      const n = now.get(r.element);
+      const changed = (r.status ?? "a") !== (n?.status ?? "a") || chance(r.status, r.chance) !== chance(n?.status, n?.chance);
+      return changed && site.player.has(r.element) ? [{ ...r, now: n }] : [];
+    }).sort((a, b) => b.xp_total - a.xp_total);
+  }, [news, next, site]);
+
   if (next === undefined) return <Loading />;
   if (next === null) {
+    const current = site.meta.events.find((e) => e.deadline && Date.parse(e.deadline) <= Date.now() && !e.checked
+                                                 && e.id === (site.meta.next_gw ?? 0) - 1);
     return (
       <>
-        <h2>Next Gameweek</h2>
-        <p>No forecast has been saved for GW{site.meta.next_gw} yet. It appears once this model has been run for the gameweek.</p>
+        <h2>Next Gameweek{site.meta.next_gw ? `: GW${site.meta.next_gw}` : ""}</h2>
+        <p>
+          No forecast has been saved for GW{site.meta.next_gw} yet. It appears once this model has been run for the gameweek,
+          usually after GW{(site.meta.next_gw ?? 1) - 1}'s results are in.
+          {current && <> GW{current.id} is being played: see <a href="#live">Live Gameweek</a>.</>}
+        </p>
       </>
     );
   }
@@ -182,6 +202,14 @@ export default function NextGameweek() {
         This {next.model} model's forecast for GW{gw}, whose deadline is {when(next.deadline)}: who is expected to score the most, the captain
         picks, and how each club's next {horizon.length === 1 ? "fixture looks" : `${horizon.length} gameweeks look`}.
       </p>
+      {stale.length > 0 && (
+        <p className="note">
+          <span className="tag warn">Team news has changed</span> for {stale.length} player{stale.length > 1 ? "s" : ""} since
+          this forecast was saved{next.made_at ? ` (${when(next.made_at)})` : ""}, so their xP here doesn't know it yet:{" "}
+          {stale.slice(0, 8).map((r) => `${site.player.get(r.element)!.web_name} (${flagLabel(r.status ?? "a", r.chance)} → ${flagLabel(r.now?.status ?? "a", r.now?.chance)})`).join(", ")}
+          {stale.length > 8 && ", ..."}. This model is run again before the deadline.
+        </p>
+      )}
       {tiles.length > 0 && <Tiles tiles={tiles} />}
 
       <div className="card">

@@ -163,7 +163,11 @@ export interface Forecast {
   [xp: `xp_${number}`]: number;
 }
 /** The forecast saved for the next gameweek: xP per player for each gameweek of its horizon. */
-export interface NextGw { gw: number; deadline: string; model: string; gameweeks: number[]; players: Columns }
+export interface NextGw {
+  gw: number; deadline: string; model: string; gameweeks: number[]; players: Columns;
+  /** When the forecast was saved (recorded from 2026-10-12). */
+  made_at?: string | null;
+}
 export interface Markets {
   matches: Columns; accuracy: Columns;
   outrights?: Columns & { snapshot: string };

@@ -1,0 +1,74 @@
+# Keeps the gameweek in progress up to date against its forecast: FPL's live points for every
+# player, why each one beat or missed his xP, both teams' scores with automatic substitutions,
+# and what to look at before the next deadline (src/xpfpl/live.py), as live.json on the `live`
+# branch. The website's Live Gameweek page reads it through raw.githubusercontent.com.
+#
+# The forecast comes from the site itself (gh-pages data/current.json, or next.json when the
+# site was last published before the deadline), so nothing here needs the model or torch.
+# Scheduled runs only fetch when a refresh is due (`live.due`: a match in play, FPL still adding
+# bonus, or the file 6 hours old) and otherwise stop after two requests to FPL. A manual run
+# (Actions -> Live snapshot -> Run workflow) always fetches.
+#
+# The branch is one commit, replaced each run (like `odds`). Scheduled workflows only run from
+# the default branch.
+name: Live snapshot
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: live-snapshot
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      # Only what live.py needs: installing the package's own dependencies would pull in torch.
+      - name: Install
+        run: |
+          pip install --quiet pandas pyarrow requests
+          pip install --quiet --no-deps -e .
+
+      - name: Fetch (if due)
+        id: fetch
+        run: |
+          mkdir -p "$RUNNER_TEMP/site" "$RUNNER_TEMP/live"
+          git fetch --quiet --depth=1 origin gh-pages
+          for f in current.json next.json modelteam.json myteam.json; do
+            git show "FETCH_HEAD:data/$f" > "$RUNNER_TEMP/site/$f" 2>/dev/null || rm -f "$RUNNER_TEMP/site/$f"
+          done
+          when_due=""
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            if git fetch --quiet --depth=1 origin live 2>/dev/null; then
+              git show FETCH_HEAD:live.json > "$RUNNER_TEMP/previous.json"
+            fi
+            when_due="--when-due $RUNNER_TEMP/previous.json"
+          fi
+          python -m xpfpl.live update --site "$RUNNER_TEMP/site" --out "$RUNNER_TEMP/live" $when_due
+          if [ -f "$RUNNER_TEMP/live/live.json" ]; then echo "fetched=true" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Replace the live branch
+        if: steps.fetch.outputs.fetched == 'true'
+        working-directory: ${{ runner.temp }}/live
+        run: |
+          git init --quiet -b live
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add live.json
+          git commit --quiet -m "Live $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push --quiet --force "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" HEAD:live
+        env:
+          GH_TOKEN: ${{ github.token }}

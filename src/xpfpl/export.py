@@ -22,8 +22,15 @@ odds come from odds.json on the `odds` branch, which a scheduled GitHub Action
   next.json          the forecast saved for the next gameweek, for every week of its horizon, with
                      each player's midweek rotation group and the factor it put on his xP, and his
                      simulated range for the next gameweek (simulate.py: 10th/50th/90th percentile,
-                     chances of 10+ and of 2 or fewer)
-  myteam.json        My Team: the team for the gameweek in progress (until it's finished) or the
+                     chances of 10+ and of 2 or fewer). Always FPL's next gameweek: none until
+                     a forecast has been saved for it
+  current.json       the same for the gameweek in progress (from its deadline to the next), plus
+                     each player's flag at the deadline and this model's team for it (live.py)
+  live.json          that gameweek against its forecast, as of the export (live.analyse): the
+                     points so far and why each player beat or missed his xP, both teams live, and
+                     what to look at before the next deadline. The `live` branch's copy is newer
+                     during matches (.github/workflows/live-snapshot.yml)
+  myteam.json       My Team: the team for the gameweek in progress (until it's finished) or the
                      next one (saved from the dashboard's Plan Ahead, else last week's carried over;
                      after the deadline, the team locked in) and its outlook over the same horizon
                      (myteam.outlook). The numbers are public; before the deadline the players,
@@ -359,32 +366,14 @@ def table_zones(z: pd.DataFrame) -> list[list[float]]:
     return [[int(r.zone), r.x0, r.x1, r.y0, r.y1] for r in z.itertuples()]
 
 
-def _next_gameweek(bs: dict, season: str, model: str) -> dict | None:
-    """The forecast saved for the next gameweek (`model`'s if saved, otherwise any model's): xP
-    per player for every gameweek of its horizon, plus minutes and market odds where it has them."""
-    upcoming = next((ev for ev in bs["events"] if ev["is_next"]), None)
-    if upcoming is None:
-        return None
-    gw = upcoming["id"]
-    found = archive.saved_forecast(season, gw, model)
-    if found is None:
-        return None
-    key, t, gws = found
-    # Outcome bands and the horizon's range came later than the saved forecasts' first runs: an
-    # older forecast takes them from its simulations, where they're still on disk (simulate.py).
-    if "p_3_5" not in t:
-        from xpfpl import simulate
-        draws = simulate.load(season, gw, key.split("_", 1)[1])
-        if draws is not None and gw in draws.gameweeks:
-            extra = simulate.summary(draws, gw).drop(columns=[c for c in t if c != "element"], errors="ignore")
-            t = t.merge(extra, left_on="element", right_index=True, how="left")
-    keep = ["element", *[f"xp_{g}" for g in gws], "xp_total",
-            *[c for c in ("xmins", "p_play", "p_full", "mkt_anytime", "market_out", "rotation", "rotation_factor",
-                          "pts_p10", "pts_p50", "pts_p90", "p_haul", "p_6_9", "p_3_5", "p_blank",
-                          "total_p10", "total_p50", "total_p90", "xp_sd", "confidence",
-                          "avail", "news_rule", "press", "back") if c in t]]
-    return {"gw": gw, "deadline": upcoming["deadline_time"], "model": key.split("_", 1)[1], "gameweeks": gws,
-            "players": table(t[keep], digits=3)}
+def _forecast(bs: dict, season: str, model: str, which: str) -> dict | None:
+    """The forecast saved for FPL's next gameweek (`which` = "is_next") or the one in progress
+    ("is_current"), `model`'s if saved, otherwise any model's (live.payload): xP per player for
+    every gameweek of its horizon, plus minutes, ranges and team news; for the gameweek in
+    progress also the flags at its deadline and this model's team for it."""
+    from xpfpl import live
+    event = next((ev for ev in bs["events"] if ev[which]), None)
+    return live.payload(bs, season, event["id"], model, bands=True) if event else None
 
 
 SEAL_ITERATIONS = 600_000     # PBKDF2 rounds: ~0.5 s to unlock in a browser, slow to guess offline
@@ -403,6 +392,25 @@ def seal(obj, secret: str) -> dict:
     data = AESGCM(key).encrypt(iv, json.dumps(_scrub(obj), separators=(",", ":")).encode("utf-8"), None)
     b64 = lambda b: base64.b64encode(b).decode("ascii")   # noqa: E731
     return {"v": 1, "iterations": SEAL_ITERATIONS, "salt": b64(salt), "iv": b64(iv), "data": b64(data)}
+
+
+def _write_or_remove(obj, path: Path, written: list[Path]) -> None:
+    if obj:
+        written.append(_write(obj, path))
+    else:
+        path.unlink(missing_ok=True)
+
+
+def _live(current: dict | None, mine: dict | None, fixtures: list[dict]) -> dict | None:
+    """live.json for the gameweek in progress (live.py), as of now. The `live` branch's copy,
+    refreshed every ten minutes during matches by .github/workflows/live-snapshot.yml, is newer
+    whenever there's one for the same gameweek: the page reads whichever is."""
+    if current is None:
+        return None
+    from xpfpl import live
+    gw = current["gw"]
+    teams = {"model": live.model_team(current.get("model_team"), gw), "mine": live.my_team(mine, gw)}
+    return live.analyse(current, api.event_live(gw), fixtures, {k: v for k, v in teams.items() if v})
 
 
 def _my_team(bs: dict, season: str, model: str) -> dict | None:
@@ -579,14 +587,22 @@ def export(model: str = config.MODEL, out: Path = config.SITE_DATA_DIR) -> list[
         written.append(_write(profiles, out / "profiles.json"))
     from xpfpl import modelteam
     written.append(_write(modelteam.season_record(season, rows, bs, xp_by_gw), out / "modelteam.json"))
-    ahead = _next_gameweek(bs, season, model)
+    # The next gameweek's forecast and the gameweek in progress (Next Gameweek, Live Gameweek):
+    # a gameweek with no forecast saved yet leaves no file, rather than last week's.
+    ahead = _forecast(bs, season, model, "is_next")
+    _write_or_remove(ahead, out / "next.json", written)
     if ahead:
-        written.append(_write(ahead, out / "next.json"))
+        from xpfpl import live
+        players = pd.DataFrame(ahead["players"]).set_index("element")
+        stale = live.stale_news(players, bs)
+        if len(stale):
+            print(f"GW{ahead['gw']}'s forecast is older than the team news for {len(stale)} players "
+                  f"({', '.join(stale['name'].head(8))}): re-run `xpfpl recommend` before the deadline.")
     mine = _my_team(bs, season, model)
-    if mine:
-        written.append(_write(mine, out / "myteam.json"))
-    else:                                    # don't leave a finished week's plan on the site
-        (out / "myteam.json").unlink(missing_ok=True)
+    _write_or_remove(mine, out / "myteam.json", written)     # don't leave a finished week's plan on the site
+    now = _forecast(bs, season, model, "is_current")
+    _write_or_remove(now, out / "current.json", written)
+    _write_or_remove(_live(now, mine, fx), out / "live.json", written)
     market = _markets(matches)
     if market:
         written.append(_write(market, out / "markets.json"))
