@@ -560,7 +560,8 @@ def transfer_odds(d: Draws, players: pd.DataFrame, gameweeks: list[int], plan, *
     - keeping the squad ("roll"), when the plan makes a move;
     - the next-best move: the best plan without the plan's signings, or, when the advice is to
       roll, the best move there is (the free transfer valued at nothing, so it gets used).
-    `solve_kwargs` are the plan's own solve() arguments. Each entry: `label`, `moves` and
+    `solve_kwargs` are the plan's own solve() arguments. Each entry: `label`, `moves` (and the ids in
+    `transfers_in`/`transfers_out`, this week's only) and
     `compare()`'s numbers, `p_better` being the chance the recommendation comes out ahead; with
     ownership in `players` (`selected_by`), also `field`: the first week against the average manager
     for the recommendation (`a`) and the alternative (`b`), field.compare (display only).
@@ -572,9 +573,13 @@ def transfer_odds(d: Draws, players: pd.DataFrame, gameweeks: list[int], plan, *
     rivals = []
     if plan.transfers_in:
         rivals.append(("Keep the squad", solve(players, gameweeks, **{**solve_kwargs, "free_transfers": 0,
+                                                                     "must_have": (), "banned": (),
                                                                      "max_hits": 0, "plan_transfers": False})))
-        banned = tuple(solve_kwargs.get("banned", ())) + tuple(plan.transfers_in)
-        rivals.append(("Next-best move", solve(players, gameweeks, **{**solve_kwargs, "banned": banned})))
+        # Only the signings the solver chose: forced ones (must_have) can't be banned.
+        chosen = tuple(p for p in plan.transfers_in if p not in solve_kwargs.get("must_have", ()))
+        if chosen:
+            banned = tuple(solve_kwargs.get("banned", ())) + chosen
+            rivals.append(("Next-best move", solve(players, gameweeks, **{**solve_kwargs, "banned": banned})))
     else:
         rivals.append(("Best move", solve(players, gameweeks, **{**solve_kwargs, "ft_value": 0.0})))
     from xpfpl import field
@@ -583,7 +588,9 @@ def transfer_odds(d: Draws, players: pd.DataFrame, gameweeks: list[int], plan, *
     for label, rival in rivals:
         if set(rival.squad) == set(plan.squad) and not rival.future_transfers and not plan.future_transfers:
             continue                                        # the same team: nothing to compare
-        entry = {"label": label, "moves": moves_label(players, rival), **compare(d, plan, rival, gws, position)}
+        entry = {"label": label, "moves": moves_label(players, rival),
+                 "transfers_in": [int(p) for p in rival.transfers_in],
+                 "transfers_out": [int(p) for p in rival.transfers_out], **compare(d, plan, rival, gws, position)}
         if eo is not None:
             entry["field"] = field.compare(d, gws[0], field.plan_team(plan, gws[0]), field.plan_team(rival, gws[0]),
                                            players, eo)

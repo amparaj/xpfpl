@@ -60,6 +60,7 @@ PITCH_CSS = """<style>
 </style>"""
 ACTIVE_CHIPS = {"None": None, "Wildcard": "wildcard", "Free Hit": "freehit",
                 "Triple Captain": "3xc", "Bench Boost": "bboost"}
+CHIP_LABELS = {v: k for k, v in ACTIVE_CHIPS.items() if v}
 
 LOGO = Path(__file__).parent / "assets" / "logo-mark.png"
 st.set_page_config(page_title="xP-FPL", page_icon=str(LOGO), layout="wide")
@@ -192,10 +193,58 @@ def run_transfer_odds(horizon: int, model: str, gameweeks: tuple[int, ...], data
     return simulate.transfer_odds(draws, players, list(gameweeks), plan, **kwargs)
 
 
+def use_move(squad: list[int], ins: list[int] | None, outs: list[int], chip: str | None = None) -> None:
+    """"Switch to" / "Keep this plan + chip" / "Play" (button callback, so it runs before the Plan Ahead form is drawn):
+    sets the form's Always pick / Never pick to exactly the move (replacing what was there: the move
+    was planned with those picks, so it already includes them), and the chip into "Chip active this
+    GW", so the plan re-solves to it and "Save as my team" saves it. No signings = keep the squad
+    (every current player forced in); `ins` None = the chip only."""
+    state = st.session_state
+    if ins is not None:
+        state["plan_must_have"] = list(ins) if ins else list(squad)
+        state["plan_banned"] = list(outs) if ins else []
+    if chip:
+        state["plan_chip"] = CHIP_LABELS[chip]
+
+
+def clear_picks() -> None:
+    """Button callback: empty Always pick / Never pick."""
+    st.session_state["plan_must_have"] = []
+    st.session_state["plan_banned"] = []
+
+
+def forced_pick_problem(players: pd.DataFrame, squad: dict, must_have, banned, free_transfers: int,
+                        max_hits: int, chip: str | None) -> str:
+    """Why Always pick / Never pick can't be met (the solver only says "Infeasible")."""
+    name, problems = players["name"].to_dict(), []
+    both = [p for p in must_have if p in banned]
+    if both:
+        problems.append(", ".join(name.get(p, str(p)) for p in both) + " in both Always pick and Never pick")
+    forced = players.loc[[p for p in must_have if p in players.index]]
+    for pos, n in config.SQUAD_SIZE.items():
+        k = int((forced["position"] == pos).sum())
+        if k > n:
+            problems.append(f"{k} {config.POSITIONS[pos]} in Always pick, a squad has {n}")
+    for club, k in forced["team_name"].value_counts().items():
+        if k > config.MAX_PER_CLUB:
+            problems.append(f"{k} {club} players in Always pick, the limit is {config.MAX_PER_CLUB}")
+    if chip not in ("wildcard", "freehit"):
+        moves = max(sum(p not in squad for p in must_have), sum(p in squad for p in banned))
+        if moves > free_transfers + max_hits:
+            problems.append(f"the picks need {moves} transfers, with {free_transfers} free and "
+                            f"{max_hits} penalties allowed (raise Free transfers or Max transfer penalties)")
+    if not problems:
+        problems.append("the budget, the 3-per-club rule or the squad shape can't fit them together")
+    return "Always pick / Never pick can't all be met: " + "; ".join(problems) + "."
+
+
 def show_monte_carlo(players: pd.DataFrame, plan, gw: int, gameweeks: tuple[int, ...], draws: simulate.Draws,
-                     chip: str | None, odds: list[dict]) -> None:
+                     chip: str | None, odds: list[dict], squad: list[int] | None = None,
+                     play_chips: list[str] = ()) -> None:
     """Plan Ahead's Monte Carlo: the team's simulated score, the captain options' odds and how the
-    recommended move fares against the alternatives in the same simulated weeks."""
+    recommended move fares against the alternatives in the same simulated weeks, each with a "Use
+    this move" button (`squad` = the current squad; `play_chips` = the Triple Captain / Bench Boost
+    the chip advice says to PLAY, strongest first, offered alongside the move: one a week)."""
     position = players["position"].to_dict()
     week = simulate.team_score(draws, gw, plan.lineups[gw], plan.bench[gw], plan.captains[gw],
                                plan.vice_captains[gw], chip, position)["points"]
@@ -237,7 +286,7 @@ def show_monte_carlo(players: pd.DataFrame, plan, gw: int, gameweeks: tuple[int,
                        **{k: st.column_config.NumberColumn(format=PERCENT) for k in ("10+", "2 or fewer", "Best pick")}})
     c[0].caption("His own points, before the armband. Best pick: how often he outscores every other option "
                  "in the same simulated week. The captain is still the highest xP; the odds show how close it is.")
-    c[1].markdown("**The move against the alternatives**")
+    c[1].markdown(f"**This plan ({simulate.moves_label(players, plan)}) against the alternatives**")
     if odds:
         c[1].dataframe(pd.DataFrame({
             "Against": [o["label"] for o in odds], "Their moves": [o["moves"] for o in odds],
@@ -249,6 +298,24 @@ def show_monte_carlo(players: pd.DataFrame, plan, gw: int, gameweeks: tuple[int,
         c[1].caption(f"This page's plan against each alternative over GW{gameweeks[0]}-{draws.gameweeks[-1]}, "
                      "in the same simulated weeks (same injuries, goals and clean sheets), discounted like the "
                      "optimiser and after transfer penalties. Near 50% is a coin flip: either choice is fine.")
+        if squad is not None:
+            c[1].markdown(f"This page's plan: **{simulate.moves_label(players, plan)}**. "
+                          f"**Save as my GW{gw} team** saves it as it is.")
+            also = c[1].selectbox("With the chip (advice: PLAY)", [*play_chips, None], key="use_move_chip",
+                                  format_func=lambda k: CHIP_LABELS[k] if k else "No chip",
+                                  help="One chip a gameweek. The first is the chip advice's strongest case "
+                                       "(gain over its threshold).") if play_chips else None
+            if also:
+                c[1].button(f"Keep this plan + {CHIP_LABELS[also]}", key="use_move_keep", on_click=use_move,
+                            args=(squad, None, [], also))
+            for i, o in enumerate(odds):
+                c[1].button(f"Switch to: {o['moves']}" + (f" + {CHIP_LABELS[also]}" if also else ""),
+                            key=f"use_move_{i}", on_click=use_move,
+                            args=(squad, o["transfers_in"], o["transfers_out"], also))
+            c[1].caption("**Switch to** replaces this plan with that alternative: it sets Always pick / Never pick"
+                         + (" and the chip" if play_chips else "") + " above (replacing what's there). Check it, "
+                         f"then **Save as my GW{gw} team**. Clear those boxes to go back to the optimiser's own "
+                         "plan.")
     else:
         c[1].caption("Nothing to compare: no alternative plan differs from this one.")
     if "selected_by" in players:
@@ -745,7 +812,7 @@ with tab_plan:
                                index=choices.index(config.MODEL) if config.MODEL in choices else 0,
                                help="  ".join(f"{n}: {models.DESCRIPTIONS[n]}." for n in choices)
                                + "  Train the others with `xpfpl train --model <name>`.")
-        chip_label = c[2].selectbox("Chip active this GW", list(ACTIVE_CHIPS),
+        chip_label = c[2].selectbox("Chip active this GW", list(ACTIVE_CHIPS), key="plan_chip",
                                     help="Chips you've activated aren't visible via the API until the deadline.")
         ft_choice = c[3].selectbox("Free transfers", [f"Estimated ({me.free_transfers})", 0, 1, 2, 3, 4, 5])
         bank = c[4].number_input("Bank (£m)", value=float(me.bank), step=0.1, format="%.1f")
@@ -759,9 +826,9 @@ with tab_plan:
                                      help="Nudge the optimiser towards players expected to rise in price.")
         c = st.columns(2)
         options = sorted(elements.index, key=lambda p: -elements.at[p, "total_points"])
-        must_have = c[0].multiselect("Always pick", options, format_func=player_label.get,
+        must_have = c[0].multiselect("Always pick", options, format_func=player_label.get, key="plan_must_have",
                                      help="Force players into the squad.")
-        banned = c[1].multiselect("Never pick", options, format_func=player_label.get,
+        banned = c[1].multiselect("Never pick", options, format_func=player_label.get, key="plan_banned",
                                   help="Injury news, rotation worries, or just a hunch.")
         st.form_submit_button("Update plan", type="primary")
 
@@ -771,19 +838,31 @@ with tab_plan:
     gw = gameweeks[0]
     labels = fixture_labels(bs, fx, gameweeks)
     kwargs = dict(current_squad=me.squad, bank=round(bank, 1), must_have=tuple(must_have), banned=tuple(banned))
+    keep = {**kwargs, "must_have": (), "banned": ()}    # no transfers: the squad as it is, whatever is forced
     planning = dict(plan_transfers=bool(weekly), pool_size=config.POOL_SIZE if weekly else None,
                     price_weight=config.PRICE_WEIGHT or 1.0 if value_prices else 0.0)
 
+    extra = {"triple_captain_gw": gw} if active == "3xc" else {"bench_boost_gw": gw} if active == "bboost" else {}
+    plan_gws = (gw,) if active == "freehit" else tuple(gameweeks)
     if active in ("wildcard", "freehit"):
-        plan_gws = (gw,) if active == "freehit" else tuple(gameweeks)
-        plan = run_solve(horizon, model, plan_gws, stamp(), **kwargs, unlimited_transfers=True)
-        hold = run_solve(horizon, model, plan_gws, stamp(), **kwargs, free_transfers=0, max_hits=0)
+        settings_now = dict(unlimited_transfers=True)
     else:
-        extra = {"triple_captain_gw": gw} if active == "3xc" else {"bench_boost_gw": gw} if active == "bboost" else {}
-        plan_gws = tuple(gameweeks)
-        plan = run_solve(horizon, model, plan_gws, stamp(), **kwargs, **planning, free_transfers=ft,
-                         max_hits=int(max_hits), **extra)
-        hold = run_solve(horizon, model, plan_gws, stamp(), **kwargs, free_transfers=0, max_hits=0, **extra)
+        settings_now = dict(**planning, free_transfers=ft, max_hits=int(max_hits), **extra)
+    picks_failed = False
+    try:
+        plan = run_solve(horizon, model, plan_gws, stamp(), **kwargs, **settings_now)
+    except RuntimeError:
+        if not (must_have or banned):
+            raise
+        # Impossible picks: say why, and plan without them (not saveable) so the page still works.
+        picks_failed = True
+        st.error(forced_pick_problem(players, me.squad, must_have, banned, ft, int(max_hits), active)
+                 + " Below is this model's plan without them; it can't be saved until the picks are fixed.")
+        st.button("Clear Always pick / Never pick", on_click=clear_picks)
+        kwargs = keep
+        plan = run_solve(horizon, model, plan_gws, stamp(), **kwargs, **settings_now)
+    hold = run_solve(horizon, model, plan_gws, stamp(), **keep, free_transfers=0, max_hits=0,
+                     **({} if active in ("wildcard", "freehit") else extra))
     gain = sum(plan.xp.values()) - sum(hold.xp.values()) - config.HIT_COST * plan.total_hits
 
     st.subheader(f"{me.name}: plan for GW{plan_gws[0]}" + (f"-{plan_gws[-1]}" if len(plan_gws) > 1 else ""))
@@ -847,11 +926,19 @@ with tab_plan:
                   else "Later weeks assume the same squad."))
     show_pitch(players, plan, view_gw, labels, fixture_difficulty(fx, gameweeks),
                midweek_badges(season, tuple(gameweeks)))
-    save_team_panel(me, plan, players, gw, active, season, model, settings={
-        "horizon": int(horizon), "model": model, "chip": active, "free_transfers": int(ft),
-        "free_transfers_estimated": isinstance(ft_choice, str), "bank": round(float(bank), 1),
-        "max_hits": int(max_hits), "plan_transfers": bool(weekly), "value_prices": bool(value_prices),
-        "must_have": [int(p) for p in must_have], "banned": [int(p) for p in banned]})
+    if picks_failed:
+        st.caption(f"**Save as my GW{gw} team** is hidden: fix Always pick / Never pick first (see above).")
+    else:
+        save_team_panel(me, plan, players, gw, active, season, model, settings={
+            "horizon": int(horizon), "model": model, "chip": active, "free_transfers": int(ft),
+            "free_transfers_estimated": isinstance(ft_choice, str), "bank": round(float(bank), 1),
+            "max_hits": int(max_hits), "plan_transfers": bool(weekly), "value_prices": bool(value_prices),
+            "must_have": [int(p) for p in must_have], "banned": [int(p) for p in banned]})
+
+    available = {} if active else chips.available_chips(bs, me.chips_used, gw)
+    advice = run_chip_advice(horizon, model, stamp(), int(team_id), tuple(sorted(available)), **kwargs,
+                             **planning, free_transfers=ft, max_hits=int(max_hits)) if available else []
+    play_chips = [a.chip for a in advice if a.recommended and a.chip in ("3xc", "bboost")]   # strongest first
 
     draws = sim_draws(horizon, model, stamp())
     if draws is None:
@@ -862,7 +949,8 @@ with tab_plan:
         odds = [] if active in ("wildcard", "freehit") else run_transfer_odds(
             horizon, model, plan_gws, stamp(), **kwargs, **planning, free_transfers=ft, max_hits=int(max_hits),
             **chip_gw)
-        show_monte_carlo(players, plan, gw, plan_gws, draws, active if active in ("3xc", "bboost") else None, odds)
+        show_monte_carlo(players, plan, gw, plan_gws, draws, active if active in ("3xc", "bboost") else None, odds,
+                         squad=[int(p) for p in me.squad], play_chips=play_chips)
 
     st.markdown("**Squad xP by gameweek**")
     squad_gw = plan.squads.get(view_gw, plan.squad)
@@ -887,16 +975,12 @@ with tab_plan:
     if active:
         st.write(f"{chip_label} is active, so no other chip can be played in GW{gw}.")
     else:
-        available = chips.available_chips(bs, me.chips_used, gw)
         if not available:
             st.write("No chips available this gameweek.")
         else:
             warning = chips.window_warning(available, gw)
             if warning:
                 st.warning(warning)
-            advice = run_chip_advice(horizon, model, stamp(), int(team_id), tuple(sorted(available)),
-                                     **kwargs, **planning, free_transfers=ft, max_hits=int(max_hits))
-            draws = sim_draws(horizon, model, stamp())
             chance = {} if draws is None else simulate.chip_odds(
                 draws, plan, [g for g in plan_gws if g in draws.gameweeks], available, players["position"].to_dict())
             st.dataframe(pd.DataFrame([{
@@ -916,6 +1000,12 @@ with tab_plan:
                        "Boost only): how often the chip's extra points - the captain's points once more, or the "
                        "bench's - reach the threshold, and how often this week beats every later week of the "
                        "plan in the same chip window.")
+            for a in advice:
+                if a.recommended:
+                    st.button(f"Play {chips.CHIP_NAMES[a.chip]} in GW{gw}", key=f"play_chip_{a.chip}",
+                              on_click=use_move, args=([], None, [], a.chip),
+                              help="Sets \"Chip active this GW\" above and re-plans with it; your transfers "
+                                   "and Always/Never picks stay as they are.")
 
 
 # ---------------------------------------------------------------- my team

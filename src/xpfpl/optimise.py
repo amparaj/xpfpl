@@ -336,7 +336,9 @@ def transfer_options(players: pd.DataFrame, gameweeks: list[int], counts=(0, 1, 
     rows = []
     for k in counts:
         try:
-            plan = solve(players, gameweeks, transfers=k, **solve_kwargs)
+            # No transfers = the squad as it is: forced picks/bans would make it impossible.
+            plan = solve(players, gameweeks, transfers=k,
+                         **({**solve_kwargs, "must_have": (), "banned": ()} if k == 0 else solve_kwargs))
         except RuntimeError:
             continue
         rows.append({"transfers": k, "out": plan.transfers_out, "in": plan.transfers_in, "hits": plan.hits,

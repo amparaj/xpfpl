@@ -1,0 +1,783 @@
+{
+ "clubs": [
+  {
+   "club": "Arsenal",
+   "players": [
+    {
+     "code": 448104,
+     "id": 9,
+     "name": "Piero Hincapie",
+     "status": "OUT"
+    },
+    {
+     "code": 439509,
+     "id": 557,
+     "name": "Christos Tzolis",
+     "status": "OUT"
+    },
+    {
+     "code": 462424,
+     "id": 6,
+     "name": "William Saliba",
+     "status": "OUT"
+    },
+    {
+     "code": 481655,
+     "id": 19,
+     "name": "Martin Zubimendi",
+     "status": "DOUBT"
+    }
+   ],
+   "quotes": [
+    {
+     "by": "Mikel Arteta",
+     "text": "Piero [Hincapie] is evolving really well… Zubi [Martin Zubimendi] looks much better and we have another session tomorrow. After that, we will assess whether he’s available for Forest."
+    }
+   ],
+   "team": 1,
+   "team_code": 3
+  },
+  {
+   "club": "Aston Villa",
+   "players": [
+    {
+     "code": 441302,
+     "id": 36,
+     "name": "Ian Maatsen",
+     "status": "OUT"
+    },
+    {
+     "code": 487992,
+     "id": 596,
+     "name": "Matteo Ruggeri",
+     "status": "OUT"
+    },
+    {
+     "code": 449871,
+     "id": 48,
+     "name": "Amadou Onana",
+     "status": "OUT"
+    },
+    {
+     "code": 88894,
+     "id": 46,
+     "name": "Ross Barkley",
+     "status": "DOUBT"
+    },
+    {
+     "code": 577285,
+     "id": 51,
+     "name": "George Hemmings",
+     "status": "DOUBT"
+    }
+   ],
+   "quotes": [],
+   "team": 2,
+   "team_code": 7
+  },
+  {
+   "club": "Bournemouth",
+   "players": [
+    {
+     "code": 560262,
+     "id": 78,
+     "name": "Eli Junior Kroupi",
+     "status": "OUT"
+    },
+    {
+     "code": 620487,
+     "id": 63,
+     "name": "Veljko Milosavljevic",
+     "status": "OUT"
+    },
+    {
+     "code": 436893,
+     "id": 65,
+     "name": "Julian Araujo",
+     "status": "OUT"
+    },
+    {
+     "code": 503139,
+     "id": 69,
+     "name": "Alex Scott",
+     "status": "OUT"
+    },
+    {
+     "code": 222683,
+     "id": 70,
+     "name": "Justin Kluivert",
+     "status": "IN"
+    },
+    {
+     "code": 489888,
+     "id": 77,
+     "name": "Amine Adli",
+     "status": "IN"
+    }
+   ],
+   "quotes": [
+    {
+     "by": "Marco Rose",
+     "text": "It’s getting better. We are looking forward to having Amine [Adli] and Justin [Kluivert] back in the squad tomorrow."
+    }
+   ],
+   "team": 3,
+   "team_code": 91
+  },
+  {
+   "club": "Brentford",
+   "players": [
+    {
+     "code": 513418,
+     "id": 94,
+     "name": "Kevin Schade",
+     "status": "DOUBT"
+    },
+    {
+     "code": 513086,
+     "id": 93,
+     "name": "Jannik Schuster",
+     "status": "DOUBT"
+    }
+   ],
+   "quotes": [
+    {
+     "by": "Keith Andrews",
+     "text": "Jannik [Schuster] and Kev [Kevin Schade] have been on the grass this week and we’ll see what tomorrow brings in terms of how much they can do."
+    }
+   ],
+   "team": 4,
+   "team_code": 94
+  },
+  {
+   "club": "Brighton and Hove Albion",
+   "players": [
+    {
+     "code": 467779,
+     "id": 130,
+     "name": "Mats Wieffer",
+     "status": "OUT"
+    },
+    {
+     "code": 471551,
+     "id": 652,
+     "name": "Femi Azeez",
+     "status": "OUT"
+    },
+    {
+     "code": 592031,
+     "id": 122,
+     "name": "Yankuba Minteh",
+     "status": "OUT"
+    },
+    {
+     "code": 451340,
+     "id": 121,
+     "name": "Kaoru Mitoma",
+     "status": "OUT"
+    },
+    {
+     "code": 608181,
+     "id": 137,
+     "name": "Stefan Tzimas",
+     "status": "OUT"
+    },
+    {
+     "code": 487117,
+     "id": 139,
+     "name": "Evan Ferguson",
+     "status": "OUT"
+    },
+    {
+     "code": 700308,
+     "id": 135,
+     "name": "Zadok Yohanna",
+     "status": "OUT"
+    },
+    {
+     "code": 222694,
+     "id": 328,
+     "name": "Pascal Struijk",
+     "status": "DOUBT"
+    },
+    {
+     "code": 532529,
+     "id": 123,
+     "name": "Jack Hinshelwood",
+     "status": "IN"
+    }
+   ],
+   "quotes": [
+    {
+     "by": "Fabian Hurzeler",
+     "text": "We can expect him [Jack Hinshelwood] to return… He [Pascal Struijk] gets another day of recovery and we will see how he is tomorrow and then we make a decision."
+    }
+   ],
+   "team": 5,
+   "team_code": 36
+  },
+  {
+   "club": "Chelsea",
+   "players": [
+    {
+     "code": 225796,
+     "id": 142,
+     "name": "Reece James",
+     "status": "OUT"
+    },
+    {
+     "code": 503037,
+     "id": 170,
+     "name": "Emmanuel Emegha",
+     "status": "OUT"
+    },
+    {
+     "code": 463936,
+     "id": 158,
+     "name": "Jamie Gittens",
+     "status": "OUT"
+    }
+   ],
+   "quotes": [
+    {
+     "by": "Xabi Alonso",
+     "text": "We don’t set timelines but he [Reece James] will be out for several weeks. It won’t be short."
+    }
+   ],
+   "team": 6,
+   "team_code": 8
+  },
+  {
+   "club": "Coventry City",
+   "players": [
+    {
+     "code": 220583,
+     "id": 180,
+     "name": "Luke Woolfenden",
+     "status": "OUT"
+    },
+    {
+     "code": 539142,
+     "id": 182,
+     "name": "Aurele Amenda",
+     "status": "OUT"
+    },
+    {
+     "code": 439668,
+     "id": 187,
+     "name": "Josh Eccles",
+     "status": "OUT"
+    },
+    {
+     "code": 176412,
+     "id": 193,
+     "name": "Haji Wright",
+     "status": "OUT"
+    },
+    {
+     "code": 210156,
+     "id": 492,
+     "name": "Taiwo Awoniyi",
+     "status": "IN"
+    },
+    {
+     "code": 465390,
+     "id": 177,
+     "name": "Kaine Kesler-Hayden",
+     "status": "IN"
+    }
+   ],
+   "quotes": [
+    {
+     "by": "Frank Lampard",
+     "text": "Josh [Eccles] is not yet – he had a baby girl last week. He’s got a little bit of an issue with his ankle… And Woolfenden is a little bit longer than that."
+    }
+   ],
+   "team": 7,
+   "team_code": 9
+  },
+  {
+   "club": "Crystal Palace",
+   "players": [
+    {
+     "code": 231747,
+     "id": 223,
+     "name": "Jean-Philippe Mateta",
+     "status": "OUT"
+    },
+    {
+     "code": 172649,
+     "id": 198,
+     "name": "Dean Henderson",
+     "status": "OUT"
+    },
+    {
+     "code": 515621,
+     "id": 206,
+     "name": "Chadi Riad",
+     "status": "OUT"
+    },
+    {
+     "code": 223723,
+     "id": 577,
+     "name": "Takehiro Tomiyasu",
+     "status": "OUT"
+    },
+    {
+     "code": 172850,
+     "id": 643,
+     "name": "Ben Chilwell",
+     "status": "OUT"
+    }
+   ],
+   "quotes": [
+    {
+     "by": "Pierre Sage",
+     "text": "JP Mateta will not be here tomorrow. Dean Henderson, Takehiro Tomiyasu, Ben Chilwell too."
+    }
+   ],
+   "team": 8,
+   "team_code": 31
+  },
+  {
+   "club": "Everton",
+   "players": [
+    {
+     "code": 224967,
+     "id": 233,
+     "name": "Vitalii Mykolenko",
+     "status": "DOUBT"
+    },
+    {
+     "code": 480455,
+     "id": 230,
+     "name": "Jarrad Branthwaite",
+     "status": "DOUBT"
+    },
+    {
+     "code": 128295,
+     "id": 21,
+     "name": "Christian Norgaard",
+     "status": "DOUBT"
+    }
+   ],
+   "quotes": [
+    {
+     "by": "David Moyes",
+     "text": "Mykolenko is doing much better, he’s got a chance for the game and Christian [Norgaard] has still got a wee bit to go…"
+    }
+   ],
+   "team": 9,
+   "team_code": 11
+  },
+  {
+   "club": "Fulham",
+   "players": [
+    {
+     "code": 551050,
+     "id": 635,
+     "name": "Hugo Larsson",
+     "status": "DOUBT"
+    },
+    {
+     "code": 76357,
+     "id": 266,
+     "name": "Tom Cairney",
+     "status": "IN"
+    },
+    {
+     "code": 169528,
+     "id": 254,
+     "name": "Antonee Robinson",
+     "status": "IN"
+    }
+   ],
+   "quotes": [
+    {
+     "by": "Alvaro Arbeloa",
+     "text": "We have a small problem with Hugo [Larsson] – his groin. We will check today, but I’m not sure if he will be okay for tomorrow. Everyone else is available."
+    }
+   ],
+   "team": 10,
+   "team_code": 54
+  },
+  {
+   "club": "Hull City",
+   "players": [
+    {
+     "code": 606930,
+     "id": 586,
+     "name": "Nobel Mendy",
+     "status": "OUT"
+    },
+    {
+     "code": 105666,
+     "id": 274,
+     "name": "Jack Butland",
+     "status": "OUT"
+    },
+    {
+     "code": 501902,
+     "id": 278,
+     "name": "Charlie Hughes",
+     "status": "OUT"
+    },
+    {
+     "code": 169359,
+     "id": 556,
+     "name": "Matt Targett",
+     "status": "OUT"
+    },
+    {
+     "code": 470294,
+     "id": 297,
+     "name": "Darko Gyabi",
+     "status": "OUT"
+    },
+    {
+     "code": 490884,
+     "id": 617,
+     "name": "Mohamed-Ali Cho",
+     "status": "OUT"
+    },
+    {
+     "code": 469266,
+     "id": 589,
+     "name": "Lucas Gourna-Douath",
+     "status": "OUT"
+    },
+    {
+     "code": 626751,
+     "id": 632,
+     "name": "Ilyas Ansah",
+     "status": "OUT"
+    },
+    {
+     "code": 540324,
+     "id": 286,
+     "name": "Mohamed Belloumi",
+     "status": "IN"
+    },
+    {
+     "code": 462635,
+     "id": 340,
+     "name": "Joe Gelhardt",
+     "status": "IN"
+    }
+   ],
+   "quotes": [
+    {
+     "by": "Sergej Jakirovic",
+     "text": "Mendy is out of this game because he felt his groin, so he will be out for two weeks."
+    }
+   ],
+   "team": 11,
+   "team_code": 88
+  },
+  {
+   "club": "Ipswich Town",
+   "players": [
+    {
+     "code": 531442,
+     "id": 315,
+     "name": "Abdul Fatawu",
+     "status": "IN"
+    }
+   ],
+   "quotes": [],
+   "team": 12,
+   "team_code": 40
+  },
+  {
+   "club": "Leeds United",
+   "players": [
+    {
+     "code": 214225,
+     "id": 329,
+     "name": "Joe Rodon",
+     "status": "OUT"
+    },
+    {
+     "code": 200617,
+     "id": 343,
+     "name": "Daniel James",
+     "status": "DOUBT"
+    }
+   ],
+   "quotes": [
+    {
+     "by": "Daniel Farke",
+     "text": "Joe [Rodon] will still miss this game on week seven so edging closer…"
+    }
+   ],
+   "team": 13,
+   "team_code": 2
+  },
+  {
+   "club": "Liverpool",
+   "players": [
+    {
+     "code": 441266,
+     "id": 371,
+     "name": "Ryan Gravenberch",
+     "status": "OUT"
+    },
+    {
+     "code": 510663,
+     "id": 380,
+     "name": "Hugo Ekitike",
+     "status": "OUT"
+    },
+    {
+     "code": 492777,
+     "id": 360,
+     "name": "Conor Bradley",
+     "status": "OUT"
+    },
+    {
+     "code": 647681,
+     "id": 363,
+     "name": "Giovanni Leoni",
+     "status": "OUT"
+    },
+    {
+     "code": 424876,
+     "id": 368,
+     "name": "Dominik Szoboszlai",
+     "status": "DOUBT"
+    },
+    {
+     "code": 243298,
+     "id": 367,
+     "name": "Cody Gakpo",
+     "status": "DOUBT"
+    },
+    {
+     "code": 219168,
+     "id": 379,
+     "name": "Alexander Isak",
+     "status": "DOUBT"
+    }
+   ],
+   "quotes": [
+    {
+     "by": "Andoni Iraola",
+     "text": "It’s early for us to say, we have still tomorrow’s training… I leave the chance open this time, yes."
+    }
+   ],
+   "team": 14,
+   "team_code": 14
+  },
+  {
+   "club": "Manchester City",
+   "players": [
+    {
+     "code": 209244,
+     "id": 398,
+     "name": "Phil Foden",
+     "status": "IN"
+    }
+   ],
+   "quotes": [
+    {
+     "by": "Enzo Maresca",
+     "text": "And we’ll see for tomorrow, he’s [Phil Foden] available but we have so many games that we’ll decide if he’s going to start or not."
+    }
+   ],
+   "team": 15,
+   "team_code": 43
+  },
+  {
+   "club": "Manchester United",
+   "players": [
+    {
+     "code": 230001,
+     "id": 422,
+     "name": "Noussair Mazraoui",
+     "status": "OUT"
+    },
+    {
+     "code": 596777,
+     "id": 415,
+     "name": "Patrick Dorgu",
+     "status": "OUT"
+    },
+    {
+     "code": 232112,
+     "id": 433,
+     "name": "Manuel Ugarte",
+     "status": "OUT"
+    },
+    {
+     "code": 485711,
+     "id": 439,
+     "name": "Benjamin Sesko",
+     "status": "OUT"
+    },
+    {
+     "code": 106760,
+     "id": 423,
+     "name": "Luke Shaw",
+     "status": "DOUBT"
+    },
+    {
+     "code": 516895,
+     "id": 432,
+     "name": "Kobbie Mainoo",
+     "status": "DOUBT"
+    },
+    {
+     "code": 221820,
+     "id": 419,
+     "name": "Lisandro Martinez",
+     "status": "IN"
+    }
+   ],
+   "quotes": [
+    {
+     "by": "Michael Carrick",
+     "text": "We’ll see on Luke [Shaw] and Kobbie [Mainoo]."
+    }
+   ],
+   "team": 16,
+   "team_code": 1
+  },
+  {
+   "club": "Newcastle United",
+   "players": [
+    {
+     "code": 449434,
+     "id": 454,
+     "name": "Anthony Elanga",
+     "status": "OUT"
+    },
+    {
+     "code": 441191,
+     "id": 450,
+     "name": "Tino Livramento",
+     "status": "OUT"
+    },
+    {
+     "code": 232653,
+     "id": 456,
+     "name": "Jacob Ramsey",
+     "status": "OUT"
+    },
+    {
+     "code": null,
+     "id": null,
+     "name": "Bazoumana Traore",
+     "status": "DOUBT"
+    },
+    {
+     "code": 78916,
+     "id": 448,
+     "name": "Dan Burn",
+     "status": "DOUBT"
+    },
+    {
+     "code": 180974,
+     "id": 458,
+     "name": "Joelinton",
+     "status": "IN"
+    }
+   ],
+   "quotes": [
+    {
+     "by": "Matthias Jaissle",
+     "text": "Bazo [Bazoumana Traore] seems to be much better, we’re happy for that… Hopefully next week he [Anthony Elanga] is about to train again…"
+    }
+   ],
+   "team": 17,
+   "team_code": 4
+  },
+  {
+   "club": "Nottingham Forest",
+   "players": [
+    {
+     "code": 500151,
+     "id": 475,
+     "name": "Nicolo Savona",
+     "status": "OUT"
+    },
+    {
+     "code": 482973,
+     "id": 491,
+     "name": "Igor Jesus",
+     "status": "OUT"
+    },
+    {
+     "code": 222531,
+     "id": 480,
+     "name": "Morgan Gibbs-White",
+     "status": "DOUBT"
+    },
+    {
+     "code": 227444,
+     "id": 471,
+     "name": "Nikola Milenkovic",
+     "status": "IN"
+    }
+   ],
+   "quotes": [
+    {
+     "by": "Oliver Glasner",
+     "text": "Morgan Gibbs-White is a doubt. He couldn’t train the entire week with us. It looks like he can join tomorrow’s session."
+    }
+   ],
+   "team": 18,
+   "team_code": 17
+  },
+  {
+   "club": "Sunderland",
+   "players": [
+    {
+     "code": 223827,
+     "id": 532,
+     "name": "Dan Ballard",
+     "status": "OUT"
+    },
+    {
+     "code": 461199,
+     "id": 547,
+     "name": "Romaine Mundle",
+     "status": "OUT"
+    },
+    {
+     "code": 93605,
+     "id": 541,
+     "name": "Thomas Meunier",
+     "status": "DOUBT"
+    },
+    {
+     "code": 437505,
+     "id": 553,
+     "name": "Wilson Isidor",
+     "status": "DOUBT"
+    },
+    {
+     "code": 441264,
+     "id": 552,
+     "name": "Brian Brobbey",
+     "status": "DOUBT"
+    },
+    {
+     "code": 547027,
+     "id": 543,
+     "name": "Habib Diarra",
+     "status": "DOUBT"
+    }
+   ],
+   "quotes": [
+    {
+     "by": "Regis Le Bris",
+     "text": "Brian [Brobbey] travelled with the squad, as did Habib [Diarra], so they will be involved quickly, but we need to respect the process."
+    }
+   ],
+   "team": 20,
+   "team_code": 56
+  }
+ ],
+ "fetched": "2026-10-16T22:58:00+00:00",
+ "updated": "2026-10-16"
+}
