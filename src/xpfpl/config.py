@@ -72,6 +72,11 @@ PRESS_DOUBT_CHANCE = 0.5
 # player just back), instead of the flag recovering 25 points a week.
 NEWS_RETURN_DATES = True
 RETURN_CHANCE = 0.75
+# An injury FPL gives no date for ("Knee injury - Unknown return date") recovers this much a
+# gameweek after the next, not 25 points: on 2026-27 GW2-7 players flagged that way at 0% played
+# 2% / 3% / 4% of matches 1 / 2 / 3 GWs later (168 / 127 / 90 player-weeks; none of the 10 who had
+# been playing before it came back within 3 GWs). Semenyo, GW8: 0.25 / 0.5 had him half back by GW10.
+UNKNOWN_RETURN_RAMP = 0.03
 # A match a player missed (0 minutes) while flagged - by FPL's news, a deadline snapshot or a press
 # conference - is left out of his form and minutes for the forecast (data/news.py
 # `excused_absences`). The minutes model can't tell an injury from being dropped, so a nailed

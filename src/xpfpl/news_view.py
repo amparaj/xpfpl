@@ -15,7 +15,7 @@ from xpfpl import config
 from xpfpl.data import api, news
 
 STATUS_ORDER = ["Injured", "Suspended", "Doubtful", "Not available", "Unavailable", "Available"]
-RULES = {"flag": "FPL's flag", "press": "Press conference", "back": "Return date", "risk": "Known absence"}
+RULES = {"flag": "FPL's flag", "press": "Press conference", "back": "Return date", "unknown": "No return date", "risk": "Known absence"}
 ELSEWHERE = [
     ("Fantasy Football Scout: injuries and bans", "https://www.fantasyfootballscout.co.uk/fantasy-football-injuries"),
     ("NewsNow: Premier League injuries and suspensions", news.HEADLINES_URL),

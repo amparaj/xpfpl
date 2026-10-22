@@ -68,6 +68,7 @@ export const NEWS_RULE: Record<string, string> = {
   flag: "FPL's flag",
   press: "a press conference newer than FPL's news",
   back: "FPL's return date",
+  unknown: "an injury with no return date (slow recovery)",
   risk: "a known absence",
 };
 

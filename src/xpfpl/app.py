@@ -796,6 +796,11 @@ def show_pitch(players: pd.DataFrame, plan, gw: int, labels: dict, fdr: dict, mi
 
 with tab_plan:
     me = my_team(int(team_id))
+    # Always pick / Never pick belong to one gameweek's plan: a new gameweek starts them empty, or
+    # last week's "Switch to" / "Keep" goes on forcing players in after their news has changed.
+    if st.session_state.get("plan_picks_gw") != next_gw:
+        clear_picks()
+        st.session_state["plan_picks_gw"] = next_gw
     with st.form("plan"):
         c = st.columns([1, 1, 1.2, 1.2, 1, 1])
         horizon = c[0].slider("Horizon (GWs)", 1, 8, config.HORIZON,
@@ -848,6 +853,12 @@ with tab_plan:
         settings_now = dict(unlimited_transfers=True)
     else:
         settings_now = dict(**planning, free_transfers=ft, max_hits=int(max_hits), **extra)
+    flagged = [p for p in must_have if p in players.index and players.at[p, "chance"] <= 25]
+    if flagged:
+        st.warning("Always pick forces in " + ", ".join(
+            f"{players.at[p, 'name']} ({int(players.at[p, 'chance'])}% for GW{gw}: {elements.at[p, 'news']})"
+            for p in flagged) + ". This model has to keep them, so it benches them instead of selling.")
+        st.button("Clear Always pick / Never pick", on_click=clear_picks, key="clear_flagged_picks")
     picks_failed = False
     try:
         plan = run_solve(horizon, model, plan_gws, stamp(), **kwargs, **settings_now)
