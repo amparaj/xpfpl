@@ -499,6 +499,8 @@ def availability(frame: pd.DataFrame, bs: dict, next_gw: int, press: dict | None
                (the old rule, and what's left when nothing below applies); 'u' (left) = 0
       press    a press conference for the next gameweek, newer than FPL's news, said OUT (0),
                DOUBT (config.PRESS_DOUBT_CHANCE) or IN (1); later weeks recover from there
+      unknown  an injury with "Unknown return date": later weeks recover by
+               config.UNKNOWN_RETURN_RAMP a gameweek instead of 25 points
       back     FPL gives a return date ("Expected back 10 Oct"): 0 for matches before it; from it,
                config.RETURN_CHANCE for an injury, 1 for a suspension. The next gameweek keeps
                FPL's own flag, which is set with the deadline in sight.
@@ -528,6 +530,12 @@ def availability(frame: pd.DataFrame, bs: dict, next_gw: int, press: dict | None
         p = p.mask(after & (what == "suspension"), 1.0)
         p = p.mask(after & (what != "suspension"), np.maximum(p, config.RETURN_CHANCE))
         rule = rule.mask(use, "back")
+
+        unknown = (frame["element"].map(info["news"]).fillna("").str.contains("unknown return", case=False)
+                   & back.isna() & (offset > 0) & (rule != "press") & (frame["status"] == "i"))
+        slow = (chance.fillna(100.0) / 100.0 + config.UNKNOWN_RETURN_RAMP * offset).clip(upper=1.0)
+        p = p.mask(unknown, slow)
+        rule = rule.mask(unknown, "unknown")
 
         risks = frame["element"].map(info["risks"])
         out_gw = pd.Series([isinstance(r, list) and any(x.get("gw") == g for x in r)

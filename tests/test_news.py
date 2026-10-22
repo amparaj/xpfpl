@@ -121,6 +121,13 @@ def test_return_date_after_the_match_keeps_him_out(bs):
     assert _avail(bs)[(1, 8)] == (0.0, "back")
 
 
+def test_unknown_return_date_recovers_slowly(bs):
+    bs["elements"][0]["news"] = "Knee injury - Unknown return date"
+    a = _avail(bs)
+    assert a[(1, 7)] == (0.0, "flag")                           # next week: FPL's flag stands
+    assert a[(1, 8)] == (config.UNKNOWN_RETURN_RAMP, "unknown")  # not 0.25
+
+
 def test_fresh_press_overrides_older_fpl_news(bs):
     press = news.match_press(news.parse_press(PAGE), bs)        # 8 Oct, after the GW6 deadline
     a = _avail(bs, press)

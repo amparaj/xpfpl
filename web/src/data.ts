@@ -168,7 +168,7 @@ export interface Forecast {
   /** The team news behind the next gameweek (data/news.py): the chance of being available it came to, the rule
    * that set it (FPL's flag, a newer press conference, a return date or a known absence), what the press
    * conference said and FPL's return date. */
-  avail?: number | null; news_rule?: "flag" | "press" | "back" | "risk" | null; press?: "OUT" | "DOUBT" | "IN" | null;
+  avail?: number | null; news_rule?: "flag" | "press" | "back" | "unknown" | "risk" | null; press?: "OUT" | "DOUBT" | "IN" | null;
   back?: string | null;
   [xp: `xp_${number}`]: number;
 }
