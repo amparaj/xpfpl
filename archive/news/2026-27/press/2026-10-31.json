@@ -1,0 +1,218 @@
+{
+ "clubs": [
+  {
+   "club": "Arsenal",
+   "players": [],
+   "quotes": [
+    {
+     "by": null,
+     "text": "They all trained today. They will train tomorrow and if everything is okay, they will be available.\" Mikel Arteta on [Riccardo Calafiori], [Christos Tzolis] and [Declan Rice]"
+    },
+    {
+     "by": null,
+     "text": "Probably [he will be out until after the international break].\" Mikel Arteta on [Bukayo Saka]"
+    }
+   ],
+   "team": 1,
+   "team_code": 3
+  },
+  {
+   "club": "Bournemouth",
+   "players": [],
+   "quotes": [
+    {
+     "by": null,
+     "text": "We still need to build up his game time… he knows he has to be patient in this situation and not get in a difficult situation with another injury.\" Marco Rose on [Eli Junior Kroupi]"
+    }
+   ],
+   "team": 3,
+   "team_code": 91
+  },
+  {
+   "club": "Brighton and Hove Albion",
+   "players": [],
+   "quotes": [
+    {
+     "by": null,
+     "text": "Regarding [Pascal Struijk], he won't be an option for the weekend, but we are quite convinced that he will be back afterwards.\" Fabian Hurzeler"
+    }
+   ],
+   "team": 5,
+   "team_code": 36
+  },
+  {
+   "club": "Chelsea",
+   "players": [],
+   "quotes": [
+    {
+     "by": null,
+     "text": "He has an injury on his thigh and he is going to be a few weeks out.\" Xabi Alonso on [Joao Pedro]"
+    },
+    {
+     "by": null,
+     "text": "[Maxence Lacroix] picked up an injury and we expect that he is not going to be ready before the international break.\" Xabi Alonso"
+    }
+   ],
+   "team": 6,
+   "team_code": 8
+  },
+  {
+   "club": "Coventry City",
+   "players": [],
+   "quotes": [
+    {
+     "by": null,
+     "text": "He's got a small calf issue… So, we're not sure about this weekend.\" Frank Lampard on [Bobby Thomas]"
+    }
+   ],
+   "team": 7,
+   "team_code": 9
+  },
+  {
+   "club": "Crystal Palace",
+   "players": [],
+   "quotes": [
+    {
+     "by": null,
+     "text": "He's ready to play… to be ready, to play and to start against Tottenham.\" Pierre Sage on [Jean-Philippe Mateta]"
+    }
+   ],
+   "team": 8,
+   "team_code": 31
+  },
+  {
+   "club": "Everton",
+   "players": [],
+   "quotes": [
+    {
+     "by": null,
+     "text": "[Jarrad Branthwaite] should have recovered from his concussion and also the timescale which we had to abide by.\" David Moyes"
+    },
+    {
+     "by": null,
+     "text": "I wouldn't give any team news away.\" David Moyes when asked about [Jack Grealish]"
+    }
+   ],
+   "team": 9,
+   "team_code": 11
+  },
+  {
+   "club": "Fulham",
+   "players": [],
+   "quotes": [
+    {
+     "by": null,
+     "text": "No new injuries.\" Alvaro Arbeloa"
+    }
+   ],
+   "team": 10,
+   "team_code": 54
+  },
+  {
+   "club": "Hull City",
+   "players": [],
+   "quotes": [
+    {
+     "by": null,
+     "text": "[Nobel Mendy], back in training. Everything is good. So, he will be in the roster for this game.\" Sergej Jakirovic"
+    }
+   ],
+   "team": 11,
+   "team_code": 88
+  },
+  {
+   "club": "Leeds United",
+   "players": [],
+   "quotes": [
+    {
+     "by": null,
+     "text": "Also a good training week for Dominic Calvert-Lewin and Noah Okafor… It seems, if nothing happens, that they are also fully available.\" Daniel Farke"
+    },
+    {
+     "by": null,
+     "text": "[Anton Stach] is struggling still a bit with his foot injury… it's a question mark.\" Daniel Farke"
+    }
+   ],
+   "team": 13,
+   "team_code": 2
+  },
+  {
+   "club": "Liverpool",
+   "players": [],
+   "quotes": [
+    {
+     "by": null,
+     "text": "I think they have a chance. They have a chance, but I don't know for sure if they will be involved or not.\" Andoni Iraola on [Dominik Szoboszlai] and [Victor Munoz]"
+    }
+   ],
+   "team": 14,
+   "team_code": 14
+  },
+  {
+   "club": "Manchester City",
+   "players": [],
+   "quotes": [
+    {
+     "by": null,
+     "text": "[Apart from] Antoine Semenyo, the rest, they are all available.\" Enzo Maresca"
+    }
+   ],
+   "team": 15,
+   "team_code": 43
+  },
+  {
+   "club": "Manchester United",
+   "players": [],
+   "quotes": [
+    {
+     "by": null,
+     "text": "Bruno is fully committed to this football club, there's absolutely no issues with that.\" Michael Carrick on [Bruno Fernandes]"
+    },
+    {
+     "by": null,
+     "text": "Unfortunately, Ben looks like he's going to be out for a period of time.\" Michael Carrick on [Benjamin Sesko]"
+    }
+   ],
+   "team": 16,
+   "team_code": 1
+  },
+  {
+   "club": "Newcastle United",
+   "players": [],
+   "quotes": [
+    {
+     "by": null,
+     "text": "It's too early at the moment [to know if he'll be fit for Monday].\" Matthias Jaissle on [William Osula]"
+    }
+   ],
+   "team": 17,
+   "team_code": 4
+  },
+  {
+   "club": "Nottingham Forest",
+   "players": [],
+   "quotes": [
+    {
+     "by": null,
+     "text": "There is a doubt with Dan Ndoye… If not, he will miss the game, but then he should be okay for City.\" Oliver Glasner"
+    }
+   ],
+   "team": 18,
+   "team_code": 17
+  },
+  {
+   "club": "Sunderland",
+   "players": [],
+   "quotes": [
+    {
+     "by": null,
+     "text": "[Isidor] should be available. At the minute, except Ballard and Romaine, all our players are more or less available.\" Regis Le Bris"
+    }
+   ],
+   "team": 20,
+   "team_code": 56
+  }
+ ],
+ "fetched": "2026-11-06T02:46:00+00:00",
+ "updated": "2026-10-31"
+}
