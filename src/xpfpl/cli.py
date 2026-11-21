@@ -720,6 +720,13 @@ def cmd_recommend(args) -> None:
             from xpfpl import simulate
             odds = simulate.chip_odds(draws, plan, [g for g in gameweeks if g in draws.gameweeks], available,
                                       players["position"].to_dict())
+        stop = max(c["stop_event"] for c in available.values())
+        verdicts = chips.verdicts(advice, available, gw, players.at[plan.captains[gw], "name"], odds,
+                                  chips.fixture_weeks(fx, gw + 1, stop), {t["id"]: t["short_name"] for t in bs["teams"]})
+        print(f"  >> {chips.headline(verdicts, gw)[1]}")
+        for v in verdicts:
+            print(f"     {v.title}. {v.detail}")
+        print("  The numbers:")
         for a in advice:
             flag = "PLAY" if a.recommended else "save"
             expiry = "  [expires after this GW - use it or lose it]" if a.expiring else ""

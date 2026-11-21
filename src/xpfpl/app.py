@@ -794,6 +794,35 @@ def show_pitch(players: pd.DataFrame, plan, gw: int, labels: dict, fdr: dict, mi
             f"<div class='xp-bench'><div class='xp-row'>{bench}</div></div>")
 
 
+def show_chip_verdicts(advice: list, available: dict, gw: int, captain: str, chance: dict) -> None:
+    """The chip call for this GW in plain words, near the top of Plan Ahead: one headline (play
+    which chip, a close call, or none), then a line per chip with why, and a Play button."""
+    if not available:
+        return
+    stop = max(c["stop_event"] for c in available.values())
+    weeks = chips.fixture_weeks(fx, gw + 1, stop)
+    verdicts = chips.verdicts(advice, available, gw, captain, chance, weeks,
+                              {t["id"]: t["short_name"] for t in bs["teams"]})
+    kind, text = chips.headline(verdicts, gw)
+    with st.container(border=True):
+        {"play": st.success, "close": st.warning, "none": st.info}[kind](f"**Chips: {text}**")
+        warning = chips.window_warning(available, gw)
+        if warning:
+            st.warning(warning)
+        for v in verdicts:
+            icon = {"play": ":material/check_circle:", "close": ":material/help:", "last": ":material/alarm:",
+                    "wait": ":material/schedule:", "save": ":material/savings:"}[v.action]
+            st.markdown(f"{icon} **{v.title}.** {v.detail}")
+            if v.play:
+                st.button(f"Play {chips.CHIP_NAMES[v.chip]} in GW{gw}", key=f"play_chip_{v.chip}",
+                          on_click=use_move, args=([], None, [], v.chip),
+                          help="Sets \"Chip active this GW\" above and re-plans with it; your transfers "
+                               "and Always/Never picks stay as they are.")
+        st.caption("This model's call is a simple rule: play a chip once what it adds this GW reaches a set "
+                   "number, unless a later GW of the plan looks better; one chip a GW. "
+                   "\"Chips: the numbers behind the advice\" at the bottom of the page has the details.")
+
+
 with tab_plan:
     me = my_team(int(team_id))
     # Always pick / Never pick belong to one gameweek's plan: a new gameweek starts them empty, or
@@ -876,6 +905,14 @@ with tab_plan:
                      **({} if active in ("wildcard", "freehit") else extra))
     gain = sum(plan.xp.values()) - sum(hold.xp.values()) - config.HIT_COST * plan.total_hits
 
+    available = {} if active else chips.available_chips(bs, me.chips_used, gw)
+    advice = run_chip_advice(horizon, model, stamp(), int(team_id), tuple(sorted(available)), **kwargs,
+                             **planning, free_transfers=ft, max_hits=int(max_hits)) if available else []
+    play_chips = [a.chip for a in advice if a.recommended and a.chip in ("3xc", "bboost")]   # strongest first
+    draws = sim_draws(horizon, model, stamp())
+    chance = {} if draws is None or not available else simulate.chip_odds(
+        draws, plan, [g for g in plan_gws if g in draws.gameweeks], available, players["position"].to_dict())
+
     st.subheader(f"{me.name}: plan for GW{plan_gws[0]}" + (f"-{plan_gws[-1]}" if len(plan_gws) > 1 else ""))
     m = st.columns(5)
     m[0].metric("Transfers", len(plan.transfers_in))
@@ -890,6 +927,8 @@ with tab_plan:
                 + ("Unlimited free transfers, planned from your squad at the last deadline. Transfers you've "
                    "already made don't show until the deadline, so compare them with the list below."
                    if active in ("wildcard", "freehit") else "The captain/bench choices below account for it."))
+    else:
+        show_chip_verdicts(advice, available, gw, players.at[plan.captains[gw], "name"], chance)
 
     if plan.transfers_in:
         xp_cols = [f"xp_{g}" for g in plan_gws]
@@ -946,12 +985,6 @@ with tab_plan:
             "max_hits": int(max_hits), "plan_transfers": bool(weekly), "value_prices": bool(value_prices),
             "must_have": [int(p) for p in must_have], "banned": [int(p) for p in banned]})
 
-    available = {} if active else chips.available_chips(bs, me.chips_used, gw)
-    advice = run_chip_advice(horizon, model, stamp(), int(team_id), tuple(sorted(available)), **kwargs,
-                             **planning, free_transfers=ft, max_hits=int(max_hits)) if available else []
-    play_chips = [a.chip for a in advice if a.recommended and a.chip in ("3xc", "bboost")]   # strongest first
-
-    draws = sim_draws(horizon, model, stamp())
     if draws is None:
         st.caption("No Monte Carlo for this forecast (config.SIM_RUNS is 0, or the saved simulations come "
                    "from another run): re-run `xpfpl predict` to see the ranges.")
@@ -982,41 +1015,34 @@ with tab_plan:
                  column_config={c: st.column_config.NumberColumn(format=POINTS)
                                 for c in grid.columns if c.startswith("GW") and "fixture" not in c or c == "Total"})
 
-    st.markdown("**Chips**")
     if active:
+        st.markdown("**Chips**")
         st.write(f"{chip_label} is active, so no other chip can be played in GW{gw}.")
-    else:
-        if not available:
-            st.write("No chips available this gameweek.")
-        else:
-            warning = chips.window_warning(available, gw)
-            if warning:
-                st.warning(warning)
-            chance = {} if draws is None else simulate.chip_odds(
-                draws, plan, [g for g in plan_gws if g in draws.gameweeks], available, players["position"].to_dict())
+    elif available:
+        with st.expander("Chips: the numbers behind the advice"):
             st.dataframe(pd.DataFrame([{
                 "Chip": chips.CHIP_NAMES[a.chip], "Advice": "PLAY" if a.recommended else "save",
-                "Gain": a.gain, "Threshold": a.threshold,
-                "Clears it (simulated)": chance.get(a.chip, {}).get("p_clear"),
-                "Beats later weeks (simulated)": chance.get(a.chip, {}).get("p_beats_later"),
-                "Why": a.reason, "Expires": f"after GW{available[a.chip]['stop_event']}",
+                "Extra xP this GW": a.gain, "Plays from": a.threshold,
+                "Chance it reaches that (simulated)": chance.get(a.chip, {}).get("p_clear"),
+                "Chance this GW beats later ones (simulated)": chance.get(a.chip, {}).get("p_beats_later"),
+                "Expires": f"after GW{available[a.chip]['stop_event']}",
             } for a in advice]), hide_index=True, width="stretch",
-                column_config={"Gain": st.column_config.NumberColumn(format=POINTS),
-                               "Threshold": st.column_config.NumberColumn(format=POINTS),
-                               "Clears it (simulated)": st.column_config.NumberColumn(format=PERCENT),
-                               "Beats later weeks (simulated)": st.column_config.NumberColumn(format=PERCENT)})
-            st.caption("Thresholds come from `xpfpl tune`, which scores candidate values by replaying "
-                       "whole seasons (config.py). The Wildcard gain may be overstated because it is compared "
-                       "with holding your squad for the whole horizon. Simulated (Triple Captain and Bench "
-                       "Boost only): how often the chip's extra points - the captain's points once more, or the "
-                       "bench's - reach the threshold, and how often this week beats every later week of the "
-                       "plan in the same chip window.")
-            for a in advice:
-                if a.recommended:
-                    st.button(f"Play {chips.CHIP_NAMES[a.chip]} in GW{gw}", key=f"play_chip_{a.chip}",
-                              on_click=use_move, args=([], None, [], a.chip),
-                              help="Sets \"Chip active this GW\" above and re-plans with it; your transfers "
-                                   "and Always/Never picks stay as they are.")
+                column_config={"Extra xP this GW": st.column_config.NumberColumn(format=POINTS),
+                               "Plays from": st.column_config.NumberColumn(format=POINTS),
+                               "Chance it reaches that (simulated)": st.column_config.NumberColumn(format=PERCENT),
+                               "Chance this GW beats later ones (simulated)":
+                                   st.column_config.NumberColumn(format=PERCENT)})
+            st.caption(
+                "**Extra xP this GW**: what the chip adds: the captain's xP once more (Triple Captain), the "
+                "bench's xP (Bench Boost), or the best one-week / whole-horizon squad's xP over this plan "
+                "(Free Hit / Wildcard). **Plays from**: this model plays a chip once its extra xP reaches this "
+                "number, unless a later GW of the plan looks better. The numbers were chosen by replaying past "
+                "seasons (`xpfpl tune`, config.py), and their gains were within the noise, so treat a near miss "
+                "either way as a judgement call. The Wildcard's extra may be overstated: it is compared with "
+                "keeping your squad for the whole horizon. **Simulated** (Triple Captain and Bench Boost "
+                "only): how often the chip's extra points reach the number, and how often this GW beats every "
+                f"later GW of the plan. The plan covers GW{plan_gws[0]}-{plan_gws[-1]} only; the double and "
+                "blank check in the advice above looks at FPL's fixture list up to the chip's expiry.")
 
 
 # ---------------------------------------------------------------- my team
