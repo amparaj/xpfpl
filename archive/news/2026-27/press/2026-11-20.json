@@ -1,0 +1,262 @@
+{
+ "clubs": [
+  {
+   "club": "Arsenal",
+   "players": [],
+   "quotes": [
+    {
+     "by": null,
+     "text": "We had another test. He's evolving really well but it looks like it's going to be an eight-week injury, more or less. I think it's four at the moment, so still a while for him to be back with the team.\" Mikel Arteta on [Bukayo Saka]"
+    },
+    {
+     "by": null,
+     "text": "He's out, unfortunately. He has a slight problem in his hamstring.\" Mikel Arteta on [Martin Zubimendi]"
+    },
+    {
+     "by": null,
+     "text": "He's ready. He's in good condition. We want to ramp up his minutes.\" Mikel Arteta on [William Saliba]"
+    }
+   ],
+   "team": 1,
+   "team_code": 3
+  },
+  {
+   "club": "Aston Villa",
+   "players": [],
+   "quotes": [
+    {
+     "by": null,
+     "text": "[Manzambi] rested because he had some pain, but with us progressively this week he is training normally. So, he is available for tomorrow.\" Unai Emery on [Johan Manzambi]"
+    },
+    {
+     "by": null,
+     "text": "Cash [has a] concussion. Amadou Onana and Ruggeri, they are still out. The other players, they are ready.\" Unai Emery"
+    }
+   ],
+   "team": 2,
+   "team_code": 7
+  },
+  {
+   "club": "Bournemouth",
+   "players": [],
+   "quotes": [
+    {
+     "by": null,
+     "text": "Everyone is healthy, came back healthy from the international break.\" Marco Rose"
+    },
+    {
+     "by": null,
+     "text": "For sure, he's going to start in one game of this. We have to increase the match time, step by step, but he has had a good two weeks of training and some rest.\" Marco Rose on [Alex Scott]"
+    }
+   ],
+   "team": 3,
+   "team_code": 91
+  },
+  {
+   "club": "Brentford",
+   "players": [],
+   "quotes": [
+    {
+     "by": null,
+     "text": "No, they won't be available for a number of weeks.\" Keith Andrews on [Aaron Hickey] and [Nathan Collins]"
+    },
+    {
+     "by": null,
+     "text": "Fábio will have every chance of being involved on Monday, which is great news.\" Keith Andrews on [Fabio Carvalho]"
+    }
+   ],
+   "team": 4,
+   "team_code": 94
+  },
+  {
+   "club": "Brighton and Hove Albion",
+   "players": [],
+   "quotes": [
+    {
+     "by": null,
+     "text": "Chema, he trains today, so he will be available for the weekend.\" Fabian Hurzeler on [Chema Andres]"
+    },
+    {
+     "by": null,
+     "text": "Zadok, unfortunately, got a reinjury while he was with Nigeria under-23s.\" Fabian Hurzeler on [Zadok Yohanna]"
+    }
+   ],
+   "team": 5,
+   "team_code": 36
+  },
+  {
+   "club": "Chelsea",
+   "players": [],
+   "quotes": [
+    {
+     "by": null,
+     "text": "He's not going to be available for Leeds and we need to see game by game how he's feeling.\" Xabi Alonso on [Joao Pedro]"
+    },
+    {
+     "by": null,
+     "text": "That was good for him and he's fine for tomorrow.\" Xabi Alonso on [Moises Caicedo]"
+    }
+   ],
+   "team": 6,
+   "team_code": 8
+  },
+  {
+   "club": "Coventry City",
+   "players": [],
+   "quotes": [
+    {
+     "by": null,
+     "text": "Bobby's training with us, so we'll see how he is for the weekend.\" Frank Lampard on [Bobby Thomas]"
+    },
+    {
+     "by": null,
+     "text": "Josh has got a little bit of a complication with his ankle, so he's not with us at the minute.\" Frank Lampard on [Josh Eccles]"
+    }
+   ],
+   "team": 7,
+   "team_code": 9
+  },
+  {
+   "club": "Crystal Palace",
+   "players": [],
+   "quotes": [
+    {
+     "by": null,
+     "text": "Sarr, it will be touch and go when he can start training. It's a groin issue.\" Thomas Frank on [Ismaila Sarr]"
+    },
+    {
+     "by": null,
+     "text": "Tomiyasu will train next week.\" Thomas Frank on [Takehiro Tomiyasu]"
+    }
+   ],
+   "team": 8,
+   "team_code": 31
+  },
+  {
+   "club": "Everton",
+   "players": [],
+   "quotes": [
+    {
+     "by": null,
+     "text": "He's back in training and back in around the team.\" David Moyes on [Jack Grealish]"
+    },
+    {
+     "by": null,
+     "text": "Yeah, I believe [we have a fully fit squad].\" David Moyes"
+    }
+   ],
+   "team": 9,
+   "team_code": 11
+  },
+  {
+   "club": "Hull City",
+   "players": [],
+   "quotes": [
+    {
+     "by": null,
+     "text": "Yes, they are completely fine.\" Sergej Jakirovic on [Nobel Mendy] and [Mohamed Belloumi]"
+    }
+   ],
+   "team": 11,
+   "team_code": 88
+  },
+  {
+   "club": "Leeds United",
+   "players": [],
+   "quotes": [
+    {
+     "by": null,
+     "text": "As it stands, I think everyone can join us tomorrow in team training. And as it stands, no injuries to report.\" Daniel Farke"
+    },
+    {
+     "by": null,
+     "text": "Dominic, since he came back from England duties, is also back in training and no problems, so definitely good news.\" Daniel Farke on [Dominic Calvert-Lewin]"
+    }
+   ],
+   "team": 13,
+   "team_code": 2
+  },
+  {
+   "club": "Liverpool",
+   "players": [],
+   "quotes": [
+    {
+     "by": null,
+     "text": "Ryan Gravenberch, it's a matter of pain. He's managing the situation a little bit but he has been training with us the last two days. So, I hope he is available.\" Andoni Iraola on [Ryan Gravenberch]"
+    },
+    {
+     "by": null,
+     "text": "He's in a good place, he has trained normally.\" Andoni Iraola on [Dominik Szoboszlai]"
+    }
+   ],
+   "team": 14,
+   "team_code": 14
+  },
+  {
+   "club": "Manchester City",
+   "players": [],
+   "quotes": [
+    {
+     "by": null,
+     "text": "Still from the Forest game, we have Matheus and Khusa who are still a doubt for tomorrow.\" Enzo Maresca on [Matheus Nunes] and [Abdukodir Khusanov]"
+    }
+   ],
+   "team": 15,
+   "team_code": 43
+  },
+  {
+   "club": "Newcastle United",
+   "players": [],
+   "quotes": [
+    {
+     "by": null,
+     "text": "Hopefully, he is back really, really soon.\" Matthias Jaissle on [Joelinton]"
+    }
+   ],
+   "team": 17,
+   "team_code": 4
+  },
+  {
+   "club": "Nottingham Forest",
+   "players": [],
+   "quotes": [
+    {
+     "by": null,
+     "text": "Xaver Schlager couldn't play because he felt his hamstring and is a doubt for Saturday.\" Oliver Glasner on [Xaver Schlager]"
+    },
+    {
+     "by": null,
+     "text": "Callum Hudson-Odoi got injured in the international break so he will definitely miss the game and Nico Domínguez is still out.\" Oliver Glasner"
+    }
+   ],
+   "team": 18,
+   "team_code": 17
+  },
+  {
+   "club": "Sunderland",
+   "players": [],
+   "quotes": [
+    {
+     "by": null,
+     "text": "For Granit, it's going to be a little bit longer. It's a calf injury, so we'll see.\" Regis Le Bris on [Granit Xhaka]"
+    }
+   ],
+   "team": 20,
+   "team_code": 56
+  },
+  {
+   "club": "Tottenham Hotspur",
+   "players": [],
+   "quotes": [
+    {
+     "by": null,
+     "text": "Bergvall, Maddison, Savio are back. Tosin and Mathys Tel, no.\" Roberto De Zerbi"
+    }
+   ],
+   "team": 19,
+   "team_code": 6
+  }
+ ],
+ "fetched": "2026-11-20T18:45:00+00:00",
+ "updated": "2026-11-20"
+}
