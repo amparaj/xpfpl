@@ -66,3 +66,48 @@ def test_a_blank_week_lineup_avoids_blanking_clubs():
     for pos in (1, 2, 3, 4):
         if (xi[xi["position"] == pos]["xp_6"] == 0).any():
             assert (bench[bench["position"] == pos]["xp_6"] == 0).all()
+
+
+def _advice(chip, gain, threshold, **kw):
+    return chips.ChipAdvice(chip, gain, threshold, kw.pop("expiring", False), "", **kw)
+
+
+AVAIL = {n: {"stop_event": 19} for n in ("3xc", "bboost", "freehit", "wildcard")}
+
+
+def test_verdict_close_call_and_no_double_coming():
+    v = chips.verdicts([_advice("3xc", 6.1, 6.0)], AVAIL, 11, "Haaland", weeks={})
+    assert v[0].action == "close" and v[0].title == "Close call: Triple Captain on Haaland"
+    assert "No double gameweeks" in v[0].detail and "after GW19" in v[0].detail
+    assert chips.headline(v, 11) == ("close", "GW11: Triple Captain on Haaland, but it's a close call.")
+
+
+def test_verdict_clear_play_names_the_coming_double():
+    weeks = {16: {"doubles": [1, 2], "blanks": []}, 25: {"doubles": [3], "blanks": []}}
+    v = chips.verdicts([_advice("3xc", 8.0, 6.0)], AVAIL, 11, "Haaland", weeks=weeks,
+                       team_names={1: "ARS", 2: "MCI"})
+    assert v[0].action == "play" and "GW16 is a double gameweek (ARS, MCI)" in v[0].detail
+
+
+def test_verdict_one_chip_a_week_and_reasons_to_save():
+    advice = [_advice("bboost", 12.0, 8.0), _advice("3xc", 7.0, 6.0),
+              _advice("freehit", 1.5, 18.0),
+              _advice("wildcard", 40.0, 30.0, better_later=False)]
+    advice.insert(2, chips.ChipAdvice("3xc", 5.0, 6.0, False, "", better_later=True, later_gw=13, later_gain=7.5))
+    v = chips.verdicts(advice, AVAIL, 11)
+    assert [x.action for x in v] == ["play", "wait", "save", "save", "wait"]
+    assert "GW13 looks better (7.5 vs 5.0 now)" in v[2].detail
+    assert "Not worth it this week" in v[3].detail
+    assert chips.headline(v, 11)[0] == "play"
+
+
+def test_verdict_expiring_chip_is_played_and_nothing_means_none():
+    v = chips.verdicts([_advice("bboost", 3.0, 8.0, expiring=True)], {"bboost": {"stop_event": 11}}, 11)
+    assert v[0].action == "last"
+    assert chips.headline(chips.verdicts([_advice("freehit", 1.0, 18.0)], AVAIL, 11), 11)[0] == "none"
+
+
+def test_fixture_weeks_finds_doubles_and_blanks():
+    fx = [{"event": 5, "team_h": 1, "team_a": 2}, {"event": 5, "team_h": 3, "team_a": 4},
+          {"event": 6, "team_h": 1, "team_a": 2}, {"event": 6, "team_h": 1, "team_a": 3}]
+    assert chips.fixture_weeks(fx, 5, 6) == {6: {"doubles": [1], "blanks": [4]}}
